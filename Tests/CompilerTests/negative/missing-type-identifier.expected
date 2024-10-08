@@ -1,0 +1,3 @@
+negative/missing-type-identifier.hylo:1.15: error: expected identifier
+trait A { type }
+              ^

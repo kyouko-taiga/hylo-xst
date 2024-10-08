@@ -1,0 +1,3 @@
+negative/missing-identifiers.package/main.hylo:1.11: error: expected identifier
+fun f(a b, , d: true) { false }
+          ^

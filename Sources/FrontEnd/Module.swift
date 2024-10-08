@@ -1,0 +1,238 @@
+import Archivist
+import OrderedCollections
+import Utilities
+
+/// A collection of declarations in one or more source files.
+public struct Module {
+
+  /// The name of a module.
+  public typealias Name = String
+
+  /// The identity of a file added to a module.
+  public typealias SourceFileIdentity = Int
+
+  /// A source file added to a module.
+  internal struct SourceContainer {
+
+    /// The position of `self` in the containing module.
+    internal let identity: Module.SourceFileIdentity
+
+    /// The source file contained in `self`.
+    internal let source: SourceFile
+
+    /// The abstract syntax of `source`'s contents.
+    internal var syntax: [AnySyntax] = []
+
+    /// The top-level declarations in `self`.
+    internal var topLevelDeclarations: DeclarationSet = []
+
+    /// A table from syntax tree to its kind.
+    internal var syntaxToKind: [SyntaxKind] = []
+
+    /// A table from syntax tree to the scope that contains it.
+    ///
+    /// The keys and values of the map are the offsets of the syntax trees in the source file
+    /// (i.e., syntax identities sans module or source offset). Top-level declarations have no
+    /// parent scope and are mapped onto `-1`.
+    internal var syntaxToParent: [Int] = []
+
+    /// A table from scope to the declarations that it contains directly.
+    internal var scopeToDeclarations: OrderedDictionary<Int, DeclarationSet> = [:]
+
+    /// A table from syntax tree to its type.
+    internal var syntaxToType: OrderedDictionary<Int, AnyTypeIdentity> = [:]
+
+  }
+
+  /// The name of the module.
+  public let name: Name
+
+  /// The position of `self` in the containing program.
+  public let identity: Program.ModuleIdentity
+
+  /// The diagnostics accumulated during compilation.
+  public private(set) var diagnostics = DiagnosticSet()
+
+  /// The dependencies of the module.
+  public private(set) var dependencies: [Module.Name] = []
+
+  /// The source files in the module.
+  internal private(set) var sources = OrderedDictionary<FileName, SourceContainer>()
+
+  /// Creates an empty module with the given name and identity.
+  public init(name: Name, identity: Program.ModuleIdentity) {
+    self.name = name
+    self.identity = identity
+  }
+
+  /// Adds a dependency to this module.
+  public mutating func addDependency(_ d: Module.Name) {
+    if !dependencies.contains(d) {
+      dependencies.append(d)
+    }
+  }
+
+  /// Adds a diagnostic to this module.
+  ///
+  /// - requires: The diagnostic relates to a source in `self`.
+  public mutating func addDiagnostic(_ d: Diagnostic) {
+    precondition(sources.keys.contains(d.site.source.name))
+    diagnostics.insert(d)
+  }
+
+  /// Adds a source file to this module.
+  public mutating func addSource(
+    _ s: SourceFile
+  ) -> (inserted: Bool, identity: SourceFileIdentity) {
+    if let f = sources.index(forKey: s.name) {
+      return (inserted: false, identity: f)
+    } else {
+      let f = sources.count
+      sources[s.name] = .init(identity: f, source: s)
+      let parser = Parser(s, insertingNodesIn: f)
+      let declarations = parser.parseTopLevelDeclarations(in: &self)
+      sources[s.name]!.topLevelDeclarations.append(contentsOf: declarations)
+      return (inserted: true, identity: f)
+    }
+  }
+
+  /// Inserts `child` into `self` in the bucket of `file`.
+  public mutating func insert<T: Syntax>(_ child: T, in file: SourceFileIdentity) -> T.ID {
+    return modify(&sources.values[file]) { (f) in
+      let d = f.syntax.count
+      f.syntax.append(.init(child))
+      f.syntaxToKind.append(.init(T.self))
+      return T.ID(rawValue: .init(module: identity, file: file, node: d))
+    }
+  }
+
+  /// The nodes in `self`'s abstract syntax tree.
+  public var syntax: some Collection<AnySyntaxIdentity> {
+    let all = sources.values.enumerated().map { (f, s) in
+      s.syntax.indices.lazy.map { (n) in
+        AnySyntaxIdentity(rawValue: .init(module: identity, file: f, node: n))
+      }
+    }
+    return all.joined()
+  }
+
+  /// Projects the source file identified by `f`.
+  internal subscript(f: SourceFileIdentity) -> SourceContainer {
+    _read { yield sources.values[f] }
+    _modify { yield &sources.values[f] }
+  }
+
+  /// Projects the node identified by `n`.
+  internal subscript(n: RawSyntaxIdentity) -> any Syntax {
+    _read { yield sources.values[n.file].syntax[n.node].wrapped }
+  }
+
+  /// Assigns a type to `n`.
+  internal mutating func setType<T: SyntaxIdentity>(_ t: AnyTypeIdentity, for n: T) {
+    let u = sources.values[n.rawValue.file].syntaxToType[n.rawValue.node].wrapIfEmpty(t)
+    assert(t == u, "inconsistent type assignment")
+  }
+
+  /// Returns the type assigned to `n`, if any.
+  internal func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
+    sources.values[n.rawValue.file].syntaxToType[n.rawValue.node]
+  }
+
+}
+
+extension Module: Archivable {
+
+  /// The context of the serialization/deserialization of a module.
+  internal struct SerializationContext {
+
+    /// A mapping from archived module identity to its new value.
+    internal var modules = OrderedDictionary<Program.ModuleIdentity, Program.ModuleIdentity>()
+
+    /// A mapping from file name to its contents.
+    internal var sources = OrderedDictionary<FileName, SourceContainer>()
+
+  }
+
+  /// Reads an instance of `self` from `archive`.
+  ///
+  /// This method is meant to be called by `Program.load(module:from:)`, which passes `context` as
+  /// an instance of `ModuleIdentityMap` associating a module name to its identity in the program.
+  public init<A>(from archive: inout ReadableArchive<A>, in context: inout Any) throws {
+    let identities = context as? Program.ModuleIdentityMap ?? fatalError("bad context")
+    var newContext = SerializationContext()
+
+    // <module name>
+    let name = try archive.read(Name.self, in: &context)
+    newContext.modules[0] = identities[name]!
+
+    // <dependency count> <dependency name> ...
+    let dependencyCount = try archive.readUnsignedLEB128()
+    var dependencies: [Module.Name] = []
+    for i in 0 ..< dependencyCount {
+      let d = try archive.read(Name.self, in: &context)
+      dependencies.append(d)
+      newContext.modules[Program.ModuleIdentity(i + 1)] = identities[d]
+    }
+
+    // <source count> <identity> <contents> ...
+    let sourceCount = try Int(archive.readUnsignedLEB128())
+    for _ in 0 ..< sourceCount {
+      let i = try archive.read(SourceFileIdentity.self)
+      let s = try archive.read(SourceFile.self)
+      newContext.sources[s.name] = .init(identity: i, source: s, syntax: [])
+    }
+
+    // The remainder of the module is serialized in a new context.
+    for i in 0 ..< sourceCount {
+      let syntaxCount = try archive.readUnsignedLEB128()
+      for _ in 0 ..< syntaxCount {
+        var c = newContext as Any
+        let n = try archive.read(AnySyntax.self, in: &c)
+        newContext = c as! SerializationContext
+        modify(&newContext.sources.values[i]) { (f) in
+          f.syntax.append(n)
+          f.syntaxToKind.append(.init(Swift.type(of: n.wrapped)))
+        }
+      }
+    }
+
+    self.init(name: name, identity: identities[name]!)
+    self.sources = newContext.sources
+  }
+
+  /// Serializes `self` to `archive`.
+  ///
+  /// This method is meant to be called by `Program.write(module:to:)`, which passes `context` as
+  /// an instance of `ModuleIdentityMap` associating a module name to its identity in the program.
+  public func write<A>(to archive: inout WriteableArchive<A>, in context: inout Any) throws {
+    let identities = context as? Program.ModuleIdentityMap ?? fatalError("bad context")
+    var newContext = SerializationContext()
+
+    // <module name>
+    try archive.write(name, in: &context)
+    newContext.modules[identity] = 0
+
+    // <dependency count> <dependency name> ...
+    archive.write(unsignedLEB128: dependencies.count)
+    for d in dependencies {
+      try archive.write(d, in: &context)
+      newContext.modules[identities[d]!] = newContext.modules.count
+    }
+
+    // <source count> <identity> <contents> ...
+    archive.write(unsignedLEB128: sources.count)
+    for (f, s) in sources {
+      try archive.write(s.identity, in: &context)
+      try archive.write(s.source, in: &context)
+      newContext.sources[f] = s
+    }
+
+    // The remainder of the module is deserialized in a new context.
+    var c = newContext as Any
+    for s in sources.values {
+      archive.write(unsignedLEB128: s.syntax.count)
+      for n in s.syntax { try archive.write(n, in: &c) }
+    }
+  }
+
+}
