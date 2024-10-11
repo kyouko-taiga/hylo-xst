@@ -370,7 +370,7 @@ public struct Parser {
     case nil:
       return nil
     case .some(let b) where module.kind(of: b) == RemoteTypeExpression.self:
-      return RemoteTypeExpression.ID(fromErased: b.erased)
+      return RemoteTypeExpression.ID(uncheckedFrom: b.erased)
     case .some(let b):
       let s = module[b].site
       let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))

@@ -1,8 +1,35 @@
-/// The raw value of a type tree identity.
+/// A type denoting the identity of type tree.
+public protocol TypeIdentity: Hashable {
+
+  /// The type-erased value of this identity.
+  var erased: AnyTypeIdentity { get }
+
+}
+
+extension TypeIdentity {
+
+  /// Properties of the identified type.
+  public var properties: ValueProperties {
+    erased.properties
+  }
+
+  /// Returns `true` iff `l` denotes the same tree as `r`.
+  public static func == <T: TypeIdentity>(l: Self, r: T) -> Bool {
+    l.erased == r.erased
+  }
+
+  /// Returns `true` iff `l` denotes the same node as `r`.
+  public static func == <T: TypeIdentity>(l: T, r: Self) -> Bool {
+    l.erased == r.erased
+  }
+
+}
+
+/// The type-erased identity of a type tree.
 ///
-/// A raw identity is composed of a 8-bit option set representing some properties of the identified
+/// An identity is composed of a 8-bit option set representing some properties of the identified
 /// type, together with a 56-bit payload representing a position in a type store.
-public struct RawTypeIdentity: Hashable {
+public struct AnyTypeIdentity: Hashable {
 
   /// The bit representation of `self`.
   public let bits: UInt64
@@ -19,6 +46,11 @@ public struct RawTypeIdentity: Hashable {
     self.bits = UInt64(bitPattern: Int64(n << 8)) | UInt64(ps.rawValue)
   }
 
+  /// Creates an identifying the same node as `other`.
+  public init<T: TypeIdentity>(_ other: T) {
+    self.bits = other.erased.bits
+  }
+
   /// The offset of the identified type in its store.
   public var offset: Int {
     .init(bits >> 8)
@@ -29,9 +61,33 @@ public struct RawTypeIdentity: Hashable {
     .init(rawValue: .init(bits & 0xff))
   }
 
+  /// Returns whether the specified flags are raised for `self`.
+  public subscript(f: ValueProperties) -> Bool {
+    properties.contains(f)
+  }
+
+  /// The identity of the error type.
+  public static let error = AnyTypeIdentity(offset: 1 << 55, properties: .hasError)
+
+  /// The identity of `Hylo.Void`, which is an empty tuple.
+  public static let void = AnyTypeIdentity(offset: (1 << 55) | 0x01, properties: [])
+
+  /// The identity of `Hylo.Never`, which is an empty union.
+  public static let never = AnyTypeIdentity(offset: (1 << 55) | 0x02, properties: [])
+
 }
 
-extension RawTypeIdentity: ExpressibleByIntegerLiteral {
+/// A type denoting the identity of type tree.
+extension AnyTypeIdentity: TypeIdentity {
+
+  /// The type-erased value of this identity.
+  public var erased: AnyTypeIdentity {
+    self
+  }
+
+}
+
+extension AnyTypeIdentity: ExpressibleByIntegerLiteral {
 
   public init(integerLiteral value: UInt64) {
     self.init(bits: value)
@@ -39,88 +95,26 @@ extension RawTypeIdentity: ExpressibleByIntegerLiteral {
 
 }
 
-extension RawTypeIdentity: CustomStringConvertible {
+extension AnyTypeIdentity: CustomStringConvertible {
 
   public var description: String { bits.description }
-
-}
-
-/// A type denoting the identity of type tree.
-public protocol TypeIdentity: Hashable {
-
-  /// The raw value of this identity.
-  var rawValue: RawTypeIdentity { get }
-
-}
-
-extension TypeIdentity {
-
-  /// Properties of the identified type.
-  public var properties: ValueProperties {
-    rawValue.properties
-  }
-
-  /// Returns `true` iff `l` denotes the same tree as `r`.
-  public static func == <T: TypeIdentity>(l: Self, r: T) -> Bool {
-    l.rawValue == r.rawValue
-  }
-
-  /// Returns `true` iff `l` denotes the same node as `r`.
-  public static func == <T: TypeIdentity>(l: T, r: Self) -> Bool {
-    l.rawValue == r.rawValue
-  }
 
 }
 
 /// The identity of a type tree.
 public struct ConcreteTypeIdentity<T: TypeTree>: TypeIdentity {
 
-  /// The raw value of this identity.
-  public let rawValue: RawTypeIdentity
+  /// The type-erased value of this identity.
+  public let erased: AnyTypeIdentity
 
   /// Creates an instance with the given raw value.
-  public init(rawValue: RawTypeIdentity) {
-    self.rawValue = rawValue
+  internal init(uncheckedFrom erased: AnyTypeIdentity) {
+    self.erased = erased
   }
 
   /// Returns a type-erased copy of `t`.
   public postfix static func ^ (t: Self) -> AnyTypeIdentity {
     .init(t)
   }
-
-}
-
-/// The type-erased identity of a type tree.
-public struct AnyTypeIdentity: TypeIdentity {
-
-  /// The raw value of this identity.
-  public let rawValue: RawTypeIdentity
-
-  /// Creates an instance with the given raw value.
-  public init(rawValue: RawTypeIdentity) {
-    self.rawValue = rawValue
-  }
-
-  /// Creates an instance equal to `other`.
-  public init<T: TypeIdentity>(_ other: T) {
-    self.rawValue = other.rawValue
-  }
-
-  /// Returns whether the specified flags are raised for `self`.
-  public subscript(f: ValueProperties) -> Bool {
-    properties.contains(f)
-  }
-
-  /// The identity of the error type.
-  public static let error = AnyTypeIdentity(
-    rawValue: .init(offset: 1 << 55, properties: .hasError))
-
-  /// The identity of `Hylo.Void`, which is an empty tuple.
-  public static let void = AnyTypeIdentity(
-    rawValue: .init(offset: (1 << 55) | 0x01, properties: []))
-
-  /// The identity of `Hylo.Never`, which is an empty union.
-  public static let never = AnyTypeIdentity(
-    rawValue: .init(offset: (1 << 55) | 0x02, properties: []))
 
 }

@@ -100,7 +100,7 @@ public struct Module {
       let d = f.syntax.count
       f.syntax.append(.init(child))
       f.syntaxToKind.append(.init(T.self))
-      return T.ID(fromErased: .init(file: file, offset: d))
+      return T.ID(uncheckedFrom: .init(file: file, offset: d))
     }
   }
 

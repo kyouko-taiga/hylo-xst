@@ -160,7 +160,7 @@ public struct Program {
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
   public func cast<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type) -> U.ID? {
     if kind(of: n) == .init(U.self) {
-      return .init(fromErased: n.erased)
+      return .init(uncheckedFrom: n.erased)
     } else {
       return nil
     }
@@ -169,13 +169,13 @@ public struct Program {
   /// Returns `n` assuming it identifies a node of type `U`.
   public func castUnchecked<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type = U.self) -> U.ID {
     assert(kind(of: n) == .init(U.self))
-    return .init(fromErased: n.erased)
+    return .init(uncheckedFrom: n.erased)
   }
 
   /// Returns `n` if it identifies a declaration; otherwise, returns `nil`.
   public func castToDeclaration<T: SyntaxIdentity>(_ n: T) -> DeclarationIdentity? {
     if isDeclaration(n) {
-      return .init(fromErased: n.erased)
+      return .init(uncheckedFrom: n.erased)
     } else {
       return nil
     }
@@ -184,7 +184,7 @@ public struct Program {
   /// Returns `n` if it identifies a scope; otherwise, returns `nil`.
   public func castToScope<T: SyntaxIdentity>(_ n: T) -> ScopeIdentity? {
     if isScope(n) {
-      return .init(fromErased: n.erased)
+      return .init(uncheckedFrom: n.erased)
     } else {
       return nil
     }
@@ -200,7 +200,7 @@ public struct Program {
 
     let p = s.syntaxToParent[n.offset]
     if p >= 0 {
-      return .init(fromErased: .init(file: n.file, offset: p))
+      return .init(uncheckedFrom: .init(file: n.file, offset: p))
     } else {
       return nil
     }

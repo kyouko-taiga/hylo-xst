@@ -19,22 +19,22 @@ public struct TypeStore {
   public mutating func demand<T: TypeTree>(_ t: T) -> T.ID {
     switch t {
     case is ErrorType:
-      return .init(rawValue: AnyTypeIdentity.error.rawValue)
+      return .init(uncheckedFrom: AnyTypeIdentity.error)
     case let u as Tuple where u.elements.isEmpty:
-      return .init(rawValue: AnyTypeIdentity.void.rawValue)
+      return .init(uncheckedFrom: AnyTypeIdentity.void)
     case let u as Union where u.elements.isEmpty:
-      return .init(rawValue: AnyTypeIdentity.never.rawValue)
+      return .init(uncheckedFrom: AnyTypeIdentity.never)
     default:
       let i = types.insert(.init(t)).position
       assert(i < (1 << 55), "too many types")  // 8 bits are reserved for the properties.
-      return .init(rawValue: .init(offset: i, properties: t.properties))
+      return .init(uncheckedFrom: .init(offset: i, properties: t.properties))
     }
   }
 
   /// Returns `t` if it identifies a tree of type `U`; otherwise, returns `nil`.
   public func cast<T: TypeIdentity, U: TypeTree>(_ n: T, to: U.Type) -> U.ID? {
     if type(of: self[n]) == U.self {
-      return .init(rawValue: n.rawValue)
+      return .init(uncheckedFrom: n.erased)
     } else {
       return nil
     }
@@ -43,28 +43,28 @@ public struct TypeStore {
   /// Returns `t` assuming it identifies a tree of type `U`.
   public func castUnchecked<T: TypeIdentity, U: TypeTree>(_ n: T, to: U.Type = U.self) -> U.ID {
     assert(type(of: self[n]) == U.self)
-    return .init(rawValue: n.rawValue)
-  }
-
-  /// Projects the type identified by `n`.
-  public subscript<T: TypeTree>(n: T.ID) -> T {
-    self[n.rawValue] as! T
+    return .init(uncheckedFrom: n.erased)
   }
 
   /// Projects the type identified by `n`.
   public subscript<T: TypeIdentity>(n: T) -> any TypeTree {
-    _read { yield self[n.rawValue] }
+    _read { yield self[n.erased] }
   }
 
   /// Projects the type identified by `n`.
-  internal subscript(n: RawTypeIdentity) -> any TypeTree {
+  public subscript<T: TypeTree>(n: T.ID) -> T {
+    self[n.erased] as! T
+  }
+
+  /// Projects the type identified by `n`.
+  internal subscript(n: AnyTypeIdentity) -> any TypeTree {
     _read {
       switch n.offset {
-      case AnyTypeIdentity.error.rawValue.offset:
+      case AnyTypeIdentity.error.offset:
         yield ErrorType()
-      case AnyTypeIdentity.void.rawValue.offset:
+      case AnyTypeIdentity.void.offset:
         yield Tuple(elements: [])
-      case AnyTypeIdentity.never.rawValue.offset:
+      case AnyTypeIdentity.never.offset:
         yield Union(elements: [])
       case let n:
         yield types[n].wrapped

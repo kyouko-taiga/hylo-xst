@@ -8,7 +8,7 @@ public protocol SyntaxIdentity: Hashable, Archivable {
   var erased: AnySyntaxIdentity { get }
 
   /// Creates an identifying the same node as `erased`.
-  init(fromErased erased: AnySyntaxIdentity)
+  init(uncheckedFrom erased: AnySyntaxIdentity)
 
 }
 
@@ -40,7 +40,7 @@ extension SyntaxIdentity {
   }
 
   public init<A>(from archive: inout ReadableArchive<A>, in context: inout Any) throws {
-    self.init(fromErased: try archive.read(AnySyntaxIdentity.self, in: &context))
+    self.init(uncheckedFrom: try archive.read(AnySyntaxIdentity.self, in: &context))
   }
 
   public func write<A>(to archive: inout WriteableArchive<A>, in context: inout Any) throws {
@@ -96,7 +96,7 @@ public struct AnySyntaxIdentity {
 extension AnySyntaxIdentity: SyntaxIdentity {
 
   /// Creates an instance with the given type-erased value.
-  public init(fromErased erased: AnySyntaxIdentity) {
+  public init(uncheckedFrom erased: AnySyntaxIdentity) {
     self = erased
   }
 
@@ -145,7 +145,7 @@ public struct ConcreteSyntaxIdentity<T: Syntax>: SyntaxIdentity {
   public let erased: AnySyntaxIdentity
 
   /// Creates an identifying the same node as `erased`.
-  public init(fromErased erased: AnySyntaxIdentity) {
+  public init(uncheckedFrom erased: AnySyntaxIdentity) {
     self.erased = erased
   }
 
@@ -158,7 +158,7 @@ public struct DeclarationIdentity: SyntaxIdentity {
   public let erased: AnySyntaxIdentity
 
   /// Creates an identifying the same node as `erased`.
-  public init(fromErased erased: AnySyntaxIdentity) {
+  public init(uncheckedFrom erased: AnySyntaxIdentity) {
     self.erased = erased
   }
 
@@ -176,7 +176,7 @@ public struct ExpressionIdentity: SyntaxIdentity {
   public let erased: AnySyntaxIdentity
 
   /// Creates an identifying the same node as `erased`.
-  public init(fromErased erased: AnySyntaxIdentity) {
+  public init(uncheckedFrom erased: AnySyntaxIdentity) {
     self.erased = erased
   }
 
@@ -194,7 +194,7 @@ public struct ScopeIdentity: SyntaxIdentity {
   public let erased: AnySyntaxIdentity
 
   /// Creates an identifying the same node as `erased`.
-  public init(fromErased erased: AnySyntaxIdentity) {
+  public init(uncheckedFrom erased: AnySyntaxIdentity) {
     self.erased = erased
   }
 
