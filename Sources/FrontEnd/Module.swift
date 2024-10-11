@@ -8,14 +8,11 @@ public struct Module {
   /// The name of a module.
   public typealias Name = String
 
-  /// The identity of a file added to a module.
-  public typealias SourceFileIdentity = Int
-
   /// A source file added to a module.
   internal struct SourceContainer {
 
     /// The position of `self` in the containing module.
-    internal let identity: Module.SourceFileIdentity
+    internal let identity: Program.SourceFileIdentity
 
     /// The source file contained in `self`.
     internal let source: SourceFile
@@ -24,7 +21,7 @@ public struct Module {
     internal var syntax: [AnySyntax] = []
 
     /// The top-level declarations in `self`.
-    internal var topLevelDeclarations: DeclarationSet = []
+    internal var topLevelDeclarations: [DeclarationIdentity] = []
 
     /// A table from syntax tree to its kind.
     internal var syntaxToKind: [SyntaxKind] = []
@@ -37,7 +34,7 @@ public struct Module {
     internal var syntaxToParent: [Int] = []
 
     /// A table from scope to the declarations that it contains directly.
-    internal var scopeToDeclarations: OrderedDictionary<Int, DeclarationSet> = [:]
+    internal var scopeToDeclarations: OrderedDictionary<Int, [DeclarationIdentity]> = [:]
 
     /// A table from syntax tree to its type.
     internal var syntaxToType: OrderedDictionary<Int, AnyTypeIdentity> = [:]
@@ -83,11 +80,11 @@ public struct Module {
   /// Adds a source file to this module.
   public mutating func addSource(
     _ s: SourceFile
-  ) -> (inserted: Bool, identity: SourceFileIdentity) {
+  ) -> (inserted: Bool, identity: Program.SourceFileIdentity) {
     if let f = sources.index(forKey: s.name) {
-      return (inserted: false, identity: f)
+      return (inserted: false, identity: .init(module: identity, offset: f))
     } else {
-      let f = sources.count
+      let f = Program.SourceFileIdentity(module: identity, offset: sources.count)
       sources[s.name] = .init(identity: f, source: s)
       let parser = Parser(s, insertingNodesIn: f)
       let declarations = parser.parseTopLevelDeclarations(in: &self)
@@ -97,12 +94,13 @@ public struct Module {
   }
 
   /// Inserts `child` into `self` in the bucket of `file`.
-  public mutating func insert<T: Syntax>(_ child: T, in file: SourceFileIdentity) -> T.ID {
-    return modify(&sources.values[file]) { (f) in
+  public mutating func insert<T: Syntax>(_ child: T, in file: Program.SourceFileIdentity) -> T.ID {
+    assert(file.module == identity)
+    return modify(&sources.values[file.offset]) { (f) in
       let d = f.syntax.count
       f.syntax.append(.init(child))
       f.syntaxToKind.append(.init(T.self))
-      return T.ID(rawValue: .init(module: identity, file: file, node: d))
+      return T.ID(rawValue: .init(file: file, offset: d))
     }
   }
 
@@ -110,32 +108,54 @@ public struct Module {
   public var syntax: some Collection<AnySyntaxIdentity> {
     let all = sources.values.enumerated().map { (f, s) in
       s.syntax.indices.lazy.map { (n) in
-        AnySyntaxIdentity(rawValue: .init(module: identity, file: f, node: n))
+        AnySyntaxIdentity(rawValue: .init(file: .init(module: identity, offset: f), offset: n))
       }
     }
     return all.joined()
   }
 
+  /// The top-level declarations in `self`.
+  public var topLevelDeclarations: some Collection<DeclarationIdentity> {
+    sources.values.map(\.topLevelDeclarations).joined()
+  }
+
   /// Projects the source file identified by `f`.
-  internal subscript(f: SourceFileIdentity) -> SourceContainer {
-    _read { yield sources.values[f] }
-    _modify { yield &sources.values[f] }
+  internal subscript(f: Program.SourceFileIdentity) -> SourceContainer {
+    _read {
+      assert(f.module == identity)
+      yield sources.values[f.offset]
+    }
+    _modify {
+      assert(f.module == identity)
+      yield &sources.values[f.offset]
+    }
   }
 
   /// Projects the node identified by `n`.
   internal subscript(n: RawSyntaxIdentity) -> any Syntax {
-    _read { yield sources.values[n.file].syntax[n.node].wrapped }
+    _read {
+      assert(n.module == identity)
+      yield sources.values[n.file.offset].syntax[n.offset].wrapped
+    }
+  }
+
+  /// Returns the kind of `n`.
+  internal func kind<T: SyntaxIdentity>(of n: T) -> SyntaxKind {
+    assert(n.module == identity)
+    return self[n.rawValue.file].syntaxToKind[n.rawValue.offset]
   }
 
   /// Assigns a type to `n`.
   internal mutating func setType<T: SyntaxIdentity>(_ t: AnyTypeIdentity, for n: T) {
-    let u = sources.values[n.rawValue.file].syntaxToType[n.rawValue.node].wrapIfEmpty(t)
+    assert(n.module == identity)
+    let u = sources.values[n.file.offset].syntaxToType[n.offset].wrapIfEmpty(t)
     assert(t == u, "inconsistent type assignment")
   }
 
   /// Returns the type assigned to `n`, if any.
   internal func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
-    sources.values[n.rawValue.file].syntaxToType[n.rawValue.node]
+    assert(n.module == identity)
+    return sources.values[n.file.offset].syntaxToType[n.offset]
   }
 
 }
@@ -177,7 +197,7 @@ extension Module: Archivable {
     // <source count> <identity> <contents> ...
     let sourceCount = try Int(archive.readUnsignedLEB128())
     for _ in 0 ..< sourceCount {
-      let i = try archive.read(SourceFileIdentity.self)
+      let i = try archive.read(rawValueOf: Program.SourceFileIdentity.self)!
       let s = try archive.read(SourceFile.self)
       newContext.sources[s.name] = .init(identity: i, source: s, syntax: [])
     }
@@ -222,7 +242,7 @@ extension Module: Archivable {
     // <source count> <identity> <contents> ...
     archive.write(unsignedLEB128: sources.count)
     for (f, s) in sources {
-      try archive.write(s.identity, in: &context)
+      try archive.write(rawValueOf: s.identity, in: &context)
       try archive.write(s.source, in: &context)
       newContext.sources[f] = s
     }

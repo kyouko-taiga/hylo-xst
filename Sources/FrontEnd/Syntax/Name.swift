@@ -68,8 +68,8 @@ extension ArgumentLabels: CustomStringConvertible {
 /// An unqualified name denoting an entity.
 public struct Name: Hashable {
 
-  /// The stem identifier of the referred entity.
-  public let stem: String
+  /// The identifier of the referred entity.
+  public let identifier: String
 
   /// The argument labels of the referred entity, given that it is a function.
   public let labels: ArgumentLabels
@@ -84,12 +84,12 @@ public struct Name: Hashable {
 
   /// Creates an instance with the given properties.
   public init(
-    stem: String,
+    identifier: String,
     labels: ArgumentLabels = [],
     notation: OperatorNotation = .none,
     introducer: AccessEffect? = nil
   ) {
-    self.stem = stem
+    self.identifier = identifier
     self.labels = labels
     self.notation = notation
     self.introducer = introducer
@@ -98,13 +98,13 @@ public struct Name: Hashable {
   /// Returns `self` appending `x` or `nil` if `self` already has an introducer.
   public func appending(_ x: AccessEffect) -> Name? {
     introducer == nil
-      ? Name(stem: stem, labels: labels, notation: notation, introducer: x)
+      ? Name(identifier: identifier, labels: labels, notation: notation, introducer: x)
       : nil
   }
 
   /// Returns `self` sans access effect.
   public func removingIntroducer() -> Name {
-    Name(stem: stem, labels: labels, notation: notation)
+    Name(identifier: identifier, labels: labels, notation: notation)
   }
 
 }
@@ -113,13 +113,13 @@ extension Name: CustomStringConvertible {
 
   public var description: String {
     if notation != .none {
-      return "\(notation)\(stem)"
+      return "\(notation)\(identifier)"
     } else if labels.isEmpty {
       let introducer = introducer.map({ ".\($0)" }) ?? ""
-      return stem + introducer
+      return identifier + introducer
     } else {
       let introducer = introducer.map({ ".\($0)" }) ?? ""
-      return "\(stem)(\(labels))" + introducer
+      return "\(identifier)(\(labels))" + introducer
     }
   }
 
@@ -140,14 +140,14 @@ extension OperatorNotation: Archivable {
 extension Name: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.stem = try archive.read(String.self)
+    self.identifier = try archive.read(String.self)
     self.labels = try ArgumentLabels(archive.read([String].self))
     self.notation = try archive.read(OperatorNotation.self)
     self.introducer = try archive.read(AccessEffect?.self)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(stem)
+    try archive.write(identifier)
     try archive.write(labels.values)
     try archive.write(notation)
     try archive.write(introducer)

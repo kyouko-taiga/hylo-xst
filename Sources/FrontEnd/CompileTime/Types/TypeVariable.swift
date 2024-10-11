@@ -1,18 +1,17 @@
-/// The type of a type.
-public struct Metatype: TypeTree {
+/// A unification variable in a type tree.
+public struct TypeVariable: TypeTree {
 
-  /// The type of which `self` is the type.
-  public let inhabitant: AnyTypeIdentity
+  /// The identifier of the variable.
+  public let identifier: Int
 
   /// Properties about `self`.
   public var properties: ValueProperties {
-    inhabitant.properties
+    .hasVariable
   }
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    let i = program.show(inhabitant)
-    return "Metatype<\(i)>"
+    "%\(identifier)"
   }
 
 }

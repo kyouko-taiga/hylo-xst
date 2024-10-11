@@ -8,6 +8,41 @@ public struct Program {
   /// The identity of a module in loaded in a program.
   public typealias ModuleIdentity = Int
 
+  /// The identity of a file added to a module.
+  public struct SourceFileIdentity: Hashable, RawRepresentable {
+
+    /// The raw value of this identity.
+    public let rawValue: UInt32
+
+    /// Creates an instance from its raw value.
+    public init(rawValue: UInt32) {
+      self.rawValue = rawValue
+    }
+
+    /// Creates an instance identifying the file at offset `f` in module `m`.
+    public init(module m: Program.ModuleIdentity, offset f: Int) {
+      precondition(m < (1 << 16))
+      precondition(f < (1 << 16))
+      self.rawValue = UInt32(m & 0xffff) + (UInt32(f & 0xffff) << 16)
+    }
+
+    /// Creates an instance identifying the file containing `n`.
+    public init<T: SyntaxIdentity>(containing n: T) {
+      self.rawValue = UInt32(truncatingIfNeeded: n.rawValue.bits)
+    }
+
+    /// The module offset of the node represented by `self` in its containing collection.
+    public var module: Program.ModuleIdentity {
+      .init(rawValue & 0xffff)
+    }
+
+    /// The file offset of the node represented by `self` in its containing collection.
+    public var offset: Int {
+      .init((rawValue & 0xffff0000) >> 16)
+    }
+
+  }
+
   /// The modules loaded in this program.
   public private(set) var modules = OrderedDictionary<Module.Name, Module>()
 
@@ -66,6 +101,12 @@ public struct Program {
     _modify { yield &modules.values[m] }
   }
 
+  /// Projects the source file identified by `f`.
+  internal subscript(f: Program.SourceFileIdentity) -> Module.SourceContainer {
+    _read { yield modules.values[f.module][f] }
+    _modify { yield &modules.values[f.module][f] }
+  }
+
   /// Projects the node identified by `n`.
   public subscript<T: Syntax>(n: T.ID) -> T {
     self[n.rawValue] as! T
@@ -93,12 +134,27 @@ public struct Program {
 
   /// Returns the kind of `n`.
   public func kind<T: SyntaxIdentity>(of n: T) -> SyntaxKind {
-    self[n.rawValue.module][n.rawValue.file].syntaxToKind[n.rawValue.node]
+    self[n.rawValue.file].syntaxToKind[n.rawValue.offset]
   }
 
   /// Returns `true` iff `n` denotes a declaration.
   public func isDeclaration<T: SyntaxIdentity>(_ n: T) -> Bool {
     kind(of: n).value is any Declaration.Type
+  }
+
+  /// Returns `true` iff `n` denotes a type declaration.
+  public func isTypeDeclaration<T: SyntaxIdentity>(_ n: T) -> Bool {
+    kind(of: n).value is any TypeDeclaration.Type
+  }
+
+  /// Returns `true` iff `n` introduces a name that can be overloaded.
+  public func isOverloadable<T: SyntaxIdentity>(_ n: T) -> Bool {
+    switch kind(of: n) {
+    case FunctionDeclaration.self:
+      return true
+    default:
+      return false
+    }
   }
 
   /// Returns `true` iff `n` denotes a scope.
@@ -113,6 +169,12 @@ public struct Program {
     } else {
       return nil
     }
+  }
+
+  /// Returns `n` assuming it identifies a node of type `U`.
+  public func castUnchecked<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type = U.self) -> U.ID {
+    assert(kind(of: n) == .init(U.self))
+    return .init(rawValue: n.rawValue)
   }
 
   /// Returns `n` if it identifies a declaration; otherwise, returns `nil`.
@@ -133,32 +195,103 @@ public struct Program {
     }
   }
 
-  /// Returns the innermost scope containing `n` or `nil` if `n` is a top-level declaration.
+  /// If `n` is not a top-level declaration, returns the innermost scope that contains `n`.
+  /// Otherwise, returns `nil`.
   ///
-  /// - Requires: The module containing `n` has gone through scoping.
+  /// - Requires: The module containing `n` is scoped.
   public func parent<T: SyntaxIdentity>(containing n: T) -> ScopeIdentity? {
-    let s = self[n.rawValue.module][n.rawValue.file]
-    precondition(s.syntaxToParent.count > n.rawValue.node, "unscoped module")
+    let s = self[n.rawValue.file]
+    precondition(s.syntaxToParent.count > n.rawValue.offset, "unscoped module")
 
-    let p = s.syntaxToParent[n.rawValue.node]
+    let p = s.syntaxToParent[n.rawValue.offset]
     if p >= 0 {
-      return .init(rawValue: .init(module: n.rawValue.module, file: n.rawValue.file, node: p))
+      return .init(rawValue: .init(file: n.rawValue.file, offset: p))
     } else {
       return nil
     }
   }
 
-  /// Returns the innermost scope containing `n` if it's a node of type `U`, or `nil` otherwise.
+  /// If `n` is not a top-level declaration, returns the innermost scope that contains `n` iff it
+  /// is an instance of `U`. Otherwise, returns `nil`.
+  ///
+  /// - Requires: The module containing `n` is scoped.
   public func parent<T: SyntaxIdentity, U: Syntax>(containing n: T, as: U.Type) -> U.ID? {
     parent(containing: n).flatMap({ (m) in cast(m, to: U.self) })
   }
 
+  /// Returns a sequence containing `s` and its ancestors, from inner to outer.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func scopes(from s: ScopeIdentity) -> any Sequence<ScopeIdentity> {
+    var next: Optional = s
+    return AnyIterator {
+      if let n = next {
+        next = parent(containing: n)
+        return n
+      } else {
+        return nil
+      }
+    }
+  }
+
   /// Returns the declarations directly contained in `n`.
   ///
-  /// - Requires: The module containing `n` has gone through scoping.
-  public func declarations(in n: ScopeIdentity) -> DeclarationSet {
-    let s = self[n.rawValue.module][n.rawValue.file]
-    return s.scopeToDeclarations[n.rawValue.node] ?? preconditionFailure("unscoped module")
+  /// - Requires: The module containing `n` is scoped.
+  public func declarations(in n: ScopeIdentity) -> [DeclarationIdentity] {
+    let s = self[n.rawValue.file]
+    return s.scopeToDeclarations[n.rawValue.offset] ?? preconditionFailure("unscoped module")
+  }
+
+  /// Returns the names introduced by `d`.
+  public func names(introducedBy d: DeclarationIdentity) -> [Name] {
+    switch kind(of: d) {
+    case AssociatedTypeDeclaration.self:
+      return [name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))]
+    case ClassDeclaration.self:
+      return [name(of: castUnchecked(d, to: ClassDeclaration.self))]
+    case TraitDeclaration.self:
+      return [name(of: castUnchecked(d, to: TraitDeclaration.self))]
+    case FunctionDeclaration.self:
+      return [name(of: castUnchecked(d, to: FunctionDeclaration.self))]
+    default:
+      return []
+    }
+  }
+
+  /// Returns the name of `d`.
+  public func name<T: TypeDeclaration>(of d: T.ID) -> Name {
+    Name(identifier: self[d].identifier.value)
+  }
+
+  /// Returns the name of `d`.
+  public func name(of d: FunctionDeclaration.ID) -> Name {
+    switch self[d].identifier.value {
+    case .simple(let x):
+      return Name(identifier: x, labels: .init(self[d].parameters.map(read(\.label?.value))))
+    case .operator(let n, let x):
+      return Name(identifier: x, notation: n)
+    }
+  }
+
+  /// Returns `(suffix: s, prefix: p)` where `s` contains the nominal components of `n` from right
+  /// to left and `p` is the non-nominal prefix of `n`, if any.
+  public func components(
+    of n: NameExpression.ID
+  ) -> (suffix: [NameExpression.ID], prefix: NameExpression.Qualification) {
+    var suffix = [n]
+    while true {
+      let prefix = self[suffix.last!].qualification
+      if case .explicit(let e) = prefix, let m = cast(e, to: NameExpression.self) {
+        suffix.append(m)
+      } else {
+        return (suffix, prefix)
+      }
+    }
+  }
+
+  /// Returns a lambda accessing `path` on an instance of `T`.
+  public func read<T: Syntax, U>(_ path: KeyPath<T, U>) -> (_ n: T.ID) -> U {
+    { (n) in self[n][keyPath: path] }
   }
 
   /// Reports that `n` was not expected in the current executation path and exits the program.

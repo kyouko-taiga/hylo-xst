@@ -14,16 +14,16 @@ public struct ValueProperties: Hashable, OptionSet {
     l.union(r)
   }
 
-  /// The type contains one or more errors.
+  /// The value contains one or more errors.
   public static let hasError = ValueProperties(rawValue: 1 << 0)
 
-  /// The type contains open variables.
+  /// The value contains open variables.
   public static let hasVariable = ValueProperties(rawValue: 1 << 1)
 
-  /// The type contains skolems (aka rigid variables).
+  /// The value contains skolems (aka rigid variables).
   public static let hasSkolem = ValueProperties(rawValue: 1 << 2)
 
-  /// The type is not canonical.
+  /// The value is not canonical.
   public static let notCanonical = ValueProperties(rawValue: 1 << 3)
 
 }

@@ -8,21 +8,23 @@ public struct Scoper {
 
   /// Computes the scoping relationships in `m`, which is in `p`.
   public func visit(_ m: Program.ModuleIdentity, in p: inout Program) async {
-    let ts = p[m].sources.values.indices.map { (f) in
+    let ts = p[m].sources.values.indices.map { (i) in
       Task.detached { [p] in
-        var v = Visitor(syntaxCount: p[m][f].syntax.count)
-        for o in p[m][f].syntax.indices {
-          let n = AnySyntaxIdentity(rawValue: .init(module: m, file: f, node: o))
+        let f = Program.SourceFileIdentity(module: m, offset: i)
+        var v = Visitor(syntaxCount: p[f].syntax.count)
+        for o in p[f].syntax.indices {
+          let n = AnySyntaxIdentity(rawValue: .init(file: f, offset: o))
           p.visit(n, calling: &v)
         }
         return v
       }
     }
 
-    for (f, t) in ts.enumerated() {
+    for (i, t) in ts.enumerated() {
+      let f = Program.SourceFileIdentity(module: m, offset: i)
       var v = await t.value
-      swap(&p[m][f].syntaxToParent, &v.syntaxToParent)
-      swap(&p[m][f].scopeToDeclarations, &v.scopeToDeclarations)
+      swap(&p[f].syntaxToParent, &v.syntaxToParent)
+      swap(&p[f].scopeToDeclarations, &v.scopeToDeclarations)
     }
   }
 
@@ -33,7 +35,7 @@ public struct Scoper {
     var syntaxToParent: [Int]
 
     /// A table from scope to the declarations that it contains directly.
-    var scopeToDeclarations: OrderedDictionary<Int, DeclarationSet>
+    var scopeToDeclarations: OrderedDictionary<Int, [DeclarationIdentity]>
 
     /// The innermost lexical scope currently visited.
     var innermost: Int
@@ -46,12 +48,12 @@ public struct Scoper {
     }
 
     mutating func willEnter(_ n: AnySyntaxIdentity, in program: Program) -> Bool {
-      syntaxToParent[n.rawValue.node] = innermost
+      syntaxToParent[n.offset] = innermost
       if let m = program.castToDeclaration(n), innermost >= 0 {
         scopeToDeclarations[innermost]!.append(m)
       }
       if program.isScope(n) {
-        innermost = n.rawValue.node
+        innermost = n.offset
         scopeToDeclarations[innermost] = []
       }
       return true
@@ -59,7 +61,7 @@ public struct Scoper {
 
     mutating func willExit(_ n: AnySyntaxIdentity, in program: Program) {
       if program.isScope(n) {
-        innermost = syntaxToParent[n.rawValue.node]
+        innermost = syntaxToParent[n.offset]
       }
     }
 

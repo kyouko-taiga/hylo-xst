@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// The declaration of a trait.
-public struct TraitDeclaration: Declaration & Scope {
+public struct TraitDeclaration: TypeDeclaration, Scope {
 
   /// The introducer of this declaration.
   public let introducer: Token
@@ -14,7 +14,7 @@ public struct TraitDeclaration: Declaration & Scope {
   public let members: [DeclarationIdentity]
 
   /// The site from which `self` was parsed.
-  public var site: SourceSpan
+  public let site: SourceSpan
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {

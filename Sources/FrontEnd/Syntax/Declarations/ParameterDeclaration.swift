@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// The declaration of a function or subscript parameter.
-public struct ParameterDeclaration: Declaration & Scope {
+public struct ParameterDeclaration: Declaration {
 
   /// The label of the parameter.
   public let label: Parsed<String>?
@@ -11,19 +11,22 @@ public struct ParameterDeclaration: Declaration & Scope {
   public let identifier: Parsed<String>
 
   /// The type ascription of the parameter.
-  public let ascription: ExpressionIdentity?
+  public let ascription: RemoteTypeExpression.ID?
 
   /// The site from which `self` was parsed.
-  public var site: SourceSpan
+  public let site: SourceSpan
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     var result = ""
 
     // Label and identifier.
-    if let l = label {
-      result.append(l.value == identifier.value ? identifier.value :  "\(l.value) \(identifier.value)")
-    } else {
+    switch label {
+    case .some(let l) where l.value == identifier.value:
+      result.append(identifier.value)
+    case .some(let l):
+      result.append("\(l.value) \(identifier.value)")
+    case nil:
       result.append("_ \(identifier.value)")
     }
 
@@ -43,7 +46,7 @@ extension ParameterDeclaration: Archivable {
     self.label = try archive.read(Parsed<String>?.self, in: &context)
     self.identifier = try archive.read(Parsed<String>.self, in: &context)
     self.site = try archive.read(SourceSpan.self, in: &context)
-    self.ascription = try archive.read(ExpressionIdentity?.self, in: &context)
+    self.ascription = try archive.read(RemoteTypeExpression.ID?.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {

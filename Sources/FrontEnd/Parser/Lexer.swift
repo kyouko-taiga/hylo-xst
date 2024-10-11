@@ -33,15 +33,21 @@ public struct Lexer: IteratorProtocol, Sequence {
     let kind: Token.Kind
     switch word {
     case "_": kind = .underscore
+    case "class": kind = .class
+    case "extension": kind = .extension
     case "false": kind = .false
     case "fun": kind = .fun
     case "import": kind = .import
     case "infix": kind = .infix
+    case "inout": kind = .inout
     case "internal": kind = .internal
+    case "let": kind = .let
     case "postfix": kind = .postfix
     case "prefix": kind = .prefix
     case "private": kind = .private
     case "public": kind = .public
+    case "set": kind = .set
+    case "sink": kind = .sink
     case "trait": kind = .trait
     case "true": kind = .true
     case "type": kind = .type

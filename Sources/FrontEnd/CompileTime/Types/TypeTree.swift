@@ -14,6 +14,11 @@ extension TypeTree {
   /// The identity of an instance of `Self`.
   public typealias ID = ConcreteTypeIdentity<Self>
 
+  /// `true` iff `self` is a type variable.
+  public var isVariable: Bool {
+    self is TypeVariable
+  }
+
   /// Returns `true` iff `self` has the same tree representation as `other`.
   public func equals(_ other: any TypeTree) -> Bool {
     self == other as? Self

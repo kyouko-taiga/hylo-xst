@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// The declaration of a function.
-public struct FunctionDeclaration: Declaration & Scope {
+public struct FunctionDeclaration: Declaration, Scope {
 
   /// The identifier of a function.
   public enum Identifier: Equatable {
@@ -28,7 +28,7 @@ public struct FunctionDeclaration: Declaration & Scope {
   public let body: CallableBody?
 
   /// The site from which `self` was parsed.
-  public var site: SourceSpan
+  public let site: SourceSpan
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {

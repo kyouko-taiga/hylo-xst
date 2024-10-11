@@ -1,7 +1,7 @@
 /// The raw value of a type tree identity.
 ///
-/// A raw identity is composed of an offset identifying a position in a type store followed by a
-/// set of flags representing some properties of the identified type.
+/// A raw identity is composed of a 8-bit option set representing some properties of the identified
+/// type, together with a 56-bit payload representing a position in a type store.
 public struct RawTypeIdentity: Hashable {
 
   /// The bit representation of `self`.
@@ -14,8 +14,9 @@ public struct RawTypeIdentity: Hashable {
 
   /// Creates an instance identifying a tree at offset `n`, having properties `ps`.
   public init(offset n: Int, properties ps: ValueProperties) {
-    let u: UInt8 = ps.rawValue // asserts that `ValueProperties.RawValue` is `UInt8`
-    self.bits = UInt64(n << 8) | UInt64(u)
+    assert(n >> 56 == 0)
+    assert(UInt64(ps.rawValue) & ~0xff == 0)
+    self.bits = UInt64(bitPattern: Int64(n << 8)) | UInt64(ps.rawValue)
   }
 
   /// The offset of the identified type in its store.
@@ -104,5 +105,22 @@ public struct AnyTypeIdentity: TypeIdentity {
   public init<T: TypeIdentity>(_ other: T) {
     self.rawValue = other.rawValue
   }
+
+  /// Returns whether the specified flags are raised for `self`.
+  public subscript(f: ValueProperties) -> Bool {
+    properties.contains(f)
+  }
+
+  /// The identity of the error type.
+  public static let error = AnyTypeIdentity(
+    rawValue: .init(offset: 1 << 55, properties: .hasError))
+
+  /// The identity of `Hylo.Void`, which is an empty tuple.
+  public static let void = AnyTypeIdentity(
+    rawValue: .init(offset: (1 << 55) | 0x01, properties: []))
+
+  /// The identity of `Hylo.Never`, which is an empty union.
+  public static let never = AnyTypeIdentity(
+    rawValue: .init(offset: (1 << 55) | 0x02, properties: []))
 
 }

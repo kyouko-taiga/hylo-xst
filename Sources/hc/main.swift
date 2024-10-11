@@ -10,7 +10,14 @@ func main() async throws {
     }
 
     trait Q {}
-    fun g(a: Int) { true }
+
+    class A {
+      class B {}
+    }
+
+    extension Int {}
+
+    fun g(a: A) { true }
     """
   let s2: SourceFile = """
     trait R { type B }

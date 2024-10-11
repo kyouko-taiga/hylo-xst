@@ -33,9 +33,10 @@ extension Program {
 
   /// Calls `visit(_:calling:)` on the abstract syntax tree of `m`.
   public func visit<T: SyntaxVisitor>(_ m: ModuleIdentity, calling v: inout T) {
-    for (f, s) in self[m].sources.values.enumerated() {
+    for (i, s) in self[m].sources.values.enumerated() {
       for o in s.syntax.indices {
-        visit(AnySyntaxIdentity(rawValue: .init(module: m, file: f, node: o)), calling: &v)
+        let f = Program.SourceFileIdentity(module: m, offset: i)
+        visit(AnySyntaxIdentity(rawValue: .init(file: f, offset: o)), calling: &v)
       }
     }
   }
@@ -45,17 +46,26 @@ extension Program {
     if !v.willEnter(n, in: self) { return }
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
-      traverse(cast(n, to: AssociatedTypeDeclaration.self)!, calling: &v)
+      traverse(castUnchecked(n, to: AssociatedTypeDeclaration.self), calling: &v)
+    case ClassDeclaration.self:
+      traverse(castUnchecked(n, to: ClassDeclaration.self), calling: &v)
+    case ExtensionDeclaration.self:
+      traverse(castUnchecked(n, to: ExtensionDeclaration.self), calling: &v)
     case FunctionDeclaration.self:
-      traverse(cast(n, to: FunctionDeclaration.self)!, calling: &v)
+      traverse(castUnchecked(n, to: FunctionDeclaration.self), calling: &v)
+    case ImportDeclaration.self:
+      break
     case ParameterDeclaration.self:
-      traverse(cast(n, to: ParameterDeclaration.self)!, calling: &v)
+      traverse(castUnchecked(n, to: ParameterDeclaration.self), calling: &v)
     case TraitDeclaration.self:
-      traverse(cast(n, to: TraitDeclaration.self)!, calling: &v)
+      traverse(castUnchecked(n, to: TraitDeclaration.self), calling: &v)
+
     case BooleanLiteral.self:
-      traverse(cast(n, to: BooleanLiteral.self)!, calling: &v)
+      traverse(castUnchecked(n, to: BooleanLiteral.self), calling: &v)
     case NameExpression.self:
-      traverse(cast(n, to: NameExpression.self)!, calling: &v)
+      traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
+    case RemoteTypeExpression.self:
+      traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
     default:
       unreachable()
     }
@@ -71,8 +81,25 @@ extension Program {
     }
   }
 
+  /// If `n` is present, visits `n` and its children in pre-order, calling back `v` when a node is
+  /// entered or left.
+  public func visit<T: SyntaxVisitor>(_ n: AnySyntaxIdentity?, calling v: inout T) {
+    if let m = n { visit(m, calling: &v) }
+  }
+
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: AssociatedTypeDeclaration.ID, calling v: inout T) {}
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: ClassDeclaration.ID, calling v: inout T) {
+    visit(self[n].members, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: ExtensionDeclaration.ID, calling v: inout T) {
+    visit(AnySyntaxIdentity(self[n].extendee), calling: &v)
+    visit(self[n].members, calling: &v)
+  }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: FunctionDeclaration.ID, calling v: inout T) {
@@ -81,7 +108,7 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ParameterDeclaration.ID, calling v: inout T) {
-    // TODO
+    visit(self[n].ascription.map(AnySyntaxIdentity.init(_:)), calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
@@ -93,6 +120,15 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: BooleanLiteral.ID, calling v: inout T) {}
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
-  public func traverse<T: SyntaxVisitor>(_ n: NameExpression.ID, calling v: inout T) {}
+  public func traverse<T: SyntaxVisitor>(_ n: NameExpression.ID, calling v: inout T) {
+    if case .explicit(let e) = self[n].qualification {
+      visit(AnySyntaxIdentity(e), calling: &v)
+    }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: RemoteTypeExpression.ID, calling v: inout T) {
+    visit(AnySyntaxIdentity(self[n].projectee), calling: &v)
+  }
 
 }

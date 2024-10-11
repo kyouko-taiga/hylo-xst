@@ -24,13 +24,17 @@ public struct SyntaxKind {
   static let allValues: [any Syntax.Type] = [
     // Declarations
     AssociatedTypeDeclaration.self,
+    ClassDeclaration.self,
+    ExtensionDeclaration.self,
     FunctionDeclaration.self,
+    ImportDeclaration.self,
     ParameterDeclaration.self,
     TraitDeclaration.self,
 
     // Expressions
     BooleanLiteral.self,
     NameExpression.self,
+    RemoteTypeExpression.self,
   ]
 
   static let indices = Dictionary(

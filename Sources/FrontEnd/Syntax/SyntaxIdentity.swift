@@ -1,5 +1,4 @@
 import Archivist
-import OrderedCollections
 import Utilities
 
 /// The raw value of a syntax identity.
@@ -18,22 +17,26 @@ public struct RawSyntaxIdentity: Hashable {
     self.bits = bits
   }
 
-  /// Creates an instance identifying the node at offset `n` in module `m` and file `f`.
-  public init(module m: Program.ModuleIdentity, file f: Module.SourceFileIdentity, node n: Int) {
-    precondition(m < (1 << 16))
-    precondition(f < (1 << 16))
+  /// Creates an instance identifying the node at offset `n` in file `f`.
+  public init(file f: Program.SourceFileIdentity, offset n: Int) {
     precondition(n < (1 << 32))
-    self.bits = UInt64(m & 0xffff) + (UInt64(f & 0xffff) << 16) + (UInt64(n) << 32)
+    self.bits = UInt64(f.rawValue) + (UInt64(n) << 32)
   }
 
   /// The module offset of the node represented by `self` in its containing collection.
-  public var module: Program.ModuleIdentity { .init(bits & 0xffff) }
+  public var module: Program.ModuleIdentity {
+    .init(bits & 0xffff)
+  }
 
   /// The file offset of the node represented by `self` in its containing collection.
-  public var file: Module.SourceFileIdentity { .init((bits & 0xffff0000) >> 16) }
+  public var file: Program.SourceFileIdentity {
+    .init(rawValue: UInt32(bits & 0xffffffff))
+  }
 
   /// The offset of the node represented by `self` in its containing collection.
-  public var node: Int { Int(bits >> 32) }
+  public var offset: Int {
+    .init(bits >> 32)
+  }
 
 }
 
@@ -69,7 +72,7 @@ extension RawSyntaxIdentity: CustomStringConvertible {
 }
 
 /// A type denoting the identity of a node in an abstract syntax tree.
-public protocol SyntaxIdentity: Hashable {
+public protocol SyntaxIdentity: Hashable, Archivable {
 
   /// The raw value of this identity.
   var rawValue: RawSyntaxIdentity { get }
@@ -80,6 +83,21 @@ public protocol SyntaxIdentity: Hashable {
 }
 
 extension SyntaxIdentity {
+
+  /// The module offset of the node represented by `self` in its containing collection.
+  public var module: Program.ModuleIdentity {
+    rawValue.module
+  }
+
+  /// The file offset of the node represented by `self` in its containing collection.
+  public var file: Program.SourceFileIdentity {
+    rawValue.file
+  }
+
+  /// The offset of the node represented by `self` in its containing collection.
+  public var offset: Int {
+    rawValue.offset
+  }
 
   /// Returns `true` iff `l` denotes the same node as `r`.
   public static func == <T: SyntaxIdentity>(l: Self, r: T) -> Bool {
@@ -151,9 +169,6 @@ public struct DeclarationIdentity: SyntaxIdentity {
 }
 
 extension DeclarationIdentity: Archivable {}
-
-/// A set of declaration identities.
-public typealias DeclarationSet = OrderedSet<DeclarationIdentity>
 
 /// The type-erased identitiy of an abstract syntax tree denoting an expression.
 public struct ExpressionIdentity: SyntaxIdentity {

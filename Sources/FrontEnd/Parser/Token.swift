@@ -12,15 +12,21 @@ public struct Token: Hashable {
     case underscore
 
     // Reserved keywords
+    case `class`
+    case `extension`
     case `false`
     case fun
     case `import`
     case infix
+    case `inout`
     case `internal`
+    case `let`
     case postfix
     case prefix
     case `private`
     case `public`
+    case set
+    case sink
     case trait
     case `true`
     case type

@@ -4,7 +4,7 @@ import Utilities
 public struct Parser {
 
   /// The identity of the file into which syntax trees are inserted.
-  private var file: Module.SourceFileIdentity
+  private var file: Program.SourceFileIdentity
 
   /// The tokens in the input.
   private var tokens: Lexer
@@ -19,7 +19,7 @@ public struct Parser {
   private var position: SourcePosition
 
   /// Creates an instance parsing `source`, inserting syntax trees in `file`.
-  public init(_ source: SourceFile, insertingNodesIn file: Module.SourceFileIdentity) {
+  public init(_ source: SourceFile, insertingNodesIn file: Program.SourceFileIdentity) {
     self.file = file
     self.tokens = Lexer(tokenizing: source)
     self.position = .init(source.startIndex, in: source)
@@ -34,7 +34,7 @@ public struct Parser {
     var ds: [DeclarationIdentity] = []
     while peek() != nil {
       do {
-        try ds.append(parseTopLevelDeclaration(in: &module))
+        try ds.append(parseDeclaration(in: &module))
       } catch let e as ParseError {
         report(e)
         recover(at: { ($0.kind == .semicolon) || $0.isDeclarationHead })
@@ -46,11 +46,24 @@ public struct Parser {
     return ds
   }
 
-  /// Parses a top-level declaration into `module`.
-  private mutating func parseTopLevelDeclaration(
+  /// Parses a declaration into `module`.
+  ///
+  ///     declaration ::=
+  ///       associated-type-declaration
+  ///       class-declaration
+  ///       extension-declaration
+  ///       trait-declaration
+  ///
+  private mutating func parseDeclaration(
     in module: inout Module
   ) throws -> DeclarationIdentity {
     switch peek()?.kind {
+    case .type:
+      return try .init(parseAssociatedTypeDeclaration(in: &module))
+    case .class:
+      return try .init(parseClassDeclaration(in: &module))
+    case .extension:
+      return try .init(parseExtensionDeclaration(in: &module))
     case .fun:
       return try .init(parseFunctionDeclaration(in: &module))
     case .trait:
@@ -60,10 +73,72 @@ public struct Parser {
     }
   }
 
+  /// Parses an associated type declaration into `module`.
+  ///
+  ///     associated-type-declaration ::=
+  ///       'type' identifier
+  ///
+  private mutating func parseAssociatedTypeDeclaration(
+    in module: inout Module
+  ) throws -> AssociatedTypeDeclaration.ID {
+    let introducer = try take(.type) ?? expected("'type'")
+    let identifier = parseSimpleIdentifier()
+
+    return module.insert(
+      AssociatedTypeDeclaration(
+        introducer: introducer,
+        identifier: identifier,
+        site: introducer.site.extended(upTo: position.index)),
+      in: file)
+  }
+
+  /// Parses a class declaration into `module`.
+  ///
+  ///     class-declaration ::=
+  ///       'class' identifier type-body
+  ///
+  private mutating func parseClassDeclaration(
+    in module: inout Module
+  ) throws -> ClassDeclaration.ID {
+    let introducer = try take(.class) ?? expected("'class'")
+    let identifier = parseSimpleIdentifier()
+    let members = try parseTypeBody(in: &module)
+
+    return module.insert(
+      ClassDeclaration(
+        introducer: introducer,
+        identifier: identifier,
+        members: members,
+        site: introducer.site.extended(upTo: position.index)),
+      in: file)
+  }
+
+  /// Parses an extension declaration into `module`.
+  ///
+  ///     extension-declaration ::=
+  ///       'extension' expression type-body
+  ///
+  private mutating func parseExtensionDeclaration(
+    in module: inout Module
+  ) throws -> ExtensionDeclaration.ID {
+    let introducer = try take(.extension) ?? expected("'extension'")
+    let extendee = try parseExpression(in: &module)
+    let members = try parseTypeBody(in: &module)
+
+    return module.insert(
+      ExtensionDeclaration(
+        introducer: introducer,
+        extendee: extendee,
+        members: members,
+        site: introducer.site.extended(upTo: position.index)),
+      in: file)
+  }
+
   /// Parses a function declaration into `module`.
   ///
   ///     function-declaration ::=
   ///       'fun' function-identifier parameters
+  ///
   private mutating func parseFunctionDeclaration(
     in module: inout Module
   ) throws -> FunctionDeclaration.ID {
@@ -106,7 +181,6 @@ public struct Parser {
     in module: inout Module
   ) throws -> ParameterDeclaration.ID {
     let start = position
-
     let label: Parsed<String>?
     let identifier: Parsed<String>
 
@@ -121,11 +195,10 @@ public struct Parser {
       label = identifier
 
     case (nil, nil):
-      identifier = fix(expected("identifier"), with: Parsed("<?>", at: .empty(at: position)))
-      label = identifier
+      throw expected("parameter declaration")
     }
 
-    let ascription = try peek()?.kind == .colon ? parseTypeAscription(in: &module) : nil
+    let ascription = try parseOptionalParameterTypeAscription(in: &module)
 
     return module.insert(
       ParameterDeclaration(
@@ -146,20 +219,14 @@ public struct Parser {
   /// Parses a trait declaration into `module`.
   ///
   ///     trait-declaration ::=
-  ///       'trait' identifier '{' ';'* trait-members? '}'
-  ///     trait-members ::=
-  ///       trait-members? ';'* trait-member-declaration ';'*
+  ///       'trait' identifier type-body
   ///
   private mutating func parseTraitDeclaration(
     in module: inout Module
   ) throws -> TraitDeclaration.ID {
     let introducer = try take(.trait) ?? expected("'trait'")
     let identifier = parseSimpleIdentifier()
-    let members = try inBraces { (m0) in
-      try m0.semicolonSeparated(deimitedBy: .rightBrace) { (m1) in
-        try m1.parseTraitMemberDeclaration(in: &module)
-      }
-    }
+    let members = try parseTypeBody(in: &module)
 
     return module.insert(
       TraitDeclaration(
@@ -170,39 +237,21 @@ public struct Parser {
       in: file)
   }
 
-  /// Parses a member of a trait declaration into `module`.
+  /// Parses a the body of a type declaration into `module`.
   ///
-  ///     trait-member-declaration ::=
-  ///       associated-type-declaration
+  ///     type-body ::=
+  ///       '{' ';'* type-members? '}'
+  ///     type-members ::=
+  ///       type-members? ';'* declaration ';'*
   ///
-  private mutating func parseTraitMemberDeclaration(
+  private mutating func parseTypeBody(
     in module: inout Module
-  ) throws -> DeclarationIdentity {
-    switch peek()?.kind {
-    case .type:
-      return try .init(parseAssociatedTypeDeclaration(in: &module))
-    default:
-      throw expected("trait member declaration")
+  ) throws -> [DeclarationIdentity] {
+    try inBraces { (m0) in
+      try m0.semicolonSeparated(deimitedBy: .rightBrace) { (m1) in
+        try m1.parseDeclaration(in: &module)
+      }
     }
-  }
-
-  /// Parses an associated type declaration into `module`.
-  ///
-  ///     associated-type-declaration ::=
-  ///       'type' identifier
-  ///
-  private mutating func parseAssociatedTypeDeclaration(
-    in module: inout Module
-  ) throws -> AssociatedTypeDeclaration.ID {
-    let introducer = try take(.type) ?? expected("'type'")
-    let identifier = parseSimpleIdentifier()
-
-    return module.insert(
-      AssociatedTypeDeclaration(
-        introducer: introducer,
-        identifier: identifier,
-        site: introducer.site.extended(upTo: position.index)),
-      in: file)
   }
 
   // MARK: Expressions
@@ -225,6 +274,7 @@ public struct Parser {
   ///       lambda-expression
   ///       conditional-expression
   ///       match-expression
+  ///       remote-type-expression
   ///       tuple-expression
   ///       tuple-type-expression
   ///       arrow-type-expression
@@ -236,6 +286,8 @@ public struct Parser {
     switch peek()?.kind {
     case .true, .false:
       return .init(module.insert(BooleanLiteral(site: take()!.site), in: file))
+    case .inout, .let, .set, .sink:
+      return try .init(parseRemoteTypeExpression(in: &module))
     case .name:
       return try .init(parseUnqualifiedNameExpression(in: &module))
     default:
@@ -243,27 +295,87 @@ public struct Parser {
     }
   }
 
+  /// Parses a remote type expression into `module`.
+  ///
+  ///     remote-type-expression ::=
+  ///       access-specifier expression
+  ///
+  private mutating func parseRemoteTypeExpression(
+    in module: inout Module
+  ) throws -> RemoteTypeExpression.ID {
+    let k = parseAccessSpecifcier()
+    let e = try parseExpression(in: &module)
+    return module.insert(
+      RemoteTypeExpression(
+        access: k,
+        projectee: e,
+        site: k.site.extended(upTo: position.index)),
+      in: file)
+  }
+
+  /// Parses an access specifier.
+  ///
+  ///     access-specifier ::= (one of)
+  ///       let inout set sink
+  ///
+  private mutating func parseAccessSpecifcier() -> Parsed<AccessEffect> {
+    switch peek()?.kind {
+    case .let:
+      return Parsed(.let, at: take()!.site)
+    case .inout:
+      return Parsed(.inout, at: take()!.site)
+    case .set:
+      return Parsed(.set, at: take()!.site)
+    case .sink:
+      return Parsed(.sink, at: take()!.site)
+    default:
+      return fix(expected("access specifier"), with: Parsed(.let, at: .empty(at: position)))
+    }
+  }
+
   /// Parses an unqualified name expression into `module`.
   private mutating func parseUnqualifiedNameExpression(
     in module: inout Module
   ) throws -> NameExpression.ID {
-    let stem = try take(.name) ?? expected("identifier")
+    let identifier = try take(.name) ?? expected("identifier")
 
     return module.insert(
       NameExpression(
-        name: .init(Name(stem: String(stem.text)), at: stem.site),
-        site: stem.site),
+        qualification: .none,
+        name: .init(Name(identifier: String(identifier.text)), at: identifier.site),
+        site: identifier.site),
       in: file)
   }
 
-  /// Parses a type ascription into `module`.
+  /// Parses a type ascription into `module` iff the next token is a colon.
   ///
   ///     type-ascription ::=
   ///       ':' expr
   ///
-  private mutating func parseTypeAscription(in module: inout Module) throws -> ExpressionIdentity {
-    _ = try take(.colon) ?? expected(Token.Kind.colon.errorDescription)
-    return try parseExpression(in: &module)
+  private mutating func parseOptionalTypeAscription(
+    in module: inout Module
+  ) throws -> ExpressionIdentity? {
+    if take(.colon) != nil {
+      return try parseExpression(in: &module)
+    } else {
+      return nil
+    }
+  }
+
+  /// Parses the type ascription of a parameter into `module` iff the next token is a colon.
+  private mutating func parseOptionalParameterTypeAscription(
+    in module: inout Module
+  ) throws -> RemoteTypeExpression.ID? {
+    switch try parseOptionalTypeAscription(in: &module) {
+    case nil:
+      return nil
+    case .some(let b) where module.kind(of: b) == RemoteTypeExpression.self:
+      return .init(rawValue: b.rawValue)
+    case .some(let b):
+      let s = module[b.rawValue].site
+      let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))
+      return module.insert(RemoteTypeExpression(access: k, projectee: b, site: s), in: file)
+    }
   }
 
   // MARK: Identifiers
@@ -341,7 +453,7 @@ public struct Parser {
       return .init(String(n.text), at: n.site)
     } else {
       report(expected("identifier"))
-      return .init("<?>", at: .empty(at: position))
+      return .init("#?", at: .empty(at: position))
     }
   }
 
@@ -397,6 +509,7 @@ public struct Parser {
         try xs.append(parse(&self))
       } catch let e as ParseError {
         report(e)
+        recover(at: { (t) in t.kind == rightDelimiter || t.kind == .comma })
       }
       if let c = take(.comma) { lastComma = c }
     }
@@ -415,6 +528,7 @@ public struct Parser {
         try xs.append(parse(&self))
       } catch let e as ParseError {
         report(e)
+        recover(at: { (t) in t.kind == rightDelimiter || t.kind == .semicolon })
       }
     }
     return xs
