@@ -13,7 +13,7 @@ public struct Scoper {
         let f = Program.SourceFileIdentity(module: m, offset: i)
         var v = Visitor(syntaxCount: p[f].syntax.count)
         for o in p[f].syntax.indices {
-          let n = AnySyntaxIdentity(rawValue: .init(file: f, offset: o))
+          let n = AnySyntaxIdentity(file: f, offset: o)
           p.visit(n, calling: &v)
         }
         return v

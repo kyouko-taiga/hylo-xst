@@ -100,7 +100,7 @@ public struct Module {
       let d = f.syntax.count
       f.syntax.append(.init(child))
       f.syntaxToKind.append(.init(T.self))
-      return T.ID(rawValue: .init(file: file, offset: d))
+      return T.ID(fromErased: .init(file: file, offset: d))
     }
   }
 
@@ -108,7 +108,7 @@ public struct Module {
   public var syntax: some Collection<AnySyntaxIdentity> {
     let all = sources.values.enumerated().map { (f, s) in
       s.syntax.indices.lazy.map { (n) in
-        AnySyntaxIdentity(rawValue: .init(file: .init(module: identity, offset: f), offset: n))
+        AnySyntaxIdentity(file: .init(module: identity, offset: f), offset: n)
       }
     }
     return all.joined()
@@ -132,17 +132,23 @@ public struct Module {
   }
 
   /// Projects the node identified by `n`.
-  internal subscript(n: RawSyntaxIdentity) -> any Syntax {
+  internal subscript<T: SyntaxIdentity>(n: T) -> any Syntax {
     _read {
       assert(n.module == identity)
       yield sources.values[n.file.offset].syntax[n.offset].wrapped
     }
   }
 
+  /// Projects the node identified by `n`.
+  internal subscript<T: Syntax>(n: T.ID) -> T {
+    assert(n.module == identity)
+    return sources.values[n.file.offset].syntax[n.offset].wrapped as! T
+  }
+
   /// Returns the kind of `n`.
   internal func kind<T: SyntaxIdentity>(of n: T) -> SyntaxKind {
     assert(n.module == identity)
-    return self[n.rawValue.file].syntaxToKind[n.rawValue.offset]
+    return self[n.file].syntaxToKind[n.offset]
   }
 
   /// Assigns a type to `n`.

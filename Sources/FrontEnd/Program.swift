@@ -28,7 +28,7 @@ public struct Program {
 
     /// Creates an instance identifying the file containing `n`.
     public init<T: SyntaxIdentity>(containing n: T) {
-      self.rawValue = UInt32(truncatingIfNeeded: n.rawValue.bits)
+      self.rawValue = UInt32(truncatingIfNeeded: n.erased.bits)
     }
 
     /// The module offset of the node represented by `self` in its containing collection.
@@ -108,18 +108,13 @@ public struct Program {
   }
 
   /// Projects the node identified by `n`.
-  public subscript<T: Syntax>(n: T.ID) -> T {
-    self[n.rawValue] as! T
-  }
-
-  /// Projects the node identified by `n`.
   public subscript<T: SyntaxIdentity>(n: T) -> any Syntax {
-    _read { yield self[n.rawValue] }
+    _read { yield modules.values[n.module][n] }
   }
 
   /// Projects the node identified by `n`.
-  internal subscript(n: RawSyntaxIdentity) -> any Syntax {
-    _read { yield modules.values[n.module][n] }
+  public subscript<T: Syntax>(n: T.ID) -> T {
+    modules.values[n.module][n]
   }
 
   /// Returns a parsable representation of `n`.
@@ -134,7 +129,7 @@ public struct Program {
 
   /// Returns the kind of `n`.
   public func kind<T: SyntaxIdentity>(of n: T) -> SyntaxKind {
-    self[n.rawValue.file].syntaxToKind[n.rawValue.offset]
+    modules.values[n.module].kind(of: n)
   }
 
   /// Returns `true` iff `n` denotes a declaration.
@@ -165,7 +160,7 @@ public struct Program {
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
   public func cast<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type) -> U.ID? {
     if kind(of: n) == .init(U.self) {
-      return .init(rawValue: n.rawValue)
+      return .init(fromErased: n.erased)
     } else {
       return nil
     }
@@ -174,13 +169,13 @@ public struct Program {
   /// Returns `n` assuming it identifies a node of type `U`.
   public func castUnchecked<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type = U.self) -> U.ID {
     assert(kind(of: n) == .init(U.self))
-    return .init(rawValue: n.rawValue)
+    return .init(fromErased: n.erased)
   }
 
   /// Returns `n` if it identifies a declaration; otherwise, returns `nil`.
   public func castToDeclaration<T: SyntaxIdentity>(_ n: T) -> DeclarationIdentity? {
     if isDeclaration(n) {
-      return .init(rawValue: n.rawValue)
+      return .init(fromErased: n.erased)
     } else {
       return nil
     }
@@ -189,7 +184,7 @@ public struct Program {
   /// Returns `n` if it identifies a scope; otherwise, returns `nil`.
   public func castToScope<T: SyntaxIdentity>(_ n: T) -> ScopeIdentity? {
     if isScope(n) {
-      return .init(rawValue: n.rawValue)
+      return .init(fromErased: n.erased)
     } else {
       return nil
     }
@@ -200,12 +195,12 @@ public struct Program {
   ///
   /// - Requires: The module containing `n` is scoped.
   public func parent<T: SyntaxIdentity>(containing n: T) -> ScopeIdentity? {
-    let s = self[n.rawValue.file]
-    precondition(s.syntaxToParent.count > n.rawValue.offset, "unscoped module")
+    let s = self[n.file]
+    precondition(s.syntaxToParent.count > n.offset, "unscoped module")
 
-    let p = s.syntaxToParent[n.rawValue.offset]
+    let p = s.syntaxToParent[n.offset]
     if p >= 0 {
-      return .init(rawValue: .init(file: n.rawValue.file, offset: p))
+      return .init(fromErased: .init(file: n.file, offset: p))
     } else {
       return nil
     }
@@ -238,8 +233,8 @@ public struct Program {
   ///
   /// - Requires: The module containing `n` is scoped.
   public func declarations(in n: ScopeIdentity) -> [DeclarationIdentity] {
-    let s = self[n.rawValue.file]
-    return s.scopeToDeclarations[n.rawValue.offset] ?? preconditionFailure("unscoped module")
+    let s = self[n.file]
+    return s.scopeToDeclarations[n.offset] ?? preconditionFailure("unscoped module")
   }
 
   /// Returns the names introduced by `d`.
@@ -385,7 +380,7 @@ public indirect enum SyntaxFilter {
     case .all:
       return true
     case .from(let m):
-      return p.identity(module: m) == n.rawValue.module
+      return p.identity(module: m) == n.module
     case .kind(let k):
       return p.kind(of: n) == k
     }

@@ -36,7 +36,7 @@ extension Program {
     for (i, s) in self[m].sources.values.enumerated() {
       for o in s.syntax.indices {
         let f = Program.SourceFileIdentity(module: m, offset: i)
-        visit(AnySyntaxIdentity(rawValue: .init(file: f, offset: o)), calling: &v)
+        visit(AnySyntaxIdentity(file: f, offset: o), calling: &v)
       }
     }
   }
