@@ -1,5 +1,6 @@
 import DequeModule
 import OrderedCollections
+import MoreCollections
 import Utilities
 
 /// The type inference and checking algorithm of Hylo programs.
@@ -14,11 +15,15 @@ public struct Typer {
   /// A cache for various internal operations.
   private var cache: Cache
 
+  /// The set of extensions to ignore during name resolution.
+  private var extensionsToIgnore: SortedSet<ExtensionDeclaration.ID>
+
   /// Creates an instance assigning types to syntax trees in `m`, which is a module in `p`.
   public init(typing m: Program.ModuleIdentity, in p: consuming Program) {
     self.module = m
     self.program = p
     self.cache = .init(typing: module, in: program)
+    self.extensionsToIgnore = []
   }
 
   /// Type checks the top-level declarations of `self.module`.
@@ -45,14 +50,22 @@ public struct Typer {
     /// The cache of `Typer.imports(of:in:)`.
     var sourceToImports: [[Program.ModuleIdentity]?]
 
-    /// The cache of `Typer.lookup(_:lexicallyIn:)`.
-    var scopeToIdentifierToDeclarations: [ScopeIdentity: LookupTable]
+    /// The cache of `Typer.extensions(lexicallyIn:)`
+    var scopeToExtensions: [ScopeIdentity: [ExtensionDeclaration.ID]]
+
+    /// The cache of `Typer.declarations(lexicallyIn:)`.
+    var scopeToLookupTable: [ScopeIdentity: LookupTable]
+
+    /// The cache of `Typer.declarations(memberOf:visibleFrom:)`
+    var scopeToTypeToLookupTable: [Scoped<AnyTypeIdentity>: LookupTable]
 
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
-      moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
-      sourceToImports = .init(repeating: nil, count: p[m].sources.count)
-      scopeToIdentifierToDeclarations = [:]
+      self.moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
+      self.sourceToImports = .init(repeating: nil, count: p[m].sources.count)
+      self.scopeToExtensions = [:]
+      self.scopeToLookupTable = [:]
+      self.scopeToTypeToLookupTable = [:]
     }
 
   }
@@ -148,12 +161,23 @@ public struct Typer {
   private mutating func declaredType(of d: FunctionDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    var inputs: [AnyTypeIdentity] = []
+    var inputs: [Parameter] = []
     for p in program[d].parameters {
-      inputs.append(declaredType(of: p))
+      inputs.append(
+        Parameter(
+          label: program[p].label?.value,
+          type: declaredType(of: p),
+          hasDefault: false,
+          isImplicit: false))
     }
 
-    fatalError()
+    let output = program[d].output.map { (a) in
+      evaluateTypeAscription(a)
+    }
+
+    let t = demand(Arrow(inputs: inputs, output: output ?? .void))^
+    program[module].setType(t, for: d)
+    return t
   }
 
   /// Returns the declared type of `d` without checking.
@@ -179,24 +203,51 @@ public struct Typer {
     return u
   }
 
+  /// Returns the type that `d` extends.
+  private mutating func extendeeType(_ d: ExtensionDeclaration.ID) -> AnyTypeIdentity {
+    if let t = program[d.module].type(assignedTo: d) {
+      return t
+    } else {
+      assert(d.module == module, "dependency is not typed")
+      let t = ignoring(d, { (me) in me.evaluateTypeAscription(me.program[d].extendee) })
+      program[module].setType(t, for: d)
+      return t
+    }
+  }
+
   // MARK: Type inference
 
-  /// Returns the inferred type of `e`, charing `o` with proof obligations and using `hint` to
-  /// extract contextual information.
+  /// The context in which the type of a syntax tree is being inferred.
+  private struct InferenceContext {
+
+    /// The type expected to be inferred given the context.
+    let expectedType: AnyTypeIdentity?
+
+    /// A set of formulae about the type being inferred.
+    var obligations: Obligations
+
+    /// Creates a context with the given properties.
+    init(expectedType: AnyTypeIdentity? = nil) {
+      self.expectedType = expectedType
+      self.obligations = .init()
+    }
+
+  }
+
+  /// Returns the inferred type of `e`, which occurs in `context`.
   private mutating func inferredType(
-    of e: ExpressionIdentity, charging o: inout Obligations,
-    expecting hint: AnyTypeIdentity? = nil
+    of e: ExpressionIdentity, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     switch program.kind(of: e) {
     case BooleanLiteral.self:
       return inferredType(
-        of: program.castUnchecked(e, to: BooleanLiteral.self), charging: &o, expecting: hint)
+        of: program.castUnchecked(e, to: BooleanLiteral.self), in: &context)
     case NameExpression.self:
       return inferredType(
-        of: program.castUnchecked(e, to: NameExpression.self), charging: &o, expecting: hint)
+        of: program.castUnchecked(e, to: NameExpression.self), in: &context)
     case RemoteTypeExpression.self:
       return inferredType(
-        of: program.castUnchecked(e, to: RemoteTypeExpression.self), charging: &o, expecting: hint)
+        of: program.castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
     default:
       program.unexpected(e)
     }
@@ -204,27 +255,26 @@ public struct Typer {
 
   /// Returns the inferred type of `e`.
   private mutating func inferredType(
-    of e: BooleanLiteral.ID, charging o: inout Obligations,
-    expecting hint: AnyTypeIdentity? = nil
+    of e: BooleanLiteral.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     fatalError("TODO")
   }
 
   /// Returns the inferred type of `e`.
   private mutating func inferredType(
-    of e: NameExpression.ID, charging o: inout Obligations,
-    expecting hint: AnyTypeIdentity? = nil
+    of e: NameExpression.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    resolve(e, charging: &o)
+    resolve(e, in: &context)
   }
 
   /// Returns the inferred type of `e`.
   private mutating func inferredType(
-    of e: RemoteTypeExpression.ID, charging o: inout Obligations,
-    expecting hint: AnyTypeIdentity? = nil
+    of e: RemoteTypeExpression.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    let t = inferredType(of: program[e].projectee, charging: &o)
-    return program.types.demand(RemoteType(projectee: t, access: program[e].access.value))^
+    let t = evaluateTypeAscription(program[e].projectee)
+    let u = demand(RemoteType(projectee: t, access: program[e].access.value))^
+    let v = demand(Metatype(inhabitant: u))^
+    return assume(e, hasType: v, in: &context.obligations)
   }
 
   /// Constrains the name component in `r` to be a reference to one of `r`'s resolution candidates
@@ -275,9 +325,9 @@ public struct Typer {
 
   /// Evaluates `e` as a type ascription.
   private mutating func evaluateTypeAscription(_ e: ExpressionIdentity) -> AnyTypeIdentity {
-    var o = Obligations()
-    let t = inferredType(of: e, charging: &o)
-    let s = discharge(o, relatedTo: e)
+    var c = InferenceContext()
+    let t = inferredType(of: e, in: &c)
+    let s = discharge(c.obligations, relatedTo: e)
     let u = s.substitutions.reify(t, definedIn: &program)
 
     if let m = program.types[u] as? Metatype {
@@ -301,44 +351,20 @@ public struct Typer {
 
   }
 
-  /// The result of name resolution for a given expression.
-  private enum NameResolutionResult {
+  private struct NameResolutionContexxt {
 
-    /// Name resolution completed for the longest prefix that can be resolved without involving any
-    /// constraint solving.
-    ///
-    /// - Invariant: `resolved` is not empty.
-    case completed(resolved: [ResolvedNameComponent], unresolved: [NameExpression.ID])
+    let qualification: DeclarationReference.Qualification
 
-    /// Name resolution failed.
-    case failed
-
-  }
-
-  /// The result of name resolution for a single name component.
-  private struct ResolvedNameComponent {
-
-    /// The resolved component.
-    let component: NameExpression.ID
-
-    /// The possible results of name resolution for `component`.
-    let candidates: [NameResolutionCandidate]
-
-    /// Creates an instance binding `component` to `candidates`.
-    init(binding component: NameExpression.ID, to candidates: [NameResolutionCandidate]) {
-      precondition(!candidates.isEmpty)
-      self.component = component
-      self.candidates = candidates
-    }
+    let type: AnyTypeIdentity
 
   }
 
   private mutating func resolve(
-    _ e: NameExpression.ID, charging o: inout Obligations, expecting hint: AnyTypeIdentity? = nil
+    _ e: NameExpression.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     var (unresolved, prefix) = program.components(of: e)
 
-    var qualification: AnyTypeIdentity?
+    var qualification: NameResolutionContexxt?
     switch prefix {
     case .none:
       // All components are nominal.
@@ -346,24 +372,25 @@ public struct Typer {
 
     case .implicit:
       // First component is implicit; use the expected type.
-      if let h = hint {
-        qualification = h
+      if let h = context.expectedType {
+        qualification = .init(qualification: .implicit, type: h)
       } else {
         report(.init(.error, "no context to resolve \(program[e].name)", at: program[e].site))
         return .error
       }
 
-    case .explicit(let q):
+    case .explicit(let e):
       // First component is an arbitrary expression; use inference.
-      qualification = inferredType(of: q, charging: &o)
+      let t = inferredType(of: e, in: &context)
+      qualification = .init(qualification: .explicit(e), type: t)
     }
 
-    let scopeOfUse = program.parent(containing: e)!
+    let scopeOfUse = program.parent(containing: e)
     while let component = unresolved.popLast() {
       // Gather the declarations to which `c` may refer.
       let candidates: [NameResolutionCandidate]
       if let q = qualification {
-        candidates = resolve(program[component].name, memberOf: q)
+        candidates = resolve(program[component].name, memberOf: q, visibleFrom: scopeOfUse)
       } else {
         candidates = resolve(program[component].name, unqualifiedIn: scopeOfUse)
       }
@@ -376,14 +403,26 @@ public struct Typer {
 
       // TODO: Filter out inaccessible candidates
 
-      qualification = assume(component, isBoundTo: candidates, in: &o)
-      if program.types[qualification!].isVariable {
+      let t = assume(component, isBoundTo: candidates, in: &context.obligations)
+      switch program.types[t] {
+      case is TypeVariable:
+        // We need inference to continue.
         break
+
+      case let t as Metatype:
+        // Name resolution proceeds in the the inhabitant of the metatype rather than the metatype
+        // itself so that expressions of the form `T.m` can denote entities introduced as members
+        // of `T` (instead of `Metatype<T>`).
+        qualification = .init(qualification: .explicit(.init(component)), type: t.inhabitant)
+
+      default:
+        // Next component should be member of `t`.
+        qualification = .init(qualification: .explicit(.init(component)), type: t)
       }
     }
 
     if unresolved.isEmpty {
-      return qualification!
+      return context.obligations.syntaxToType[e.erased]!
     } else {
       fatalError("TODO")
     }
@@ -403,21 +442,17 @@ public struct Typer {
   }
 
   private mutating func resolve(
-    _ n: Parsed<Name>, memberOf qualification: AnyTypeIdentity
+    _ n: Parsed<Name>, memberOf qualification: NameResolutionContexxt,
+    visibleFrom scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
-    let ds = lookup(n.value.identifier, memberOf: qualification)
-    fatalError()
-//    var candidates: [NameResolutionCandidate] = []
-//    for d in ds {
-//      candidates.append(.init(declaration: d, type: declaredType(of: d)))
-//    }
+    let ds = lookup(n.value.identifier, memberOf: qualification.type, visibleFrom: scopeOfUse)
 
-//    return candidates
-  }
+    var candidates: [NameResolutionCandidate] = []
+    for d in ds {
+      candidates.append(.init(reference: .direct(d), type: declaredType(of: d)))
+    }
 
-  private func isAccessible(_ d: DeclarationIdentity, in scopeOfUse: ScopeIdentity) -> Bool {
-    // TODO
-    true
+    return candidates
   }
 
   /// Returns the declarations introducing `identifier` without qualification in `scopeOfUse`.
@@ -442,36 +477,38 @@ public struct Typer {
 
     // Look for declarations in `scopeOfUse` and its ancestors.
     for s in program.scopes(from: scopeOfUse) {
-      if append(lookup(identifier, notionallyIn: s)) {
+      if append(lookup(identifier, logicallyIn: s, visibleFrom: scopeOfUse)) {
         return result
       }
     }
 
-    // Look for top-level declarations in the current scope.
-    result.append(contentsOf: lookup(identifier, atTopLevelOf: scopeOfUse.module))
-    if !result.isEmpty {
-      return result
+    // Look for top-level declarations in other source files.
+    let f = scopeOfUse.file
+    for s in program[f.module].sourceFileIdentities where s != f {
+      if append(lookup(identifier, logicallyIn: .init(file: s), visibleFrom: scopeOfUse)) {
+        return result
+      }
     }
 
-    // Look for declarations in imports.
-    for n in imports(of: scopeOfUse.file) where n != scopeOfUse.module {
-      result.append(contentsOf: lookup(identifier, atTopLevelOf: scopeOfUse.module))
+    // Look for imports.
+    for n in imports(of: f) {
+      result.append(contentsOf: lookup(identifier, atTopLevelOf: n))
     }
-    if !result.isEmpty {
-      return result
-    }
+    if !result.isEmpty { return result }
 
     // TODO: Built-ins
 
     return result
   }
 
-  /// Returns the declarations introducing `identifier` in the notional scope to which `s` belongs.
+  /// Returns the declarations that introduce `identifier` in the logical scope of `s` and that are
+  /// visible from `scopeOfUse`.
   private mutating func lookup(
-    _ identifier: String, notionallyIn s: ScopeIdentity
+    _ identifier: String, logicallyIn s: ScopeIdentity,
+    visibleFrom scopeOfUse: ScopeIdentity
   ) -> [DeclarationIdentity] {
     if let t = nominalScope(including: s) {
-      return lookup(identifier, memberOf: t)
+      return lookup(identifier, memberOf: t, visibleFrom: scopeOfUse)
     } else {
       return lookup(identifier, lexicallyIn: s)
     }
@@ -484,45 +521,103 @@ public struct Typer {
     if let table = cache.moduleToIdentifierToDeclaration[m] {
       return table[identifier] ?? []
     } else {
-      let table = lookupTable(declarations: program[m].topLevelDeclarations)
+      var table = Cache.LookupTable()
+      extendLookupTable(&table, with: program[m].topLevelDeclarations)
       cache.moduleToIdentifierToDeclaration[m] = table
       return table[identifier] ?? []
     }
   }
 
   /// Returns the declarations introducing `identifier` in `s`.
-  ///
-  /// This method only returns declarations that are lexically contained in `s`, which is unlike
-  /// `lookup(_:notionallyIn:)` which also returns members declared in extensions.
   private mutating func lookup(
-    _ identifier: String, lexicallyIn lexicalScope: ScopeIdentity
+    _ identifier: String, lexicallyIn s: ScopeIdentity
   ) -> [DeclarationIdentity] {
-    if let table = cache.scopeToIdentifierToDeclarations[lexicalScope] {
-      return table[identifier] ?? []
-    } else {
-      let table = lookupTable(declarations: program.declarations(in: lexicalScope))
-      cache.scopeToIdentifierToDeclarations[lexicalScope] = table
-      return table[identifier] ?? []
+    declarations(lexicallyIn: s)[identifier] ?? []
+  }
+
+  /// Returns the declarations that introduce `identifier` as a member of `t` and that are visible
+  /// from `scopeOfUse`.
+  private mutating func lookup(
+    _ identifier: String, memberOf t: AnyTypeIdentity,
+    visibleFrom scopeOfUse: ScopeIdentity
+  ) -> [DeclarationIdentity] {
+    declarations(memberOf: t, visibleFrom: scopeOfUse)[identifier] ?? []
+  }
+
+  /// Returns the declarations that introduce a member of `t` and are visible from `s`.
+  private mutating func declarations(
+    memberOf t: AnyTypeIdentity, visibleFrom s: ScopeIdentity
+  ) -> Cache.LookupTable {
+    // Higher-kinded types have no members.
+    if program.isHigherKinded(t) { return .init() }
+
+    // Did we already compute a lookup table?
+    if let table = cache.scopeToTypeToLookupTable[Scoped(t, in: s)] {
+      return table
+    }
+
+    // Are we in the scope of a syntax tree?
+    else if let p = program.parent(containing: s) {
+      var table = declarations(memberOf: t, visibleFrom: p)
+      for d in extensions(lexicallyIn: s)
+      where !extensionsToIgnore.contains(d) && applies(d, to: t) {
+        extendLookupTable(&table, with: program[d].members)
+      }
+      cache.scopeToTypeToLookupTable[Scoped(t, in: s)] = table
+      return table
+    }
+
+    // We are at the top-level.
+    else {
+      var table = declarations(nativeMembersOf: t)
+      let ms = imports(of: s.file) + [s.file.module]
+      for m in ms {
+        for d in program.collect(ExtensionDeclaration.self, in: program[m].topLevelDeclarations)
+        where !extensionsToIgnore.contains(d) && applies(d, to: t) {
+          extendLookupTable(&table, with: program[d].members)
+        }
+      }
+      cache.scopeToTypeToLookupTable[Scoped(t, in: s)] = table
+      return table
     }
   }
 
-  /// Returns the declarations introducing `identifier` as a member of `qualification`.
-  private mutating func lookup(
-    _ identifier: String, memberOf qualification: AnyTypeIdentity
-  ) -> [DeclarationIdentity] {
-    fatalError()
-  }
-
-  /// Returns the type defining the nominal scope that includes `s`, if any.
-  private mutating func nominalScope(including s: ScopeIdentity) -> AnyTypeIdentity? {
-    switch program.kind(of: s) {
-    case ClassDeclaration.self:
-      return program.types.demand(Class(declaration: program.castUnchecked(s)))^
-    case TraitDeclaration.self:
-      return program.types.demand(Trait(declaration: program.castUnchecked(s)))^
+  /// Returns the declarations lexically contained in the declaration of `t`.
+  private mutating func declarations(nativeMembersOf t: AnyTypeIdentity) -> Cache.LookupTable {
+    switch program.types[t] {
+    case let u as Class:
+      return declarations(lexicallyIn: .init(node: u.declaration))
     default:
-      return nil
+      return .init()
     }
+  }
+
+  /// Returns the declarations lexically contained in `s`.
+  private mutating func declarations(lexicallyIn s: ScopeIdentity) -> Cache.LookupTable {
+    if let table = cache.scopeToLookupTable[s] {
+      return table
+    } else {
+      var table = Cache.LookupTable()
+      extendLookupTable(&table, with: program.declarations(in: s))
+      cache.scopeToLookupTable[s] = table
+      return table
+    }
+  }
+
+  /// Returns the extensions that are lexically contained in `s`.
+  private mutating func extensions(lexicallyIn s: ScopeIdentity) -> [ExtensionDeclaration.ID] {
+    if let ds = cache.scopeToExtensions[s] {
+      return ds
+    } else {
+      let ds = program.collect(ExtensionDeclaration.self, in: program.declarations(in: s))
+      cache.scopeToExtensions[s] = ds
+      return ds
+    }
+  }
+
+  /// Returns `true` iff `d` is an extension of `t`.
+  private mutating func applies(_ d: ExtensionDeclaration.ID, to t: AnyTypeIdentity) -> Bool {
+    extendeeType(d) == t
   }
 
   /// Returns the modules that are imported by `f`, which is in the module being typed.
@@ -544,11 +639,10 @@ public struct Typer {
     }
   }
 
-  /// Returns a table mapping the identifiers of the names declared in `ds` to their declarations.
-  private func lookupTable<T: Sequence<DeclarationIdentity>>(
-    declarations ds: T
-  ) -> Cache.LookupTable {
-    var m = Cache.LookupTable()
+  /// Extends `m` so that it maps identifiers declared in `ds` to their declarations.
+  private func extendLookupTable<T: Sequence<DeclarationIdentity>>(
+    _ m: inout Cache.LookupTable, with ds: T
+  ) {
     for d in ds {
       if let n = program[d] as? any TypeDeclaration {
         m[n.identifier.value, default: []].append(d)
@@ -556,7 +650,22 @@ public struct Typer {
         m[program.name(of: n).identifier, default: []].append(d)
       }
     }
-    return m
+  }
+
+  /// Returns the type defining the nominal scope that includes `s`, if any.
+  private mutating func nominalScope(including s: ScopeIdentity) -> AnyTypeIdentity? {
+    // Exit early if `s` is a file.
+    guard let n = s.node else { return nil }
+
+    // Only types have nominal scopes.
+    switch program.kind(of: n) {
+    case ClassDeclaration.self:
+      return program.types.demand(Class(declaration: program.castUnchecked(n)))^
+    case TraitDeclaration.self:
+      return program.types.demand(Trait(declaration: program.castUnchecked(n)))^
+    default:
+      return nil
+    }
   }
 
   // MARK: Helpers
@@ -569,6 +678,21 @@ public struct Typer {
   /// Returns the unique identity of a tree that is equal to `t`.
   private mutating func demand<T: TypeTree>(_ t: T) -> T.ID {
     program.types.demand(t)
+  }
+
+  /// Returns `n` assuming it identifies a node of type `U`.
+  private func castUnchecked<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type = U.self) -> U.ID {
+    program.castUnchecked(n, to: U.self)
+  }
+
+  /// Returns the result of `action` called with a projection of `self` in which `d` is in the set
+  /// of extensions to ignore during name resolution.
+  private mutating func ignoring<T>(
+    _ d: ExtensionDeclaration.ID, _ action: (inout Self) -> T
+  ) -> T {
+    extensionsToIgnore.insert(d)
+    defer { extensionsToIgnore.remove(d) }
+    return action(&self)
   }
 
 }

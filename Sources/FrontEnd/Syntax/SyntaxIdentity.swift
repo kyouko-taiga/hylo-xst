@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// A type denoting the identity of a node in an abstract syntax tree.
-public protocol SyntaxIdentity: Hashable, Archivable {
+public protocol SyntaxIdentity: Comparable, Hashable, Archivable {
 
   /// The type-erased value of this identity.
   var erased: AnySyntaxIdentity { get }
@@ -39,6 +39,11 @@ extension SyntaxIdentity {
     l.erased == r.erased
   }
 
+  /// Returns `true` if `l` is ordered before `r`.
+  public static func < (l: Self, r: Self) -> Bool {
+    l.erased < r.erased
+  }
+
   public init<A>(from archive: inout ReadableArchive<A>, in context: inout Any) throws {
     self.init(uncheckedFrom: try archive.read(AnySyntaxIdentity.self, in: &context))
   }
@@ -51,10 +56,15 @@ extension SyntaxIdentity {
 
 /// The type-erased identity of an abstract syntax tree.
 ///
-/// An identity is composed of three offsets, are stored contiguously within a 64-bit integer:
+/// An identity is composed of three offsets stored contiguously within a 64-bit integer in the
+/// following order (from least to most significant):
+///
 /// - `module`: a 16-bit offset identifying the module in which the node is contained.
 /// - `file`  : a 16-bit offset identifying the file in which the node is contained.
 /// - `node`  : a 32-bit offset identifying the node itself.
+///
+/// All three offsets are interpreted as unsigned integers. The maximum representable value of the
+/// node offset is reserved as a tag.
 public struct AnySyntaxIdentity {
 
   /// The bit representation of `self`.
@@ -67,8 +77,8 @@ public struct AnySyntaxIdentity {
 
   /// Creates an instance identifying the node at offset `n` in file `f`.
   public init(file f: Program.SourceFileIdentity, offset n: Int) {
-    precondition(n < (1 << 32))
-    self.bits = UInt64(f.rawValue) + (UInt64(n) << 32)
+    precondition(n < UInt32.max)
+    self.bits = UInt64(f.rawValue) | (UInt64(n) << 32)
   }
 
   /// Creates an identifying the same node as `other`.
@@ -91,6 +101,11 @@ public struct AnySyntaxIdentity {
     .init(bits >> 32)
   }
 
+  /// Returns the identity representing the lexical scope of formed by `f`.
+  internal static func scope(of f: Program.SourceFileIdentity) -> Self {
+    .init(bits: UInt64(f.rawValue) | UInt64(UInt32.max) << 32)
+  }
+
 }
 
 extension AnySyntaxIdentity: SyntaxIdentity {
@@ -103,6 +118,11 @@ extension AnySyntaxIdentity: SyntaxIdentity {
   /// The type-erased value of this identity.
   public var erased: AnySyntaxIdentity {
     self
+  }
+
+  /// Returns `true` if `l` is ordered before `r`.
+  public static func < (l: Self, r: Self) -> Bool {
+    l.bits < r.bits
   }
 
 }
@@ -182,24 +202,6 @@ public struct ExpressionIdentity: SyntaxIdentity {
 
   /// Creates an instance equal to `other`.
   public init<T: Expression>(_ other: T.ID) {
-    self.erased = other.erased
-  }
-
-}
-
-/// The type-erased identity of an abstract syntax tree denoting a scope.
-public struct ScopeIdentity: SyntaxIdentity {
-
-  /// The type-erased value of this identity.
-  public let erased: AnySyntaxIdentity
-
-  /// Creates an identifying the same node as `erased`.
-  public init(uncheckedFrom erased: AnySyntaxIdentity) {
-    self.erased = erased
-  }
-
-  /// Creates an instance equal to `other`.
-  public init<T: Scope>(_ other: T.ID) {
     self.erased = other.erased
   }
 

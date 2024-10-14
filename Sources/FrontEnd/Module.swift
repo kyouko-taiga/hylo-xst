@@ -28,9 +28,9 @@ public struct Module {
 
     /// A table from syntax tree to the scope that contains it.
     ///
-    /// The keys and values of the map are the offsets of the syntax trees in the source file
-    /// (i.e., syntax identities sans module or source offset). Top-level declarations have no
-    /// parent scope and are mapped onto `-1`.
+    /// The keys and values of the table are the offsets of the syntax trees in the source file
+    /// (i.e., syntax identities sans module or source offset). Top-level declarations are mapped
+    /// onto `-1`.
     internal var syntaxToParent: [Int] = []
 
     /// A table from scope to the declarations that it contains directly.
@@ -112,6 +112,11 @@ public struct Module {
       }
     }
     return all.joined()
+  }
+
+  /// The identities of the source files in `self`.
+  public var sourceFileIdentities: [Program.SourceFileIdentity] {
+    (0 ..< sources.count).map({ (s) in Program.SourceFileIdentity(module: identity, offset: s) })
   }
 
   /// The top-level declarations in `self`.

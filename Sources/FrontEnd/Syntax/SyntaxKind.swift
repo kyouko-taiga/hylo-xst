@@ -27,6 +27,7 @@ public struct SyntaxKind {
     ClassDeclaration.self,
     ExtensionDeclaration.self,
     FunctionDeclaration.self,
+    GenericParameterDeclaration.self,
     ImportDeclaration.self,
     ParameterDeclaration.self,
     TraitDeclaration.self,

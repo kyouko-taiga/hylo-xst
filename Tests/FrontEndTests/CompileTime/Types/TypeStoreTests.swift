@@ -7,7 +7,7 @@ final class TypeStoreTests: XCTestCase {
     var store = TypeStore()
     let t = ErrorType()
     let i = store.demand(t)
-    XCTAssertEqual(AnyTypeIdentity(i), AnyTypeIdentity.error)
+    XCTAssertEqual(i.erased, AnyTypeIdentity.error)
     XCTAssertEqual(store[i], t)
   }
 
@@ -15,7 +15,7 @@ final class TypeStoreTests: XCTestCase {
     var store = TypeStore()
     let t = Tuple(elements: [])
     let i = store.demand(t)
-    XCTAssertEqual(AnyTypeIdentity(i), AnyTypeIdentity.void)
+    XCTAssertEqual(i.erased, AnyTypeIdentity.void)
     XCTAssertEqual(store[i], t)
   }
 
@@ -23,7 +23,7 @@ final class TypeStoreTests: XCTestCase {
     var store = TypeStore()
     let t = Union(elements: [])
     let i = store.demand(t)
-    XCTAssertEqual(AnyTypeIdentity(i), AnyTypeIdentity.never)
+    XCTAssertEqual(i.erased, AnyTypeIdentity.never)
     XCTAssertEqual(store[i], t)
   }
 

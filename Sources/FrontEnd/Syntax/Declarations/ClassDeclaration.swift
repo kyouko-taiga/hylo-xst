@@ -9,6 +9,9 @@ public struct ClassDeclaration: TypeDeclaration, Scope {
   /// The name of the declared class.
   public let identifier: Parsed<String>
 
+  /// The generic parameters of the class.
+  public let parameters: [GenericParameterDeclaration.ID]
+
   /// The members of the declared class.
   public let members: [DeclarationIdentity]
 
@@ -33,16 +36,17 @@ public struct ClassDeclaration: TypeDeclaration, Scope {
 extension ClassDeclaration: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    let i = try archive.read(Token.self, in: &context)
-    let n = try archive.read(Parsed<String>.self, in: &context)
-    let m = try archive.read([DeclarationIdentity].self, in: &context)
-    let s = try archive.read(SourceSpan.self, in: &context)
-    self.init(introducer: i, identifier: n, members: m, site: s)
+    self.introducer = try archive.read(Token.self, in: &context)
+    self.identifier = try archive.read(Parsed<String>.self, in: &context)
+    self.parameters = try archive.read([GenericParameterDeclaration.ID].self, in: &context)
+    self.members = try archive.read([DeclarationIdentity].self, in: &context)
+    self.site = try archive.read(SourceSpan.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
     try archive.write(introducer, in: &context)
     try archive.write(identifier, in: &context)
+    try archive.write(parameters, in: &context)
     try archive.write(members, in: &context)
     try archive.write(site, in: &context)
   }

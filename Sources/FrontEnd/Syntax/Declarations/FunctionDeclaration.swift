@@ -24,6 +24,9 @@ public struct FunctionDeclaration: Declaration, Scope {
   /// The declarations of the function's parameters.
   public let parameters: [ParameterDeclaration.ID]
 
+  /// The type of the function's return value.
+  public let output: ExpressionIdentity?
+
   /// The body of the function.
   public let body: CallableBody?
 
@@ -32,7 +35,9 @@ public struct FunctionDeclaration: Declaration, Scope {
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    var result = "fun \(identifier)(\(list: parameters.map(program.show(_:))))"
+    let i = parameters.map(program.show(_:)).descriptions()
+    let o = output.map(program.show(_:)) ?? "Void"
+    var result = "fun \(identifier)(\(i)) -> \(o)"
 
     switch body {
     case .some(.expression(let n)):

@@ -117,9 +117,26 @@ public struct Program {
     modules.values[n.module][n]
   }
 
+  /// Returns the elements in `ns` that identify nodes of type `T`.
+  public func collect<S: Sequence, T: Syntax>(
+    _ t: T.Type, in ns: S
+  ) -> [T.ID] where S.Element: SyntaxIdentity {
+    ns.compactMap({ (n) in cast(n, to: t) })
+  }
+
+  /// Returns the contents of `s`.
+  public func show(_ s: SourceFileIdentity) -> String {
+    self[s].source.text
+  }
+
   /// Returns a parsable representation of `n`.
   public func show<T: SyntaxIdentity>(_ n: T) -> String {
     self[n].show(readingChildrenFrom: self)
+  }
+
+  /// Returns a source-like representation of `s`.
+  public func show(_ s: ScopeIdentity) -> String {
+    s.node.map(show(_:)) ?? show(s.file)
   }
 
   /// Returns a parsable representation of `t`.
@@ -157,6 +174,18 @@ public struct Program {
     kind(of: n).value is any Scope.Type
   }
 
+  /// Returns `true` iff `t` is a type constructor accepting parameters.
+  public func isHigherKinded(_ t: AnyTypeIdentity) -> Bool {
+    switch types[t] {
+    case let u as Class:
+      return !self[u.declaration].parameters.isEmpty
+    case is Trait:
+      return true
+    default:
+      return false
+    }
+  }
+
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
   public func cast<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type) -> U.ID? {
     if kind(of: n) == .init(U.self) {
@@ -190,11 +219,17 @@ public struct Program {
     }
   }
 
-  /// If `n` is not a top-level declaration, returns the innermost scope that contains `n`.
-  /// Otherwise, returns `nil`.
+  /// Returns the innermost scope that contains `n`.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func parent(containing s: ScopeIdentity) -> ScopeIdentity? {
+    s.node.map(parent(containing:))
+  }
+
+  /// Returns the innermost scope that contains `n`.
   ///
   /// - Requires: The module containing `n` is scoped.
-  public func parent<T: SyntaxIdentity>(containing n: T) -> ScopeIdentity? {
+  public func parent<T: SyntaxIdentity>(containing n: T) -> ScopeIdentity {
     let s = self[n.file]
     precondition(s.syntaxToParent.count > n.offset, "unscoped module")
 
@@ -202,16 +237,20 @@ public struct Program {
     if p >= 0 {
       return .init(uncheckedFrom: .init(file: n.file, offset: p))
     } else {
-      return nil
+      return .init(file: n.file)
     }
   }
 
-  /// If `n` is not a top-level declaration, returns the innermost scope that contains `n` iff it
-  /// is an instance of `U`. Otherwise, returns `nil`.
+  /// Returns the innermost scope that contains `n` iff it is an instance of `U`. Otherwise,
+  /// returns `nil`.
   ///
   /// - Requires: The module containing `n` is scoped.
   public func parent<T: SyntaxIdentity, U: Syntax>(containing n: T, as: U.Type) -> U.ID? {
-    parent(containing: n).flatMap({ (m) in cast(m, to: U.self) })
+    if let m = parent(containing: n).node {
+      return cast(m, to: U.self)
+    } else {
+      return nil
+    }
   }
 
   /// Returns a sequence containing `s` and its ancestors, from inner to outer.
@@ -221,7 +260,7 @@ public struct Program {
     var next: Optional = s
     return AnyIterator {
       if let n = next {
-        next = parent(containing: n)
+        next = n.node.map(parent(containing:))
         return n
       } else {
         return nil
@@ -229,12 +268,15 @@ public struct Program {
     }
   }
 
-  /// Returns the declarations directly contained in `n`.
+  /// Returns the declarations directly contained in `s`.
   ///
-  /// - Requires: The module containing `n` is scoped.
-  public func declarations(in n: ScopeIdentity) -> [DeclarationIdentity] {
-    let s = self[n.file]
-    return s.scopeToDeclarations[n.offset] ?? preconditionFailure("unscoped module")
+  /// - Requires: The module containing `s` is scoped.
+  public func declarations(in s: ScopeIdentity) -> [DeclarationIdentity] {
+    if let n = s.node {
+      return self[n.file].scopeToDeclarations[n.offset] ?? preconditionFailure("unscoped module")
+    } else {
+      return self[s.file].topLevelDeclarations
+    }
   }
 
   /// Returns the names introduced by `d`.
@@ -294,6 +336,13 @@ public struct Program {
     _ n: T, file: StaticString = #file, line: UInt = #line
   ) -> Never {
     unreachable("unexpected node '\(kind(of: n))' at \(self[n].site)", file: file, line: line)
+  }
+
+  /// Reports that `t` was not expected in the current executation path and exits the program.
+  public func unexpected(
+    _ t: AnyTypeIdentity, file: StaticString = #file, line: UInt = #line
+  ) -> Never {
+    unreachable("unexpected type '\(show(t))'", file: file, line: line)
   }
 
 }

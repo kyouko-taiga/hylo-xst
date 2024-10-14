@@ -27,7 +27,16 @@ public struct NameExpression: Expression {
   public var site: SourceSpan
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String { name.description }
+  public func show(readingChildrenFrom program: Program) -> String {
+    switch qualification {
+    case .none:
+      return name.description
+    case .implicit:
+      return "." + name.description
+    case .explicit(let e):
+      return program.show(e) + "." + name.description
+    }
+  }
 
 }
 

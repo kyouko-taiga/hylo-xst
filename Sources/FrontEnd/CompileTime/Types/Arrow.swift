@@ -53,9 +53,9 @@ public struct Arrow: TypeTree {
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     let e = program.show(environment)
-    let i = isByName ? "" : " \(list: inputs.map(program.show(_:)))"
+    let i = isByName ? "" : "(\(list: inputs.map(program.show(_:))))"
     let o = program.show(output)
-    return "[\(e)]\(i) -> \(effect) \(o)"
+    return "[\(e)]\(i) \(effect) -> \(o)"
   }
 
 }

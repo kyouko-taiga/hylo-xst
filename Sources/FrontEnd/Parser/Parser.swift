@@ -108,6 +108,7 @@ public struct Parser {
       ClassDeclaration(
         introducer: introducer,
         identifier: identifier,
+        parameters: [],
         members: members,
         site: introducer.site.extended(upTo: position.index)),
       in: file)
@@ -145,6 +146,7 @@ public struct Parser {
     let introducer = try take(.fun) ?? expected("'fun'")
     let identifier = try parseFunctionIdentifier()
     let parameters = try parseParameterList(in: &module)
+    let output = try parseOptionalReturnTypeAscription(in: &module)
     let body = try peek()?.kind == .leftBrace ? parseCallableBody(in: &module) : nil
 
     return module.insert(
@@ -152,6 +154,7 @@ public struct Parser {
         introducer: introducer,
         identifier: identifier,
         parameters: parameters,
+        output: output,
         body: body,
         site: introducer.site.extended(upTo: position.index)),
       in: file)
@@ -205,7 +208,7 @@ public struct Parser {
         label: label,
         identifier: identifier,
         ascription: ascription,
-        site: .init(start.index ..< position.index, in: tokens.source)),
+        site: span(from: start)),
       in: file)
   }
 
@@ -258,7 +261,40 @@ public struct Parser {
 
   /// Parses an expression into `module`.
   private mutating func parseExpression(in module: inout Module) throws -> ExpressionIdentity {
-    try parsePrimaryExpression(in: &module)
+    try parseCompoundExpression(in: &module)
+  }
+
+  /// Parses an expression made of one or more components into `module`.
+  ///
+  ///     compound-expression ::=
+  ///       compound-expression-head
+  ///       compound-expression '.' (unqualified-name-expression | decimal-number)
+  ///
+  private mutating func parseCompoundExpression(
+    in module: inout Module
+  ) throws -> ExpressionIdentity {
+    var head = try parsePrimaryExpression(in: &module)
+
+    while true {
+      if try !appendNominalComponent(to: &head, in: &module) { break }
+    }
+
+    return head
+  }
+
+  /// If the next token is a dot, parses a nominal component to assigns `h` to name expression
+  /// qualified by its current value and returns `true`. Otherwise, returns `false`.
+  private mutating func appendNominalComponent(
+    to h: inout ExpressionIdentity, in module: inout Module
+  ) throws -> Bool {
+    if take(.dot) == nil { return false }
+
+    let n = try parseNominalComponent()
+    let s = span(from: module[h].site.start)
+    let m = module.insert(
+      NameExpression(qualification: .explicit(h), name: n, site: s), in: file)
+    h = .init(m)
+    return true
   }
 
   /// Parses a primary expression into `module`.
@@ -334,28 +370,53 @@ public struct Parser {
   }
 
   /// Parses an unqualified name expression into `module`.
+  ///
+  ///     unqualified-name-expression ::=
+  ///       identifier
+  ///
   private mutating func parseUnqualifiedNameExpression(
     in module: inout Module
   ) throws -> NameExpression.ID {
-    let identifier = try take(.name) ?? expected("identifier")
+    let name = try parseNominalComponent()
 
     return module.insert(
       NameExpression(
         qualification: .none,
-        name: .init(Name(identifier: String(identifier.text)), at: identifier.site),
-        site: identifier.site),
+        name: name,
+        site: name.site),
       in: file)
+  }
+
+  /// Parses a name and its optional compile-time arguments.
+  private mutating func parseNominalComponent() throws -> Parsed<Name> {
+    let identifier = try take(.name) ?? expected("identifier")
+    return .init(Name(identifier: String(identifier.text)), at: identifier.site)
   }
 
   /// Parses a type ascription into `module` iff the next token is a colon.
   ///
   ///     type-ascription ::=
-  ///       ':' expr
+  ///       ':' expression
   ///
   private mutating func parseOptionalTypeAscription(
     in module: inout Module
   ) throws -> ExpressionIdentity? {
     if take(.colon) != nil {
+      return try parseExpression(in: &module)
+    } else {
+      return nil
+    }
+  }
+
+  /// Parses a return type ascription into `module` iff the next token is an arrow.
+  ///
+  ///     return-type-ascription ::=
+  ///       '->' expression
+  ///
+  private mutating func parseOptionalReturnTypeAscription(
+    in module: inout Module
+  ) throws -> ExpressionIdentity? {
+    if take(.arrow) != nil {
       return try parseExpression(in: &module)
     } else {
       return nil
@@ -459,6 +520,74 @@ public struct Parser {
 
   // MARK: Helpers
 
+  /// Returns a source span from `s` to the current position.
+  private func span(from s: SourcePosition) -> SourceSpan {
+    .init(s.index ..< position.index, in: tokens.source)
+  }
+
+  /// Returns `true` iff there is a whitespace at the current position.
+  private func whitespaceAtCurrentPosition() -> Bool {
+    tokens.source[position.index].isWhitespace
+  }
+
+  /// Returns the next token without consuming it.
+  private mutating func peek() -> Token? {
+    if lookahead == nil { lookahead = tokens.next() }
+    return lookahead
+  }
+
+  /// Consumes and returns the next token.
+  private mutating func take() -> Token? {
+    let next = lookahead.take() ?? tokens.next()
+    position = next?.site.end ?? .init(tokens.source.endIndex, in: tokens.source)
+    return next
+  }
+
+  /// Consumes and returns the next token iff it has kind `k`; otherwise, returns `nil`.
+  private mutating func take(_ k: Token.Kind) -> Token? {
+    peek()?.kind == k ? take() : nil
+  }
+
+  /// Consumes and returns the next token iff it satisifies `predicate`; otherwise, returns `nil`.
+  private mutating func take(if predicate: (Token) -> Bool) -> Token? {
+    if let t = peek(), predicate(t) {
+      return take()
+    } else {
+      return nil
+    }
+  }
+
+  /// Consumes and returns the next token iff its kind is in `ks`; otherwise, returns `nil`.
+  private mutating func take<T: Collection<Token.Kind>>(oneOf ks: T) -> Token? {
+    take(if: { (t) in ks.contains(t.kind) })
+  }
+
+  /// Discards tokens until `predicate` isn't satisfied or all the input has been consumed.
+  private mutating func discard(while predicate: (Token) -> Bool) {
+    while let t = peek(), predicate(t) { _ = take() }
+  }
+
+  /// Discards tokens until the next token may be at the beginning of a top-level declaration.
+  private mutating func discardUntilNextTopLevelDeclaration() {
+    recover(at: { $0.isDeclarationHead })
+  }
+
+  /// Discards token until `predicate` is satisfied or the next token is a unbalanced delimiter.
+  private mutating func recover(at predicate: (Token) -> Bool) {
+    var nesting = 0
+    while let t = peek(), !predicate(t) {
+      switch t.kind {
+      case .leftBrace:
+        nesting += 1
+      case .rightBrace:
+        if nesting == 0 { return } else { nesting -= 1 }
+      default:
+         break
+      }
+      _ = take()
+    }
+  }
+
   /// Parses an instance of `T` or restores `self` to its current state if that fails.
   private mutating func attempt<T>(_ parse: (inout Self) throws -> T) -> T? {
     var backup = self
@@ -532,69 +661,6 @@ public struct Parser {
       }
     }
     return xs
-  }
-
-  /// Returns `true` iff there is a whitespace at the current position.
-  private func whitespaceAtCurrentPosition() -> Bool {
-    tokens.source[position.index].isWhitespace
-  }
-
-  /// Returns the next token without consuming it.
-  private mutating func peek() -> Token? {
-    if lookahead == nil { lookahead = tokens.next() }
-    return lookahead
-  }
-
-  /// Consumes and returns the next token.
-  private mutating func take() -> Token? {
-    let next = lookahead.take() ?? tokens.next()
-    position = next?.site.end ?? .init(tokens.source.endIndex, in: tokens.source)
-    return next
-  }
-
-  /// Consumes and returns the next token iff it has kind `k`; otherwise, returns `nil`.
-  private mutating func take(_ k: Token.Kind) -> Token? {
-    peek()?.kind == k ? take() : nil
-  }
-
-  /// Consumes and returns the next token iff it satisifies `predicate`; otherwise, returns `nil`.
-  private mutating func take(if predicate: (Token) -> Bool) -> Token? {
-    if let t = peek(), predicate(t) {
-      return take()
-    } else {
-      return nil
-    }
-  }
-
-  /// Consumes and returns the next token iff its kind is in `ks`; otherwise, returns `nil`.
-  private mutating func take<T: Collection<Token.Kind>>(oneOf ks: T) -> Token? {
-    take(if: { (t) in ks.contains(t.kind) })
-  }
-
-  /// Discards tokens until `predicate` isn't satisfied or all the input has been consumed.
-  private mutating func discard(while predicate: (Token) -> Bool) {
-    while let t = peek(), predicate(t) { _ = take() }
-  }
-
-  /// Discards tokens until the next token may be at the beginning of a top-level declaration.
-  private mutating func discardUntilNextTopLevelDeclaration() {
-    recover(at: { $0.isDeclarationHead })
-  }
-
-  /// Discards token until `predicate` is satisfied or the next token is a unbalanced delimiter.
-  private mutating func recover(at predicate: (Token) -> Bool) {
-    var nesting = 0
-    while let t = peek(), !predicate(t) {
-      switch t.kind {
-      case .leftBrace:
-        nesting += 1
-      case .rightBrace:
-        if nesting == 0 { return } else { nesting -= 1 }
-      default:
-         break
-      }
-      _ = take()
-    }
   }
 
   /// Returns a parse error explaining that `s` was expected at the current position.
