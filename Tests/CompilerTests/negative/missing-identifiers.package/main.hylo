@@ -1,1 +1,1 @@
-fun f(a b, , d: true) { false }
+fun f(a b, , d: true) {}

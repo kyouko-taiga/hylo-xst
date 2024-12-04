@@ -1,0 +1,19 @@
+class A {
+  class B {}
+}
+
+extension A.B {
+  typealias C = A
+}
+
+typealias D = A.B.C.B
+
+trait P {
+  type X
+}
+
+conformance A: P {
+  typealias X = A
+}
+
+typealias E = A.X

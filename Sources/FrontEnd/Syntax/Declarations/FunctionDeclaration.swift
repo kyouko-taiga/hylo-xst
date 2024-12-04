@@ -28,7 +28,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   public let output: ExpressionIdentity?
 
   /// The body of the function.
-  public let body: CallableBody?
+  public let body: [StatementIdentity]?
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
@@ -39,12 +39,10 @@ public struct FunctionDeclaration: Declaration, Scope {
     let o = output.map(program.show(_:)) ?? "Void"
     var result = "fun \(identifier)(\(i)) -> \(o)"
 
-    switch body {
-    case .some(.expression(let n)):
-      let e = program.show(n).indented
-      result.append(" {\n\(e)\n}")
-    case nil:
-      break
+    if let b = body {
+      result.append(" {\n")
+      for s in b { result.append(program.show(s).indented + "\n") }
+      result.append("}")
     }
 
     return result

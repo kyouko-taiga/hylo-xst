@@ -6,7 +6,7 @@ public protocol Syntax: Equatable, Archivable {
   /// The site from which `self` was parsed.
   var site: SourceSpan { get }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
+  /// Returns a representation of `self` in Hylo's syntax, given the program that stores `self`.
   func show(readingChildrenFrom program: Program) -> String
 
 }

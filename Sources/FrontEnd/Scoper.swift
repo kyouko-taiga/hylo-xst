@@ -1,5 +1,3 @@
-import OrderedCollections
-
 /// A function computing the scoping relationships of a module.
 public struct Scoper {
 
@@ -35,7 +33,7 @@ public struct Scoper {
     var syntaxToParent: [Int]
 
     /// A table from scope to the declarations that it contains directly.
-    var scopeToDeclarations: OrderedDictionary<Int, [DeclarationIdentity]>
+    var scopeToDeclarations: [Int: [DeclarationIdentity]]
 
     /// The innermost lexical scope currently visited.
     var innermost: Int

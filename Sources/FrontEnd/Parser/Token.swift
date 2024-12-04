@@ -13,6 +13,7 @@ public struct Token: Hashable {
 
     // Reserved keywords
     case `class`
+    case conformance
     case `extension`
     case `false`
     case fun
@@ -25,11 +26,13 @@ public struct Token: Hashable {
     case prefix
     case `private`
     case `public`
+    case `return`
     case set
     case sink
     case trait
     case `true`
     case type
+    case `typealias`
 
     // Operators
     case ampersand

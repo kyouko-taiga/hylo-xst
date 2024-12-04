@@ -1,0 +1,3 @@
+negative/missing-parameter-ascription.hylo:1.7-8: error: parameter requires ascription
+fun f(x) {}
+      ^

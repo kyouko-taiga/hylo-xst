@@ -34,10 +34,13 @@ public struct Module {
     internal var syntaxToParent: [Int] = []
 
     /// A table from scope to the declarations that it contains directly.
-    internal var scopeToDeclarations: OrderedDictionary<Int, [DeclarationIdentity]> = [:]
+    internal var scopeToDeclarations: [Int: [DeclarationIdentity]] = [:]
 
     /// A table from syntax tree to its type.
-    internal var syntaxToType: OrderedDictionary<Int, AnyTypeIdentity> = [:]
+    internal var syntaxToType: [Int: AnyTypeIdentity] = [:]
+
+    /// A table from name to its declaration.
+    internal var nameToDeclaration: [Int: DeclarationReference] = [:]
 
   }
 
@@ -161,6 +164,13 @@ public struct Module {
     assert(n.module == identity)
     let u = sources.values[n.file.offset].syntaxToType[n.offset].wrapIfEmpty(t)
     assert(t == u, "inconsistent type assignment")
+  }
+
+  /// Sets the declaration to which `n` refers.
+  internal mutating func bind(_ n: NameExpression.ID, to r: DeclarationReference) {
+    assert(n.module == identity)
+    let s = sources.values[n.file.offset].nameToDeclaration[n.offset].wrapIfEmpty(r)
+    assert(r == s, "inconsistent name binding")
   }
 
   /// Returns the type assigned to `n`, if any.

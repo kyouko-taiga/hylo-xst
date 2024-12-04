@@ -25,17 +25,22 @@ public struct SyntaxKind {
     // Declarations
     AssociatedTypeDeclaration.self,
     ClassDeclaration.self,
+    ConformanceDeclaration.self,
     ExtensionDeclaration.self,
     FunctionDeclaration.self,
     GenericParameterDeclaration.self,
     ImportDeclaration.self,
     ParameterDeclaration.self,
     TraitDeclaration.self,
+    TypeAliasDeclaration.self,
 
     // Expressions
     BooleanLiteral.self,
     NameExpression.self,
     RemoteTypeExpression.self,
+
+    // Statements
+    Return.self,
   ]
 
   static let indices = Dictionary(

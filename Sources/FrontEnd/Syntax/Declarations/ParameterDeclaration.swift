@@ -24,9 +24,9 @@ public struct ParameterDeclaration: Declaration {
     case .some(let l) where l.value == identifier.value:
       result.append(identifier.value)
     case .some(let l):
-      result.append("\(l.value) \(identifier.value)")
+      result.append("\(l) \(identifier)")
     case nil:
-      result.append("_ \(identifier.value)")
+      result.append("_ \(identifier)")
     }
 
     // Ascription.

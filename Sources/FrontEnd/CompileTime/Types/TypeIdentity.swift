@@ -13,16 +13,6 @@ extension TypeIdentity {
     erased.properties
   }
 
-  /// Returns `true` iff `l` denotes the same tree as `r`.
-  public static func == <T: TypeIdentity>(l: Self, r: T) -> Bool {
-    l.erased == r.erased
-  }
-
-  /// Returns `true` iff `l` denotes the same node as `r`.
-  public static func == <T: TypeIdentity>(l: T, r: Self) -> Bool {
-    l.erased == r.erased
-  }
-
 }
 
 /// The type-erased identity of a type tree.
@@ -112,9 +102,14 @@ public struct ConcreteTypeIdentity<T: TypeTree>: TypeIdentity {
     self.erased = erased
   }
 
-  /// Returns a type-erased copy of `t`.
-  public postfix static func ^ (t: Self) -> AnyTypeIdentity {
-    .init(t)
-  }
+    /// Returns `true` iff `l` denotes the same tree as `r`.
+    public static func == <U: TypeIdentity>(l: Self, r: U) -> Bool {
+      l.erased == r.erased
+    }
+  
+    /// Returns `true` iff `l` denotes the same node as `r`.
+    public static func == <U: TypeIdentity>(l: U, r: Self) -> Bool {
+      l.erased == r.erased
+    }
 
 }

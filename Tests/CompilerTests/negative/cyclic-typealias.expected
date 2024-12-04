@@ -1,0 +1,3 @@
+negative/cyclic-typealias.hylo:1.11-12: error: definition of 'X' refers to itself
+typealias X = Y
+          ^

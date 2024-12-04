@@ -6,7 +6,7 @@ extension Program {
   static var test: Program {
     var p = Program()
 
-    let m0 = p.demandIdentity(module: "org.hylo.M0")
+    let m0 = p.demandModule("org.hylo.M0")
     _ = p[m0].addSource("""
       trait P { type X }
       """)
@@ -14,13 +14,13 @@ extension Program {
       trait Q { type Y }
       """)
 
-    let m1 = p.demandIdentity(module: "org.hylo.M1")
+    let m1 = p.demandModule("org.hylo.M1")
     p[m1].addDependency(p[m0].name)
     _ = p[m1].addSource("""
       trait R { type Z }
       """)
 
-    let m2 = p.demandIdentity(module: "org.hylo.M2")
+    let m2 = p.demandModule("org.hylo.M2")
     p[m2].addDependency(p[m0].name)
     _ = p[m2].addSource("""
       trait R { type Z }

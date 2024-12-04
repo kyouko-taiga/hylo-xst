@@ -24,7 +24,7 @@ public struct NameExpression: Expression {
   public let name: Parsed<Name>
 
   /// The site from which `self` was parsed.
-  public var site: SourceSpan
+  public let site: SourceSpan
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {

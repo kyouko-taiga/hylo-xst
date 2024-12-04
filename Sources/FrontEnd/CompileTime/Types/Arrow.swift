@@ -48,7 +48,7 @@ public struct Arrow: TypeTree {
   /// Properties about `self`.
   public var properties: ValueProperties {
     inputs.reduce(output.properties, { (a, i) in a.union(i.type.properties) })
-  }
+  }  
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {

@@ -19,7 +19,7 @@ private let positive = root.appending(component: "positive", directoryHint: .isD
 /// Returns the URLs in `suite` having a ".hylo" or ".package" extension.
 private func testCases(_ suite: URL) throws -> [URL] {
   let urls = try FileManager.default.contentsOfDirectory(
-    at: negative,
+    at: suite,
     includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
   return urls.filter { (u) in u.pathExtension == "hylo" || u.pathExtension == "package" }
 }
@@ -35,8 +35,19 @@ private func main() throws {
     let i = testCaseIdentifier(u)
     result += """
 
-      func test_\(i)() throws {
-        try negative(.init("\(i)", "\(u.absoluteURL.path())"))
+      func test_negative_\(i)() async throws {
+        try await negative(.init("\(i)", "\(u.absoluteURL.path())"))
+      }
+
+    """
+  }
+
+  for u in try testCases(positive) {
+    let i = testCaseIdentifier(u)
+    result += """
+
+      func test_positive_\(i)() async throws {
+        try await positive(.init("\(i)", "\(u.absoluteURL.path())"))
       }
 
     """

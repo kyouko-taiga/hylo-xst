@@ -34,6 +34,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     switch word {
     case "_": kind = .underscore
     case "class": kind = .class
+    case "conformance": kind = .conformance
     case "extension": kind = .extension
     case "false": kind = .false
     case "fun": kind = .fun
@@ -46,11 +47,13 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "prefix": kind = .prefix
     case "private": kind = .private
     case "public": kind = .public
+    case "return": kind = .return
     case "set": kind = .set
     case "sink": kind = .sink
     case "trait": kind = .trait
     case "true": kind = .true
     case "type": kind = .type
+    case "typealias": kind = .typealias
     default: kind = .name
     }
     assert(!word.isEmpty)

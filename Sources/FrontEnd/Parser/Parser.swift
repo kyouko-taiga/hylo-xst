@@ -58,16 +58,20 @@ public struct Parser {
     in module: inout Module
   ) throws -> DeclarationIdentity {
     switch peek()?.kind {
-    case .type:
-      return try .init(parseAssociatedTypeDeclaration(in: &module))
     case .class:
       return try .init(parseClassDeclaration(in: &module))
+    case .conformance:
+      return try .init(parseConformanceDeclaration(in: &module))
     case .extension:
       return try .init(parseExtensionDeclaration(in: &module))
     case .fun:
       return try .init(parseFunctionDeclaration(in: &module))
     case .trait:
       return try .init(parseTraitDeclaration(in: &module))
+    case .type:
+      return try .init(parseAssociatedTypeDeclaration(in: &module))
+    case .typealias:
+      return try .init(parseTypeAliasDeclaration(in: &module))
     default:
       throw expected("declaration")
     }
@@ -88,7 +92,7 @@ public struct Parser {
       AssociatedTypeDeclaration(
         introducer: introducer,
         identifier: identifier,
-        site: introducer.site.extended(upTo: position.index)),
+        site: span(from: introducer)),
       in: file)
   }
 
@@ -110,7 +114,31 @@ public struct Parser {
         identifier: identifier,
         parameters: [],
         members: members,
-        site: introducer.site.extended(upTo: position.index)),
+        site: span(from: introducer)),
+      in: file)
+  }
+
+  /// Parses a conformance declaration into `module`.
+  ///
+  ///     conformance-declaration ::=
+  ///       'conformance' expression ':' expression type-body
+  ///
+  private mutating func parseConformanceDeclaration(
+    in module: inout Module
+  ) throws -> ConformanceDeclaration.ID {
+    let introducer = try take(.conformance) ?? expected("'conformance'")
+    let extendee = try parseExpression(in: &module)
+    _ = try take(.colon) ?? expected("':'")
+    let concept = try parseExpression(in: &module)
+    let members = try parseTypeBody(in: &module)
+
+    return module.insert(
+      ConformanceDeclaration(
+        introducer: introducer,
+        extendee: extendee,
+        concept: concept,
+        members: members,
+        site: span(from: introducer)),
       in: file)
   }
 
@@ -131,14 +159,14 @@ public struct Parser {
         introducer: introducer,
         extendee: extendee,
         members: members,
-        site: introducer.site.extended(upTo: position.index)),
+        site: span(from: introducer)),
       in: file)
   }
 
   /// Parses a function declaration into `module`.
   ///
   ///     function-declaration ::=
-  ///       'fun' function-identifier parameters
+  ///       'fun' function-identifier parameters return-type-ascription? callable-body?
   ///
   private mutating func parseFunctionDeclaration(
     in module: inout Module
@@ -147,7 +175,7 @@ public struct Parser {
     let identifier = try parseFunctionIdentifier()
     let parameters = try parseParameterList(in: &module)
     let output = try parseOptionalReturnTypeAscription(in: &module)
-    let body = try peek()?.kind == .leftBrace ? parseCallableBody(in: &module) : nil
+    let body = try parseOptionalCallableBody(in: &module)
 
     return module.insert(
       FunctionDeclaration(
@@ -212,10 +240,19 @@ public struct Parser {
       in: file)
   }
 
+  /// Parses the body of a callable abstraction into `module` if the next token is a left brace.
+  private mutating func parseOptionalCallableBody(
+    in module: inout Module
+  ) throws -> [StatementIdentity]? {
+    try peek()?.kind == .leftBrace ? parseCallableBody(in: &module) : nil
+  }
+
   /// Parses the body of a function, lambda, or subscript into `module`.
-  private mutating func parseCallableBody(in module: inout Module) throws -> CallableBody {
-    try inBraces { (me) in
-      CallableBody.expression(try me.parseExpression(in: &module))
+  private mutating func parseCallableBody(in module: inout Module) throws -> [StatementIdentity] {
+    try inBraces { (m0) in
+      try m0.semicolonSeparated(deimitedBy: .rightBrace) { (m1) in
+        try m1.parseStatement(in: &module)
+      }
     }
   }
 
@@ -236,7 +273,7 @@ public struct Parser {
         introducer: introducer,
         identifier: identifier,
         members: members,
-        site: introducer.site.extended(upTo: position.index)),
+        site: span(from: introducer)),
       in: file)
   }
 
@@ -255,6 +292,28 @@ public struct Parser {
         try m1.parseDeclaration(in: &module)
       }
     }
+  }
+
+  /// Parses a type alias declaration into `module`.
+  ///
+  ///     type-alias-declaration ::=
+  ///       'typealias' identifier '=' expression
+  ///
+  private mutating func parseTypeAliasDeclaration(
+    in module: inout Module
+  ) throws -> TypeAliasDeclaration.ID {
+    let introducer = try take(.typealias) ?? expected("'typealias'")
+    let identifier = parseSimpleIdentifier()
+    _ = try take(.assign) ?? expected("'='")
+    let aliasee = try parseExpression(in: &module)
+
+    return module.insert(
+      TypeAliasDeclaration(
+        introducer: introducer,
+        identifier: identifier,
+        aliasee: aliasee,
+        site: introducer.site.extended(upTo: position.index)),
+      in: file)
   }
 
   // MARK: Expressions
@@ -276,25 +335,88 @@ public struct Parser {
     var head = try parsePrimaryExpression(in: &module)
 
     while true {
-      if try !appendNominalComponent(to: &head, in: &module) { break }
+      if try appendNominalComponent(to: &head, in: &module) { continue }
+
+      // Exit if there's a newline before the next token.
+      if newlineBeforeNextToken() { break }
+
+      if try appendParenthesizedArguments(to: &head, in: &module) { continue }
+      break
     }
 
     return head
   }
 
-  /// If the next token is a dot, parses a nominal component to assigns `h` to name expression
+  /// If the next token is a dot, parses a nominal component, assigns `h` to a name expression
   /// qualified by its current value and returns `true`. Otherwise, returns `false`.
   private mutating func appendNominalComponent(
     to h: inout ExpressionIdentity, in module: inout Module
   ) throws -> Bool {
     if take(.dot) == nil { return false }
-
     let n = try parseNominalComponent()
     let s = span(from: module[h].site.start)
     let m = module.insert(
       NameExpression(qualification: .explicit(h), name: n, site: s), in: file)
     h = .init(m)
     return true
+  }
+
+  /// If the next token is a left parenthesis, parses an argument list, assigns `h` to a call
+  /// expression applying its current value, and returns `true`. Otherwise, returns `false`.
+  private mutating func appendParenthesizedArguments(
+    to h: inout ExpressionIdentity, in module: inout Module
+  ) throws -> Bool {
+    if peek()?.kind != .leftParenthesis { return false }
+    let a = try parseLabeledArgumentList(in: &module)
+    let s = module[h].site.extended(upTo: position.index)
+    let m = module.insert(
+      FunctionallCall(callee: h, arguments: a, site: s), in: file)
+    h = .init(m)
+    return true
+  }
+
+  /// Parses a parenthesized list of labeled arguments into `module`.
+  private mutating func parseLabeledArgumentList(
+    in module: inout Module
+  ) throws -> [LabeledArgument] {
+    let (vs, _) = try inParentheses { (m0) in
+      try m0.commaSeparated(deimitedBy: .rightParenthesis) { (m1) in
+        try m1.parseLabeledArgument(in: &module)
+      }
+    }
+    return vs
+  }
+
+  /// Parses a labeled argument declaration into `module`.
+  ///
+  ///     labeled-argument ::=
+  ///       (argument-label ':')? expression
+  ///
+  private mutating func parseLabeledArgument(
+    in module: inout Module
+  ) throws -> LabeledArgument {
+    if let l = take(if: \.isArgumentLabel) {
+      // Can we parse a colon after an label?
+      if take(.colon) != nil {
+        let v = try parseExpression(in: &module)
+        return .init(label: .init(l), value: v)
+      }
+
+      // There was no colon; did we parse a simple identifier?
+      else if l.kind == .name {
+        let n = Parsed(Name(identifier: String(l.text)), at: l.site)
+        let v = module.insert(
+          NameExpression(qualification: .none, name: n, site: n.site), in: file)
+        return .init(label: nil, value: .init(v))
+      }
+
+      // A colon is missing.
+      throw ParseError("expected argument", at: l.site)
+    } else {
+      // No label
+      let v = try parseExpression(in: &module)
+      return .init(label: nil, value: v)
+    }
   }
 
   /// Parses a primary expression into `module`.
@@ -439,6 +561,59 @@ public struct Parser {
     }
   }
 
+  // MARK: Statements
+
+  /// Parses a statement into `module`.
+  ///
+  ///     statement ::=
+  ///       return-statement
+  ///       declaration
+  ///       expression
+  ///
+  private mutating func parseStatement(in module: inout Module) throws -> StatementIdentity {
+    switch peek()?.kind {
+    case .return:
+      return try .init(parseReturnStatement(in: &module))
+    default:
+      return try .init(parseExpression(in: &module))
+    }
+  }
+
+  /// Parses a return statement into `module`.
+  ///
+  ///     return-statement ::=
+  ///       'return' expression?
+  ///
+  private mutating func parseReturnStatement(in module: inout Module) throws -> Return.ID {
+    let i = try take(.return) ?? expected("'return'")
+
+    // The return value must be on the same line.
+    let v: ExpressionIdentity?
+    if newlinesBeforeNextToken() {
+      v = nil
+    } else if let w = attempt({ (me) in try me.parseExpression(in: &module) }) {
+      v = w
+    } else {
+      report(missingSemicolon(at: .empty(at: position)))
+      v = nil
+    }
+
+    return module.insert(
+      Return(
+        introducer: i,
+        value: v,
+        site: span(from: i)),
+      in: file)
+  }
+
+  private mutating func newlinesBeforeNextToken() -> Bool {
+    if let t = peek() {
+      return tokens.source[position.index ..< t.site.start.index].contains(where: \.isNewline)
+    } else {
+      return false
+    }
+  }
+
   // MARK: Identifiers
 
   /// Parses a function identifier.
@@ -520,6 +695,11 @@ public struct Parser {
 
   // MARK: Helpers
 
+  /// Returns a source span from the first position of `t` to the current position.
+  private func span(from t: Token) -> SourceSpan {
+    .init(t.site.start.index ..< position.index, in: tokens.source)
+  }
+
   /// Returns a source span from `s` to the current position.
   private func span(from s: SourcePosition) -> SourceSpan {
     .init(s.index ..< position.index, in: tokens.source)
@@ -528,6 +708,15 @@ public struct Parser {
   /// Returns `true` iff there is a whitespace at the current position.
   private func whitespaceAtCurrentPosition() -> Bool {
     tokens.source[position.index].isWhitespace
+  }
+
+  /// Returns `true` iff there is a newline before the next token.
+  private mutating func newlineBeforeNextToken() -> Bool {
+    if let n = peek() {
+      return tokens.source[position.index ..< n.site.start.index].contains(where: \.isNewline)
+    } else {
+      return false
+    }
   }
 
   /// Returns the next token without consuming it.
@@ -663,9 +852,14 @@ public struct Parser {
     return xs
   }
 
-  /// Returns a parse error explaining that `s` was expected at the current position.
+  /// Returns a parse error reporting that `s` was expected at the current position.
   private func expected(_ s: String) -> ParseError {
     .init("expected \(s)", at: .empty(at: position))
+  }
+
+  /// Returns a parse error reporting a missing statement separator at `site`.
+  func missingSemicolon(at site: SourceSpan) -> ParseError {
+    .init("consecutive statements on the same line must be separated by ';'", at: site)
   }
 
   /// Reports `e` and returns `v`.

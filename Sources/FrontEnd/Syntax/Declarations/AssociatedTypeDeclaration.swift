@@ -22,10 +22,9 @@ public struct AssociatedTypeDeclaration: TypeDeclaration {
 extension AssociatedTypeDeclaration: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    let i = try archive.read(Token.self, in: &context)
-    let n = try archive.read(Parsed<String>.self, in: &context)
-    let s = try archive.read(SourceSpan.self, in: &context)
-    self.init(introducer: i, identifier: n, site: s)
+    self.introducer = try archive.read(Token.self, in: &context)
+    self.identifier = try archive.read(Parsed<String>.self, in: &context)
+    self.site = try archive.read(SourceSpan.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {

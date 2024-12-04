@@ -49,6 +49,8 @@ extension Program {
       traverse(castUnchecked(n, to: AssociatedTypeDeclaration.self), calling: &v)
     case ClassDeclaration.self:
       traverse(castUnchecked(n, to: ClassDeclaration.self), calling: &v)
+    case ConformanceDeclaration.self:
+      traverse(castUnchecked(n, to: ConformanceDeclaration.self), calling: &v)
     case ExtensionDeclaration.self:
       traverse(castUnchecked(n, to: ExtensionDeclaration.self), calling: &v)
     case FunctionDeclaration.self:
@@ -61,13 +63,21 @@ extension Program {
       traverse(castUnchecked(n, to: ParameterDeclaration.self), calling: &v)
     case TraitDeclaration.self:
       traverse(castUnchecked(n, to: TraitDeclaration.self), calling: &v)
+    case TypeAliasDeclaration.self:
+      traverse(castUnchecked(n, to: TypeAliasDeclaration.self), calling: &v)
 
     case BooleanLiteral.self:
-      traverse(castUnchecked(n, to: BooleanLiteral.self), calling: &v)
+      break
+    case FunctionallCall.self:
+      traverse(castUnchecked(n, to: FunctionallCall.self), calling: &v)
     case NameExpression.self:
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
     case RemoteTypeExpression.self:
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
+
+    case Return.self:
+      traverse(castUnchecked(n, to: Return.self), calling: &v)
+
     default:
       unreachable()
     }
@@ -103,6 +113,13 @@ extension Program {
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: ConformanceDeclaration.ID, calling v: inout T) {
+    visit(self[n].extendee.erased, calling: &v)
+    visit(self[n].concept.erased, calling: &v)
+    visit(self[n].members, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ExtensionDeclaration.ID, calling v: inout T) {
     visit(self[n].extendee.erased, calling: &v)
     visit(self[n].members, calling: &v)
@@ -112,12 +129,7 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: FunctionDeclaration.ID, calling v: inout T) {
     visit(self[n].parameters, calling: &v)
     visit(self[n].output, calling: &v)
-    switch self[n].body {
-    case .some(.expression(let e)):
-      visit(e, calling: &v)
-    case nil:
-      break
-    }
+    if let b = self[n].body { visit(b, calling: &v) }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
@@ -131,7 +143,15 @@ extension Program {
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
-  public func traverse<T: SyntaxVisitor>(_ n: BooleanLiteral.ID, calling v: inout T) {}
+  public func traverse<T: SyntaxVisitor>(_ n: TypeAliasDeclaration.ID, calling v: inout T) {
+    visit(self[n].aliasee, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: FunctionallCall.ID, calling v: inout T) {
+    visit(self[n].callee, calling: &v)
+    for a in self[n].arguments { visit(a.value, calling: &v) }
+  }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: NameExpression.ID, calling v: inout T) {
@@ -143,6 +163,11 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: RemoteTypeExpression.ID, calling v: inout T) {
     visit(self[n].projectee.erased, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: Return.ID, calling v: inout T) {
+    visit(self[n].value, calling: &v)
   }
 
 }

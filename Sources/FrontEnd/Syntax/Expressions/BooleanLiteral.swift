@@ -1,11 +1,10 @@
 import Archivist
-import Utilities
 
 /// The expression of a Boolean literal.
 public struct BooleanLiteral: Expression {
 
   /// The site from which `self` was parsed.
-  public var site: SourceSpan
+  public let site: SourceSpan
 
   /// The value of the literal.
   public var value: Bool { site.text == "true" }

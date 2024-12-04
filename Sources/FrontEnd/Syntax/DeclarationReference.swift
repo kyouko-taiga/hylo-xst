@@ -1,7 +1,7 @@
 /// The way in which an entity is referred to.
-public indirect enum DeclarationReference {
+public indirect enum DeclarationReference: Hashable {
 
-  public enum Qualification: Equatable {
+  public enum Qualification: Hashable {
 
     /// Implicit, as the `.` in `.bar`; the whole name denotes a static member.
     case implicit
@@ -13,5 +13,10 @@ public indirect enum DeclarationReference {
 
   /// A direct reference.
   case direct(DeclarationIdentity)
+
+  /// A reference to a member inherited by conformance.
+  case inherited(
+    witness: DeclarationReference,
+    member: DeclarationIdentity)
 
 }

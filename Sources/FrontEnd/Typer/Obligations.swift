@@ -1,3 +1,5 @@
+import OrderedCollections
+
 /// A set of formulae to be proven for checking the type of a syntax tree.
 internal struct Obligations {
 
@@ -5,7 +7,8 @@ internal struct Obligations {
   internal private(set) var syntaxToType: [AnySyntaxIdentity: AnyTypeIdentity]
 
   /// A table from name component to its declaration.
-  internal private(set) var nameToDeclaration: [NameExpression.ID: DeclarationReference]
+  internal private(set) var nameToDeclaration:
+    OrderedDictionary<NameExpression.ID, DeclarationReference>
 
   /// `true` iff a this set cannot be discharged because.
   internal private(set) var isUnsatisfiable: Bool

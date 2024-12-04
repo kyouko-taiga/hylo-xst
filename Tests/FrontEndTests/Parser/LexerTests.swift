@@ -65,11 +65,12 @@ final class LexerTests: XCTestCase {
 
   func testKeywords() throws {
     let input: SourceFile = """
-      class extension false fun let import infix inout internal postfix prefix private public set
-      sink trait true type
+      class conformance extension false fun let import infix inout internal postfix prefix private
+      public return set sink trait true type typealias
       """
     var scanner = Lexer(tokenizing: input)
     try assertNext(from: &scanner, is: .class)
+    try assertNext(from: &scanner, is: .conformance)
     try assertNext(from: &scanner, is: .extension)
     try assertNext(from: &scanner, is: .false)
     try assertNext(from: &scanner, is: .fun)
@@ -82,11 +83,13 @@ final class LexerTests: XCTestCase {
     try assertNext(from: &scanner, is: .prefix)
     try assertNext(from: &scanner, is: .private)
     try assertNext(from: &scanner, is: .public)
+    try assertNext(from: &scanner, is: .return)
     try assertNext(from: &scanner, is: .set)
     try assertNext(from: &scanner, is: .sink)
     try assertNext(from: &scanner, is: .trait)
     try assertNext(from: &scanner, is: .true)
     try assertNext(from: &scanner, is: .type)
+    try assertNext(from: &scanner, is: .typealias)
     XCTAssertNil(scanner.next())
   }
 

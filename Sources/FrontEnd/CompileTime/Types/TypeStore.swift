@@ -1,4 +1,5 @@
 import MoreCollections
+import Utilities
 
 /// A collection of types.
 public struct TypeStore {
@@ -31,7 +32,12 @@ public struct TypeStore {
     }
   }
 
-  /// Returns `t` if it identifies a tree of type `U`; otherwise, returns `nil`.
+  /// Returns the kind of `n`.
+  public func kind<T: TypeIdentity>(of n: T) -> TypeKind {
+    .init(type(of: self[n]))
+  }
+
+  /// Returns `n` if it identifies a tree of type `U`; otherwise, returns `nil`.
   public func cast<T: TypeIdentity, U: TypeTree>(_ n: T, to: U.Type) -> U.ID? {
     if type(of: self[n]) == U.self {
       return .init(uncheckedFrom: n.erased)
@@ -40,10 +46,26 @@ public struct TypeStore {
     }
   }
 
-  /// Returns `t` assuming it identifies a tree of type `U`.
+  /// Returns `n` assuming it identifies a tree of type `U`.
   public func castUnchecked<T: TypeIdentity, U: TypeTree>(_ n: T, to: U.Type = U.self) -> U.ID {
     assert(type(of: self[n]) == U.self)
     return .init(uncheckedFrom: n.erased)
+  }
+
+  /// Returns `n` if it identifies a trait application; otherwise, returns `nil`.
+  public func castToTraitApplication<T: TypeIdentity>(
+    _ n: T
+  ) -> (concept: Trait.ID, subject: AnyTypeIdentity)? {
+    if
+      let t = cast(n, to: TypeApplication.self),
+      let u = cast(self[t].abstraction, to: Trait.self),
+      let v = self[t].arguments.first?.type
+    {
+      assert(self[t].arguments.count == 1)
+      return (concept: u, subject: v)
+    } else {
+      return nil
+    }
   }
 
   /// Projects the type identified by `n`.
@@ -71,5 +93,55 @@ public struct TypeStore {
       }
     }
   }
+
+  /// Returns `n` transformed by `transform(_:_:)`.
+  public mutating func map(
+    _ n: AnyTypeIdentity,
+    _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> AnyTypeIdentity {
+    switch transform(&self, n) {
+    case .stepInto(let m):
+      return map(m, transform)
+    case .stepOver(let m):
+      return m
+
+    }
+  }
+
+  /// Returns `n` with its parts transformed by `transform(_:_:)`.
+  ///
+  /// This operation is endomorphic: the result is an instance with the same type as `n`.
+  public mutating func modify(
+    _ n: AnyTypeIdentity,
+    _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> AnyTypeIdentity {
+    switch kind(of: n) {
+    case Arrow.self:
+      return modify(castUnchecked(n, to: Arrow.self), transform).erased
+    default:
+      unreachable()
+    }
+  }
+
+  /// Returns `n` with its parts transformed by `transform(_:_:)`.
+  public mutating func modify(
+    _ n: Arrow.ID,
+    _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> Arrow.ID {
+    fatalError()
+  }
+
+  public mutating func adapt(_ t: AnyTypeIdentity, to w: Model) -> AnyTypeIdentity {
+    t
+  }
+
+}
+
+/// The result of a call to a closure passed to `TypeStore.transform(_:)`.
+public enum TypeTransformAction {
+
+  case stepInto(AnyTypeIdentity)
+
+  case stepOver(AnyTypeIdentity)
 
 }

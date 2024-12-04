@@ -68,7 +68,7 @@ public struct Program {
   }
 
   /// Returns the identity of the module named `moduleName`.
-  public mutating func demandIdentity(module moduleName: Module.Name) -> ModuleIdentity {
+  public mutating func demandModule(_ moduleName: Module.Name) -> ModuleIdentity {
     if let m = modules.index(forKey: moduleName) {
       return m
     } else {
@@ -129,9 +129,27 @@ public struct Program {
     self[s].source.text
   }
 
-  /// Returns a parsable representation of `n`.
-  public func show<T: SyntaxIdentity>(_ n: T) -> String {
-    self[n].show(readingChildrenFrom: self)
+  /// Returns a parsable representation of `v`.
+  public func show(_ v: Value) -> String {
+    switch v {
+    case .term(let t): show(t)
+    case .type(let t): show(t)
+    }
+  }
+
+  /// Returns a parsable representation of `t`.
+  public func show(_ t: AnyTerm) -> String {
+    t.wrapped.show(readingChildrenFrom: self)
+  }
+
+  /// Returns a parsable representation of `t`.
+  public func show<T: Term>(_ t: T) -> String {
+    t.show(readingChildrenFrom: self)
+  }
+
+  /// Returns a parsable representation of `t`.
+  public func show<T: TypeIdentity>(_ t: T) -> String {
+    types[t].show(readingChildrenFrom: self)
   }
 
   /// Returns a source-like representation of `s`.
@@ -139,9 +157,9 @@ public struct Program {
     s.node.map(show(_:)) ?? show(s.file)
   }
 
-  /// Returns a parsable representation of `t`.
-  public func show<T: TypeIdentity>(_ t: T) -> String {
-    types[t].show(readingChildrenFrom: self)
+  /// Returns a parsable representation of `n`.
+  public func show<T: SyntaxIdentity>(_ n: T) -> String {
+    self[n].show(readingChildrenFrom: self)
   }
 
   /// Returns the kind of `n`.
@@ -172,6 +190,32 @@ public struct Program {
   /// Returns `true` iff `n` denotes a scope.
   public func isScope<T: SyntaxIdentity>(_ n: T) -> Bool {
     kind(of: n).value is any Scope.Type
+  }
+
+  /// Returns `true` iff `n` denotes a declaration that can be lifted at global scope.
+  ///
+  /// - Requires: The module containing `n` is scoped.
+  public func isGlobal(_ n: DeclarationIdentity) -> Bool {
+    switch kind(of: n) {
+    case AssociatedTypeDeclaration.self:
+      return true
+    case ClassDeclaration.self:
+      return true
+    case ConformanceDeclaration.self:
+      return true
+    case ExtensionDeclaration.self:
+      return true
+    case GenericParameterDeclaration.self:
+      return true
+    case ImportDeclaration.self:
+      return true
+    case TraitDeclaration.self:
+      return true
+    case TypeAliasDeclaration.self:
+      return true
+    default:
+      return parent(containing: n).node == nil
+    }
   }
 
   /// Returns `true` iff `t` is a type constructor accepting parameters.
@@ -256,7 +300,7 @@ public struct Program {
   /// Returns a sequence containing `s` and its ancestors, from inner to outer.
   ///
   /// - Requires: The module containing `s` is scoped.
-  public func scopes(from s: ScopeIdentity) -> any Sequence<ScopeIdentity> {
+  public func scopes(from s: ScopeIdentity) -> some Sequence<ScopeIdentity> {
     var next: Optional = s
     return AnyIterator {
       if let n = next {
@@ -271,12 +315,21 @@ public struct Program {
   /// Returns the declarations directly contained in `s`.
   ///
   /// - Requires: The module containing `s` is scoped.
-  public func declarations(in s: ScopeIdentity) -> [DeclarationIdentity] {
+  public func declarations(lexicallyIn s: ScopeIdentity) -> [DeclarationIdentity] {
     if let n = s.node {
       return self[n.file].scopeToDeclarations[n.offset] ?? preconditionFailure("unscoped module")
     } else {
       return self[s.file].topLevelDeclarations
     }
+  }
+
+  /// Returns the declarations direactly contained in `s` that identify nodes of type `T`.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func declarations<T: Declaration>(
+    of t: T.Type, lexicallyIn s: ScopeIdentity
+  ) -> [T.ID] {
+    collect(t, in: declarations(lexicallyIn: s))
   }
 
   /// Returns the names introduced by `d`.
@@ -343,6 +396,83 @@ public struct Program {
     _ t: AnyTypeIdentity, file: StaticString = #file, line: UInt = #line
   ) -> Never {
     unreachable("unexpected type '\(show(t))'", file: file, line: line)
+  }
+
+  /// Returns a source span suitable to emit a disgnostic related to `n` as a whole.
+  public func spanForDiagnostic<T: SyntaxIdentity>(about n: T) -> SourceSpan {
+    switch kind(of: n) {
+    case AssociatedTypeDeclaration.self:
+      return self[castUnchecked(n, to: AssociatedTypeDeclaration.self)].identifier.site
+    case ClassDeclaration.self:
+      return self[castUnchecked(n, to: ClassDeclaration.self)].identifier.site
+    case ConformanceDeclaration.self:
+      return self[castUnchecked(n, to: ConformanceDeclaration.self)].introducer.site
+    case ExtensionDeclaration.self:
+      return self[castUnchecked(n, to: ExtensionDeclaration.self)].introducer.site
+    case FunctionDeclaration.self:
+      return self[castUnchecked(n, to: FunctionDeclaration.self)].identifier.site
+    case ImportDeclaration.self:
+      return self[castUnchecked(n, to: ImportDeclaration.self)].identifier.site
+    case TraitDeclaration.self:
+      return self[castUnchecked(n, to: TraitDeclaration.self)].identifier.site
+    case TypeAliasDeclaration.self:
+      return self[castUnchecked(n, to: TypeAliasDeclaration.self)].identifier.site
+    default:
+      return self[n].site
+    }
+  }
+
+  /// Returns `message` with placeholders replaced by theor corresponding values in `arguments`.
+  ///
+  /// Use this method to generate strings containing one or several elements whose description is
+  /// computed by one of `show(_:)`'s overloads.
+  ///
+  /// ```swift
+  /// let t = AnyTypeIdentity.void
+  /// let s = program.format("'%T' is a type", [t])
+  /// assert(s == "'Void' is a type")
+  /// ```
+  ///
+  /// Each element to show is represented by a placehoder, which is a string starting with "%".
+  /// The i-th placeholder occurring in `message` (except `%%`) must have a corresponding value at
+  /// the i-th position of `arguments`.
+  ///
+  /// Valid placehoders are:
+  /// - `%T`: A type.
+  /// - `%%`: The percent sign; does not consume any argument.
+  public func format(
+    _ message: String, _ arguments: [Any], file: StaticString = #file, line: UInt = #line
+  ) -> String {
+    var output = ""
+    var s = message[...]
+    var a = arguments[...]
+    while let head = s.popFirst() {
+      if head == "%" {
+        output.append(take(s.popFirst(), from: &a))
+      } else {
+        output.append(head)
+      }
+    }
+    return output
+
+    /// Converts the next element in `arguments` based on `placeholder`.
+    func take(_ placeholder: Character?, from arguments: inout ArraySlice<Any>) -> String {
+      switch placeholder {
+      case "T":
+        let t = show((arguments.popFirst() as? AnyTypeIdentity) ?? expected("type"))
+        return "'\(t)'"
+      case "%":
+        return "%"
+      case let c:
+        let s = c.map(String.init(_:)) ?? ""
+        fatalError("invalid placeholder '%\(s)'", file: file, line: line)
+      }
+    }
+
+    /// Reports that an argument of type `s` was expected and exits the program.
+    func expected(_ s: String) -> Never {
+      fatalError("expected \(s)", file: file, line: line)
+    }
   }
 
 }
