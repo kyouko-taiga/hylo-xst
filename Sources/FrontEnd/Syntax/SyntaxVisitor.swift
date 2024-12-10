@@ -47,8 +47,6 @@ extension Program {
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
       traverse(castUnchecked(n, to: AssociatedTypeDeclaration.self), calling: &v)
-    case ClassDeclaration.self:
-      traverse(castUnchecked(n, to: ClassDeclaration.self), calling: &v)
     case ConformanceDeclaration.self:
       traverse(castUnchecked(n, to: ConformanceDeclaration.self), calling: &v)
     case ExtensionDeclaration.self:
@@ -61,6 +59,8 @@ extension Program {
       break
     case ParameterDeclaration.self:
       traverse(castUnchecked(n, to: ParameterDeclaration.self), calling: &v)
+    case StructDeclaration.self:
+      traverse(castUnchecked(n, to: StructDeclaration.self), calling: &v)
     case TraitDeclaration.self:
       traverse(castUnchecked(n, to: TraitDeclaration.self), calling: &v)
     case TypeAliasDeclaration.self:
@@ -110,11 +110,6 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: AssociatedTypeDeclaration.ID, calling v: inout T) {}
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
-  public func traverse<T: SyntaxVisitor>(_ n: ClassDeclaration.ID, calling v: inout T) {
-    visit(self[n].members, calling: &v)
-  }
-
-  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ConformanceDeclaration.ID, calling v: inout T) {
     visit(self[n].extendee.erased, calling: &v)
     visit(self[n].concept.erased, calling: &v)
@@ -137,6 +132,11 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ParameterDeclaration.ID, calling v: inout T) {
     visit(self[n].ascription.map(AnySyntaxIdentity.init(_:)), calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: StructDeclaration.ID, calling v: inout T) {
+    visit(self[n].members, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

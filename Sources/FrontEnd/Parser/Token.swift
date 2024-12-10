@@ -12,7 +12,6 @@ public struct Token: Hashable {
     case underscore
 
     // Reserved keywords
-    case `class`
     case conformance
     case `extension`
     case `false`
@@ -29,6 +28,7 @@ public struct Token: Hashable {
     case `return`
     case set
     case sink
+    case `struct`
     case trait
     case `true`
     case type

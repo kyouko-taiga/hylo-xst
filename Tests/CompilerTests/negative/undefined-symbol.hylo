@@ -1,2 +1,2 @@
-class A {}
+struct A {}
 fun f(x: A.B) { () }

@@ -50,7 +50,7 @@ public struct Parser {
   ///
   ///     declaration ::=
   ///       associated-type-declaration
-  ///       class-declaration
+  ///       struct-declaration
   ///       extension-declaration
   ///       trait-declaration
   ///
@@ -58,14 +58,14 @@ public struct Parser {
     in module: inout Module
   ) throws -> DeclarationIdentity {
     switch peek()?.kind {
-    case .class:
-      return try .init(parseClassDeclaration(in: &module))
     case .conformance:
       return try .init(parseConformanceDeclaration(in: &module))
     case .extension:
       return try .init(parseExtensionDeclaration(in: &module))
     case .fun:
       return try .init(parseFunctionDeclaration(in: &module))
+    case .struct:
+      return try .init(parseStructDeclaration(in: &module))
     case .trait:
       return try .init(parseTraitDeclaration(in: &module))
     case .type:
@@ -92,28 +92,6 @@ public struct Parser {
       AssociatedTypeDeclaration(
         introducer: introducer,
         identifier: identifier,
-        site: span(from: introducer)),
-      in: file)
-  }
-
-  /// Parses a class declaration into `module`.
-  ///
-  ///     class-declaration ::=
-  ///       'class' identifier type-body
-  ///
-  private mutating func parseClassDeclaration(
-    in module: inout Module
-  ) throws -> ClassDeclaration.ID {
-    let introducer = try take(.class) ?? expected("'class'")
-    let identifier = parseSimpleIdentifier()
-    let members = try parseTypeBody(in: &module)
-
-    return module.insert(
-      ClassDeclaration(
-        introducer: introducer,
-        identifier: identifier,
-        parameters: [],
-        members: members,
         site: span(from: introducer)),
       in: file)
   }
@@ -254,6 +232,28 @@ public struct Parser {
         try m1.parseStatement(in: &module)
       }
     }
+  }
+
+  /// Parses a struct declaration into `module`.
+  ///
+  ///     struct-declaration ::=
+  ///       'struct' identifier type-body
+  ///
+  private mutating func parseStructDeclaration(
+    in module: inout Module
+  ) throws -> StructDeclaration.ID {
+    let introducer = try take(.struct) ?? expected("'struct'")
+    let identifier = parseSimpleIdentifier()
+    let members = try parseTypeBody(in: &module)
+
+    return module.insert(
+      StructDeclaration(
+        introducer: introducer,
+        identifier: identifier,
+        parameters: [],
+        members: members,
+        site: span(from: introducer)),
+      in: file)
   }
 
   /// Parses a trait declaration into `module`.

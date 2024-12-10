@@ -1,5 +1,5 @@
-class A {
-  class B {}
+struct A {
+  struct B {}
 }
 
 extension A.B {

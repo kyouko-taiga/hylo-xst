@@ -24,7 +24,6 @@ public struct SyntaxKind {
   static let allValues: [any Syntax.Type] = [
     // Declarations
     AssociatedTypeDeclaration.self,
-    ClassDeclaration.self,
     ConformanceDeclaration.self,
     ExtensionDeclaration.self,
     FunctionDeclaration.self,
@@ -33,6 +32,7 @@ public struct SyntaxKind {
     ParameterDeclaration.self,
     TraitDeclaration.self,
     TypeAliasDeclaration.self,
+    StructDeclaration.self,
 
     // Expressions
     BooleanLiteral.self,

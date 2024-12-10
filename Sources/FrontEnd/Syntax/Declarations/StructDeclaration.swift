@@ -1,18 +1,18 @@
 import Archivist
 
-/// The declaration of a class.
-public struct ClassDeclaration: TypeDeclaration, Scope {
+/// The declaration of a structure.
+public struct StructDeclaration: TypeDeclaration, Scope {
 
   /// The introducer of this declaration.
   public let introducer: Token
 
-  /// The name of the declared class.
+  /// The name of the declared struct.
   public let identifier: Parsed<String>
 
-  /// The generic parameters of the class.
+  /// The generic parameters of the struct.
   public let parameters: [GenericParameterDeclaration.ID]
 
-  /// The members of the declared class.
+  /// The members of the declared struct.
   public let members: [DeclarationIdentity]
 
   /// The site from which `self` was parsed.
@@ -25,7 +25,7 @@ public struct ClassDeclaration: TypeDeclaration, Scope {
       .joined(separator: "\n")
 
     return """
-    class \(identifier) {
+    struct \(identifier) {
     \(ms)
     }
     """
@@ -33,7 +33,7 @@ public struct ClassDeclaration: TypeDeclaration, Scope {
 
 }
 
-extension ClassDeclaration: Archivable {
+extension StructDeclaration: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self.introducer = try archive.read(Token.self, in: &context)

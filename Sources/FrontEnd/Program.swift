@@ -199,8 +199,6 @@ public struct Program {
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
       return true
-    case ClassDeclaration.self:
-      return true
     case ConformanceDeclaration.self:
       return true
     case ExtensionDeclaration.self:
@@ -208,6 +206,8 @@ public struct Program {
     case GenericParameterDeclaration.self:
       return true
     case ImportDeclaration.self:
+      return true
+    case StructDeclaration.self:
       return true
     case TraitDeclaration.self:
       return true
@@ -256,7 +256,7 @@ public struct Program {
   /// Returns `true` iff `t` is a type constructor accepting parameters.
   public func isHigherKinded(_ t: AnyTypeIdentity) -> Bool {
     switch types[t] {
-    case let u as Class:
+    case let u as Struct:
       return !self[u.declaration].parameters.isEmpty
     case is Trait:
       return true
@@ -381,14 +381,14 @@ public struct Program {
     switch kind(of: d) {
     case AssociatedTypeDeclaration.self:
       return [name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))]
-    case ClassDeclaration.self:
-      return [name(of: castUnchecked(d, to: ClassDeclaration.self))]
     case ParameterDeclaration.self:
       return [name(of: castUnchecked(d, to: ParameterDeclaration.self))]
     case TraitDeclaration.self:
       return [name(of: castUnchecked(d, to: TraitDeclaration.self))]
     case FunctionDeclaration.self:
       return [name(of: castUnchecked(d, to: FunctionDeclaration.self))]
+    case StructDeclaration.self:
+      return [name(of: castUnchecked(d, to: StructDeclaration.self))]
     case TypeAliasDeclaration.self:
       return [name(of: castUnchecked(d, to: TypeAliasDeclaration.self))]
     default:
@@ -467,8 +467,6 @@ public struct Program {
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
       return self[castUnchecked(n, to: AssociatedTypeDeclaration.self)].identifier.site
-    case ClassDeclaration.self:
-      return self[castUnchecked(n, to: ClassDeclaration.self)].identifier.site
     case ConformanceDeclaration.self:
       return self[castUnchecked(n, to: ConformanceDeclaration.self)].introducer.site
     case ExtensionDeclaration.self:
@@ -477,6 +475,8 @@ public struct Program {
       return self[castUnchecked(n, to: FunctionDeclaration.self)].identifier.site
     case ImportDeclaration.self:
       return self[castUnchecked(n, to: ImportDeclaration.self)].identifier.site
+    case StructDeclaration.self:
+      return self[castUnchecked(n, to: StructDeclaration.self)].identifier.site
     case TraitDeclaration.self:
       return self[castUnchecked(n, to: TraitDeclaration.self)].identifier.site
     case TypeAliasDeclaration.self:

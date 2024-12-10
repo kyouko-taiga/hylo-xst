@@ -1,8 +1,8 @@
-/// A class.
-public struct Class: TypeTree {
+/// A struct.
+public struct Struct: TypeTree {
 
   /// The declaration introducing this type.
-  public let declaration: ClassDeclaration.ID
+  public let declaration: StructDeclaration.ID
 
   /// Properties about `self`.
   public var properties: ValueProperties {

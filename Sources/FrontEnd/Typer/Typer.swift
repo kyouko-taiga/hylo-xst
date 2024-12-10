@@ -107,8 +107,6 @@ public struct Typer {
     switch program.kind(of: d) {
     case AssociatedTypeDeclaration.self:
       check(castUnchecked(d, to: AssociatedTypeDeclaration.self))
-    case ClassDeclaration.self:
-      check(castUnchecked(d, to: ClassDeclaration.self))
     case ConformanceDeclaration.self:
       check(castUnchecked(d, to: ConformanceDeclaration.self))
     case ExtensionDeclaration.self:
@@ -117,6 +115,8 @@ public struct Typer {
       check(castUnchecked(d, to: FunctionDeclaration.self))
     case ParameterDeclaration.self:
       check(castUnchecked(d, to: ParameterDeclaration.self))
+    case StructDeclaration.self:
+      check(castUnchecked(d, to: StructDeclaration.self))
     case TraitDeclaration.self:
       check(castUnchecked(d, to: TraitDeclaration.self))
     case TypeAliasDeclaration.self:
@@ -128,12 +128,6 @@ public struct Typer {
 
   /// Type checks `d`.
   private mutating func check(_ d: AssociatedTypeDeclaration.ID) {
-    _ = declaredType(of: d)
-    // TODO
-  }
-
-  /// Type checks `d`.
-  private mutating func check(_ d: ClassDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO
   }
@@ -181,6 +175,12 @@ public struct Typer {
   }
 
   /// Type checks `d`.
+  private mutating func check(_ d: StructDeclaration.ID) {
+    _ = declaredType(of: d)
+    // TODO
+  }
+
+  /// Type checks `d`.
   private mutating func check(_ d: TraitDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO
@@ -216,14 +216,14 @@ public struct Typer {
     switch program.kind(of: d) {
     case AssociatedTypeDeclaration.self:
       return declaredType(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))
-    case ClassDeclaration.self:
-      return declaredType(of: castUnchecked(d, to: ClassDeclaration.self))
     case ConformanceDeclaration.self:
       return declaredType(of: castUnchecked(d, to: ConformanceDeclaration.self))
     case FunctionDeclaration.self:
       return declaredType(of: castUnchecked(d, to: FunctionDeclaration.self))
     case ParameterDeclaration.self:
       return declaredType(of: castUnchecked(d, to: ParameterDeclaration.self))
+    case StructDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: StructDeclaration.self))
     case TraitDeclaration.self:
       return declaredType(of: castUnchecked(d, to: TraitDeclaration.self))
     case TypeAliasDeclaration.self:
@@ -240,16 +240,6 @@ public struct Typer {
     let p = program.parent(containing: d, as: TraitDeclaration.self)!
     let q = demand(Trait(declaration: p)).erased
     let t = demand(AssociatedType(declaration: d, qualification: q)).erased
-    let u = demand(Metatype(inhabitant: t)).erased
-    program[module].setType(u, for: d)
-    return u
-  }
-
-  /// Returns the declared type of `d` without checking.
-  private mutating func declaredType(of d: ClassDeclaration.ID) -> AnyTypeIdentity {
-    if let memoized = program[module].type(assignedTo: d) { return memoized }
-
-    let t = demand(Class(declaration: d)).erased
     let u = demand(Metatype(inhabitant: t)).erased
     program[module].setType(u, for: d)
     return u
@@ -319,6 +309,16 @@ public struct Typer {
 
     program[module].setType(t, for: d)
     return t
+  }
+
+  /// Returns the declared type of `d` without checking.
+  private mutating func declaredType(of d: StructDeclaration.ID) -> AnyTypeIdentity {
+    if let memoized = program[module].type(assignedTo: d) { return memoized }
+
+    let t = demand(Struct(declaration: d)).erased
+    let u = demand(Metatype(inhabitant: t)).erased
+    program[module].setType(u, for: d)
+    return u
   }
 
   /// Returns the declared type of `d` without checking.
@@ -1014,7 +1014,7 @@ public struct Typer {
   /// Returns the declarations lexically contained in the declaration of `t`.
   private mutating func declarations(nativeMembersOf t: AnyTypeIdentity) -> Memos.LookupTable {
     switch program.types[t] {
-    case let u as Class:
+    case let u as Struct:
       return declarations(lexicallyIn: .init(node: u.declaration))
     case let u as TypeAlias:
       return declarations(nativeMembersOf: u.aliasee)
@@ -1088,8 +1088,8 @@ public struct Typer {
 
     // Only types have nominal scopes.
     switch program.kind(of: n) {
-    case ClassDeclaration.self:
-      return program.types.demand(Class(declaration: castUnchecked(n))).erased
+    case StructDeclaration.self:
+      return program.types.demand(Struct(declaration: castUnchecked(n))).erased
     case TraitDeclaration.self:
       return program.types.demand(Trait(declaration: castUnchecked(n))).erased
     default:
