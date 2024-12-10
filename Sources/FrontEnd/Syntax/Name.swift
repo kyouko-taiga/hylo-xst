@@ -25,8 +25,8 @@ public struct ArgumentLabels {
   public let values: [String?]
 
   /// Creates an instance with `values`.
-  public init(_ values: [String?]) {
-    self.values = values
+  public init<S: Sequence<String?>>(_ values: S) {
+    self.values = .init(values)
   }
 
 }

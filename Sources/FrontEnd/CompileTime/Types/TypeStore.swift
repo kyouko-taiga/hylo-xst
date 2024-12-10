@@ -25,6 +25,8 @@ public struct TypeStore {
       return .init(uncheckedFrom: AnyTypeIdentity.void)
     case let u as Union where u.elements.isEmpty:
       return .init(uncheckedFrom: AnyTypeIdentity.never)
+    case let u as TypeVariable:
+      return .init(uncheckedFrom: AnyTypeIdentity(variable: u.identifier))
     default:
       let i = types.insert(.init(t)).position
       assert(i < (1 << 55), "too many types")  // 8 bits are reserved for the properties.
@@ -35,6 +37,21 @@ public struct TypeStore {
   /// Returns the kind of `n`.
   public func kind<T: TypeIdentity>(of n: T) -> TypeKind {
     .init(type(of: self[n]))
+  }
+
+  /// Returns `true` iff `n` identifies the type of an entity callable as a function.
+  public func isArrowLike<T: TypeIdentity>(_ n: T) -> Bool {
+    switch kind(of: n) {
+    case Arrow.self:
+      return true
+    default:
+      return false
+    }
+  }
+
+  /// Returns `true` iff `n` identifies the type of an entity callable as a subscript.
+  public func isSubscriptLike<T: TypeIdentity>(_ n: T) -> Bool {
+    return false
   }
 
   /// Returns `n` if it identifies a tree of type `U`; otherwise, returns `nil`.
@@ -88,8 +105,10 @@ public struct TypeStore {
         yield Tuple(elements: [])
       case AnyTypeIdentity.never.offset:
         yield Union(elements: [])
-      case let n:
-        yield types[n].wrapped
+      case let i where n.isVariable:
+        yield TypeVariable(identifier: Int(UInt64(i) & ((1 << 54) - 1)))
+      case let i:
+        yield types[i].wrapped
       }
     }
   }

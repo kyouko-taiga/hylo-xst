@@ -36,8 +36,10 @@ public struct SyntaxKind {
 
     // Expressions
     BooleanLiteral.self,
+    Call.self,
     NameExpression.self,
     RemoteTypeExpression.self,
+    TupleLiteral.self,
 
     // Statements
     Return.self,

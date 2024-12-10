@@ -203,8 +203,8 @@ public struct Parser {
   /// Parses a parameter declaration into `module`.
   ///
   ///     parameter-declaration ::=
-  ///       argument-label? identifier (':' expression)? ('=' expression)?
-  ///     argument-label ::=
+  ///       expression-label? identifier (':' expression)? ('=' expression)?
+  ///     expression-label ::=
   ///       identifier
   ///       keyword
   ///
@@ -367,34 +367,33 @@ public struct Parser {
     to h: inout ExpressionIdentity, in module: inout Module
   ) throws -> Bool {
     if peek()?.kind != .leftParenthesis { return false }
-    let a = try parseLabeledArgumentList(in: &module)
+    let (a, _) = try parseLabeledExpressionList(in: &module)
     let s = module[h].site.extended(upTo: position.index)
     let m = module.insert(
-      FunctionallCall(callee: h, arguments: a, site: s), in: file)
+      Call(callee: h, arguments: a, style: .parenthesized, site: s), in: file)
     h = .init(m)
     return true
   }
 
-  /// Parses a parenthesized list of labeled arguments into `module`.
-  private mutating func parseLabeledArgumentList(
+  /// Parses a parenthesized list of labeled expressions into `module`.
+  private mutating func parseLabeledExpressionList(
     in module: inout Module
-  ) throws -> [LabeledArgument] {
-    let (vs, _) = try inParentheses { (m0) in
+  ) throws -> ([LabeledExpression], lastComma: Token?) {
+    try inParentheses { (m0) in
       try m0.commaSeparated(deimitedBy: .rightParenthesis) { (m1) in
-        try m1.parseLabeledArgument(in: &module)
+        try m1.parseLabeledExpression(in: &module)
       }
     }
-    return vs
   }
 
-  /// Parses a labeled argument declaration into `module`.
+  /// Parses a labeled expression into `module`.
   ///
-  ///     labeled-argument ::=
-  ///       (argument-label ':')? expression
+  ///     labeled-expression ::=
+  ///       (expression-label ':')? expression
   ///
-  private mutating func parseLabeledArgument(
+  private mutating func parseLabeledExpression(
     in module: inout Module
-  ) throws -> LabeledArgument {
+  ) throws -> LabeledExpression {
     if let l = take(if: \.isArgumentLabel) {
       // Can we parse a colon after an label?
       if take(.colon) != nil {
@@ -423,17 +422,17 @@ public struct Parser {
   ///
   ///     primary-expression ::=
   ///       boolean-literal
-  ///       integer-literal
-  ///       string-literal
-  ///       pragma-literal
   ///       buffer-literal
+  ///       integer-literal
   ///       key-value-literal
+  ///       pragma-literal
+  ///       string-literal
+  ///       tuple-literal
   ///       name-expression
   ///       lambda-expression
   ///       conditional-expression
   ///       match-expression
   ///       remote-type-expression
-  ///       tuple-expression
   ///       tuple-type-expression
   ///       arrow-type-expression
   ///       '_'
@@ -448,6 +447,8 @@ public struct Parser {
       return try .init(parseRemoteTypeExpression(in: &module))
     case .name:
       return try .init(parseUnqualifiedNameExpression(in: &module))
+    case .leftParenthesis:
+      return try parseTupleLiteralOrParenthesizedExpression(in: &module)
     default:
       throw expected("expression")
     }
@@ -513,6 +514,31 @@ public struct Parser {
   private mutating func parseNominalComponent() throws -> Parsed<Name> {
     let identifier = try take(.name) ?? expected("identifier")
     return .init(Name(identifier: String(identifier.text)), at: identifier.site)
+  }
+
+  /// Parses a tuple literal or a parenthesized expression into `module`.
+  ///
+  ///     tuple-literal ::=
+  ///       '(' tuple-literal-body? ')'
+  ///     tuple-literal-body ::=
+  ///       labeled-expression (',' expression)*
+  ///
+  private mutating func parseTupleLiteralOrParenthesizedExpression(
+    in module: inout Module
+  ) throws -> ExpressionIdentity {
+    let start = try peek() ?? expected("'('")
+    let (es, lastComma) = try parseLabeledExpressionList(in: &module)
+
+    if (es.count == 1) && (es[0].label == nil) && (lastComma == nil) {
+      return es[0].value
+    } else {
+      let t = module.insert(
+        TupleLiteral(
+          elements: es,
+          site: start.site.extended(upTo: position.index)),
+        in: file)
+      return .init(t)
+    }
   }
 
   /// Parses a type ascription into `module` iff the next token is a colon.

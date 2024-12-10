@@ -1,12 +1,12 @@
 import Archivist
 
-/// A argument with its label.
-public struct LabeledArgument: Hashable {
+/// An expression with an optional label.
+public struct LabeledExpression: Hashable {
 
-  /// The label of the argument, if any.
+  /// The label of the expression, if any.
   public let label: Parsed<String>?
 
-  /// The value of the argument.
+  /// The expression.
   public let value: ExpressionIdentity
 
   /// Creates an instance with the given properties.
@@ -17,7 +17,7 @@ public struct LabeledArgument: Hashable {
 
 }
 
-extension LabeledArgument: Archivable {
+extension LabeledExpression: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self.label = try archive.read(Parsed<String>.self, in: &context)
@@ -34,7 +34,7 @@ extension LabeledArgument: Archivable {
 extension Program {
 
   /// Returns a source-like representation of `a`.
-  public func show(_ a: LabeledArgument) -> String {
+  public func show(_ a: LabeledExpression) -> String {
     let v = show(a.value)
     return if let l = a.label { "\(l): \(v)" } else { v }
   }

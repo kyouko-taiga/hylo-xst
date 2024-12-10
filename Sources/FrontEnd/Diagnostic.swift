@@ -72,3 +72,30 @@ extension Diagnostic: CustomStringConvertible {
   }
 
 }
+
+extension Program {
+
+  /// Returns an error diagnosing an illegal function application.
+  internal func cannotCallAsFunction(_ f: AnyTypeIdentity, at site: SourceSpan) -> Diagnostic {
+    let m = format("cannot call value of type '%T' as a function", [f])
+    return .init(.error, m, at: site)
+  }
+
+  /// Returns an error diagnosing an illegal subscript application.
+  internal func cannotCallAsSubscript(_ f: AnyTypeIdentity, at site: SourceSpan) -> Diagnostic {
+    let m = format("cannot call value of type '%T' as a subscript", [f])
+    return .init(.error, m, at: site)
+  }
+
+  /// Returns an error diagnosing incompatible labels in a function or subscript application.
+  internal func incompatibleLabels<S1: Sequence<String?>, S2: Sequence<String?>>(
+    found: S1, expected: S2, at site: SourceSpan
+  ) -> Diagnostic {
+    let m = """
+      incompatible labels: found '(\(ArgumentLabels(found)))', \
+      expected '(\(ArgumentLabels(expected)))'
+      """
+    return .init(.error, m, at: site)
+  }
+
+}

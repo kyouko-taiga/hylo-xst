@@ -19,6 +19,14 @@ final class ProgramTests: XCTestCase {
     XCTAssertEqual(p.select(.kind(AssociatedTypeDeclaration.self)).count, 4)
   }
 
+  func testFormat() throws {
+    let p = Program.test
+    XCTAssertEqual(p.format("> xy <", []), "> xy <")
+    XCTAssertEqual(p.format("> %S, %S <", [10, true]), "> 10, true <")
+    XCTAssertEqual(p.format("> %T <", [AnyTypeIdentity.void]), "> Void <")
+    XCTAssertEqual(p.format("> %% <", [AnyTypeIdentity.void]), "> % <")
+  }
+
   func testArchiveConsistency() throws {
     let p = Program.test
     let m = p.moduleIdentities.first!

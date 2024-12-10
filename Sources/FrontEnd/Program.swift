@@ -218,6 +218,41 @@ public struct Program {
     }
   }
 
+  /// Returns `true` iff `n` is a trait requirement.
+  public func isRequirement<T: SyntaxIdentity>(_ n: T) -> Bool {
+    switch kind(of: n) {
+    case AssociatedTypeDeclaration.self:
+      return true
+    case FunctionDeclaration.self:
+      return parent(containing: n, as: TraitDeclaration.self) != nil
+    default:
+      return false
+    }
+  }
+
+  /// Returns `true` iff `n` is a foreign function interface.
+  public func isFFI(_ n: FunctionDeclaration.ID) -> Bool {
+    false
+  }
+
+  /// Returns `true` iff `n` has an external implementation.
+  public func isExternal(_ n: FunctionDeclaration.ID) -> Bool {
+    false
+  }
+
+  /// Returns `true` iff `n` denotes an expression.
+  public func isExpression<T: SyntaxIdentity>(_ n: T) -> Bool {
+    kind(of: n).value is any Expression.Type
+  }
+
+  /// Returns `true` iff `n` is the expression of a value marked for mutation.
+  public func isMarkedMutating(_ n: ExpressionIdentity) -> Bool {
+    switch kind(of: n) {
+    default:
+      return false
+    }
+  }
+
   /// Returns `true` iff `t` is a type constructor accepting parameters.
   public func isHigherKinded(_ t: AnyTypeIdentity) -> Bool {
     switch types[t] {
@@ -248,6 +283,15 @@ public struct Program {
   /// Returns `n` if it identifies a declaration; otherwise, returns `nil`.
   public func castToDeclaration<T: SyntaxIdentity>(_ n: T) -> DeclarationIdentity? {
     if isDeclaration(n) {
+      return .init(uncheckedFrom: n.erased)
+    } else {
+      return nil
+    }
+  }
+
+  /// Returns `n` if it identifies an expression; otherwise, returns `nil`.
+  public func castToExpression<T: SyntaxIdentity>(_ n: T) -> ExpressionIdentity? {
+    if isExpression(n) {
       return .init(uncheckedFrom: n.erased)
     } else {
       return nil
@@ -339,10 +383,14 @@ public struct Program {
       return [name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))]
     case ClassDeclaration.self:
       return [name(of: castUnchecked(d, to: ClassDeclaration.self))]
+    case ParameterDeclaration.self:
+      return [name(of: castUnchecked(d, to: ParameterDeclaration.self))]
     case TraitDeclaration.self:
       return [name(of: castUnchecked(d, to: TraitDeclaration.self))]
     case FunctionDeclaration.self:
       return [name(of: castUnchecked(d, to: FunctionDeclaration.self))]
+    case TypeAliasDeclaration.self:
+      return [name(of: castUnchecked(d, to: TypeAliasDeclaration.self))]
     default:
       return []
     }
@@ -363,6 +411,11 @@ public struct Program {
     }
   }
 
+  /// Returns the name of `d`.
+  public func name(of d: ParameterDeclaration.ID) -> Name {
+    Name(identifier: self[d].identifier.value)
+  }
+
   /// Returns `(suffix: s, prefix: p)` where `s` contains the nominal components of `n` from right
   /// to left and `p` is the non-nominal prefix of `n`, if any.
   public func components(
@@ -376,6 +429,17 @@ public struct Program {
       } else {
         return (suffix, prefix)
       }
+    }
+  }
+
+  /// If `n` is a function or subscript call, returns its callee. Otherwise, returns `nil`.
+  public func callee(_ n: ExpressionIdentity) -> ExpressionIdentity? {
+    switch kind(of: n) {
+    case Call.self:
+      return self[castUnchecked(n, to: Call.self)].callee
+    //case SubscriptCall.self:
+    default:
+      return nil
     }
   }
 
@@ -422,7 +486,7 @@ public struct Program {
     }
   }
 
-  /// Returns `message` with placeholders replaced by theor corresponding values in `arguments`.
+  /// Returns `message` with placeholders replaced by their corresponding values in `arguments`.
   ///
   /// Use this method to generate strings containing one or several elements whose description is
   /// computed by one of `show(_:)`'s overloads.
@@ -433,11 +497,12 @@ public struct Program {
   /// assert(s == "'Void' is a type")
   /// ```
   ///
-  /// Each element to show is represented by a placehoder, which is a string starting with "%".
-  /// The i-th placeholder occurring in `message` (except `%%`) must have a corresponding value at
-  /// the i-th position of `arguments`.
+  /// Each element to show is represented by a placehoder, which is a string starting with "%". The
+  /// i-th placeholder occurring in `message` (except `%%`) must have a corresponding value at the
+  /// i-th position of `arguments`.
   ///
   /// Valid placehoders are:
+  /// - `%S`: The textual description of an arbitrary value.
   /// - `%T`: A type.
   /// - `%%`: The percent sign; does not consume any argument.
   public func format(
@@ -458,9 +523,10 @@ public struct Program {
     /// Converts the next element in `arguments` based on `placeholder`.
     func take(_ placeholder: Character?, from arguments: inout ArraySlice<Any>) -> String {
       switch placeholder {
+      case "S":
+        return String(describing: arguments.popFirst() ?? expected("item"))
       case "T":
-        let t = show((arguments.popFirst() as? AnyTypeIdentity) ?? expected("type"))
-        return "'\(t)'"
+        return show((arguments.popFirst() as? AnyTypeIdentity) ?? expected("type"))
       case "%":
         return "%"
       case let c:

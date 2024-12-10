@@ -9,20 +9,30 @@ public struct Typer {
   public let module: Program.ModuleIdentity
 
   /// The program containing the module being typed.
-  private var program: Program
+  public internal(set) var program: Program
 
-  /// A cache for various internal operations.
+  /// A memoization cache for various internal operations.
   private var cache: Memos
 
   /// The set of declarations whose type is being computed.
   private var declarationsOnStack: Set<DeclarationIdentity>
 
+  /// The identifier of the next fresh variable.
+  private var nextFreshIdentifier: Int = 0
+
+  /// A predicate to determine whether inference steps should be logged.
+  private let isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)?
+
   /// Creates an instance assigning types to syntax trees in `m`, which is a module in `p`.
-  public init(typing m: Program.ModuleIdentity, in p: consuming Program) {
+  public init(
+    typing m: Program.ModuleIdentity, in p: consuming Program,
+    loggingInferenceWhere isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)? = nil
+  ) {
     self.module = m
     self.program = p
     self.cache = .init(typing: module, in: program)
     self.declarationsOnStack = []
+    self.isLoggingEnabled = isLoggingEnabled
   }
 
   /// Type checks the top-level declarations of `self.module`.
@@ -80,7 +90,7 @@ public struct Typer {
   // MARK: Type relations
 
   /// Returns the canonical form of `t`.
-  private func canonical(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
+  public func canonical(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
     if !t[.notCanonical] { return t }
     switch program.types[t] {
     case let u as TypeAlias:
@@ -105,6 +115,8 @@ public struct Typer {
       check(castUnchecked(d, to: ExtensionDeclaration.self))
     case FunctionDeclaration.self:
       check(castUnchecked(d, to: FunctionDeclaration.self))
+    case ParameterDeclaration.self:
+      check(castUnchecked(d, to: ParameterDeclaration.self))
     case TraitDeclaration.self:
       check(castUnchecked(d, to: TraitDeclaration.self))
     case TypeAliasDeclaration.self:
@@ -141,6 +153,29 @@ public struct Typer {
 
   /// Type checks `d`.
   private mutating func check(_ d: FunctionDeclaration.ID) {
+    let t = declaredType(of: d)
+
+    // Nothing more to do if the declaration doesn't have an arrow type.
+    guard let a = program.types[t] as? Arrow else { return }
+
+    for p in program[d].parameters { check(p) }
+
+    if let b = program[d].body {
+      // Is the function expression-bodied?
+      if let e = b.uniqueElement.flatMap(program.castToExpression(_:)) {
+        check(e, asResultOfType: a.output)
+      } else {
+        // TODO
+      }
+    } else if requiresBody(d) {
+      // Only requirements, FFIs, and external functions can be without a body.
+      let s = program.spanForDiagnostic(about: d)
+      report(.init(.error, "declaration requires a body", at: s))
+    }
+  }
+
+  /// Type checks `d`.
+  private mutating func check(_ d: ParameterDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO
   }
@@ -157,6 +192,25 @@ public struct Typer {
     // TODO
   }
 
+  /// Returns `true` if `d` isn't a trait requirement, an FFI, or an external function.
+  private func requiresBody(_ d: FunctionDeclaration.ID) -> Bool {
+    !program.isRequirement(d) && !program.isFFI(d) && !program.isExternal(d)
+  }
+
+  /// Type checks `e` as the body of a function or susbscript outputing an instance of `r`.
+  private mutating func check(_ e: ExpressionIdentity, asResultOfType r: AnyTypeIdentity) {
+    var c = InferenceContext(expectedType: r)
+    let t = inferredType(of: e, in: &c)
+
+    let s = discharge(c.obligations, relatedTo: e)
+    let u = s.substitutions.reify(t, definedIn: &program)
+
+    if (u != r) && (u != .never) && !u[.hasError] {
+      let m = program.format("expected '%T', found '%T'", [r, u])
+      report(.init(.error, m, at: program[e].site))
+    }
+  }
+
   /// Returns the declared type of `d` without type checking its contents.
   private mutating func declaredType(of d: DeclarationIdentity) -> AnyTypeIdentity {
     switch program.kind(of: d) {
@@ -168,6 +222,8 @@ public struct Typer {
       return declaredType(of: castUnchecked(d, to: ConformanceDeclaration.self))
     case FunctionDeclaration.self:
       return declaredType(of: castUnchecked(d, to: FunctionDeclaration.self))
+    case ParameterDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: ParameterDeclaration.self))
     case TraitDeclaration.self:
       return declaredType(of: castUnchecked(d, to: TraitDeclaration.self))
     case TypeAliasDeclaration.self:
@@ -214,7 +270,7 @@ public struct Typer {
 
     // Is the expression of the concept denoting something other than a trait?
     else if !(program.types[c] is Trait) {
-      let m = program.format("%T is not a trait", [c])
+      let m = program.format("'%T' is not a trait", [c])
       let s = program[program[d].concept].site
       report(.init(.error, m, at: s))
       program[module].setType(.error, for: d)
@@ -319,8 +375,22 @@ public struct Typer {
 
   // MARK: Type inference
 
+  /// The grammatical role of a syntax tree plays in an expression.
+  private enum SyntaxRole {
+
+    /// The expression is used in an unspecified way.
+    case unspecified
+
+    /// The expression denotes as the callee of a function call.
+    case function(labels: [String?])
+
+  }
+
   /// The context in which the type of a syntax tree is being inferred.
   private struct InferenceContext {
+
+    /// The way in which the tree is used.
+    let role: SyntaxRole
 
     /// The type expected to be inferred given the context.
     let expectedType: AnyTypeIdentity?
@@ -329,9 +399,22 @@ public struct Typer {
     var obligations: Obligations
 
     /// Creates a context with the given properties.
-    init(expectedType: AnyTypeIdentity? = nil) {
+    init(expectedType: AnyTypeIdentity? = nil, role: SyntaxRole = .unspecified) {
       self.expectedType = expectedType
+      self.role = role
       self.obligations = .init()
+    }
+
+    /// Calls `action` with an inference context having the given properties and extending the
+    /// obligations of `self`.
+    mutating func withSubcontext<T>(
+      expectedType: AnyTypeIdentity? = nil, role: SyntaxRole = .unspecified,
+      action: (inout Self) -> T
+    ) -> T {
+      var s = InferenceContext(expectedType: expectedType, role: role)
+      swap(&self.obligations, &s.obligations)
+      defer { swap(&self.obligations, &s.obligations) }
+      return action(&s)
     }
 
   }
@@ -343,10 +426,14 @@ public struct Typer {
     switch program.kind(of: e) {
     case BooleanLiteral.self:
       return inferredType(of: castUnchecked(e, to: BooleanLiteral.self), in: &context)
+    case Call.self:
+      return inferredType(of: castUnchecked(e, to: Call.self), in: &context)
     case NameExpression.self:
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case RemoteTypeExpression.self:
       return inferredType(of: castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
+    case TupleLiteral.self:
+      return inferredType(of: castUnchecked(e, to: TupleLiteral.self), in: &context)
     default:
       program.unexpected(e)
     }
@@ -357,6 +444,45 @@ public struct Typer {
     of e: BooleanLiteral.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     fatalError("TODO")
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: Call.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let f = context.withSubcontext(role: .function(labels: program[e].labels)) { (ctx) in
+      inferredType(of: program[e].callee, in: &ctx)
+    }
+
+    // Is the applied term callable as a function?
+    if f.isVariable || program.types.isArrowLike(f) {
+      var i: [CallConstraint.Argument] = []
+      for a in program[e].arguments {
+        let t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
+        i.append(.init(label: a.label?.value, type: t))
+      }
+
+      let m = program.isMarkedMutating(program[e].callee)
+      let o = (program.types[f] as? any Callable)?.output(calleeIsMutating: m)
+        ?? context.expectedType
+        ?? fresh().erased
+      let k = CallConstraint(
+        callee: f, arguments: i, output: o, origin: e, site: program[e].site)
+
+      context.obligations.assume(k)
+      return assume(e, hasType: o, in: &context.obligations)
+    }
+
+    // Was the error already reported?
+    else if f == .error {
+      return assume(e, hasType: .error, in: &context.obligations)
+    }
+
+    // The callee is not a function.
+    else {
+      report(program.cannotCallAsFunction(f, at: program[program[e].callee].site))
+      return assume(e, hasType: .error, in: &context.obligations)
+    }
   }
 
   /// Returns the inferred type of `e`.
@@ -376,6 +502,38 @@ public struct Typer {
     return assume(e, hasType: v, in: &context.obligations)
   }
 
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: TupleLiteral.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    /// Returns the inferred type of `e`, possibly expected to have type `h`.
+    func type(of e: LabeledExpression, expecting h: AnyTypeIdentity?) -> Tuple.Element {
+      let u = context.withSubcontext { (ctx) in inferredType(of: e.value, in: &ctx) }
+      return .init(label: e.label?.value, type: u)
+    }
+
+    let es = program[e].elements
+    var ts: [Tuple.Element] = []
+
+    // If the expected type is a tuple compatible with the shape of the expression, propagate that
+    // information down the expression tree.
+    if
+      let h = context.expectedType.flatMap({ (t) in program.types[t] as? Tuple }),
+      h.elements.elementsEqual(es, by: { (a, b) in a.label == b.label?.value })
+    {
+      for (e, t) in zip(es, h.elements) { ts.append(type(of: e, expecting: t.type)) }
+    }
+
+    // Otherwise, infer the type of the expression from the leaves and use type constraints to
+    // detect potential mismatch.
+    else {
+      for e in es { ts.append(type(of: e, expecting: nil)) }
+    }
+
+    let r = program.types.demand(Tuple(elements: ts))
+    return assume(e, hasType: r.erased, in: &context.obligations)
+  }
+
   /// Constrains the name component in `r` to be a reference to one of `r`'s resolution candidates
   /// in `o`, and returns the inferred type of `r`.
   private mutating func assume(
@@ -384,8 +542,13 @@ public struct Typer {
     // If there's only one candidate, we're done.
     if let pick = cs.uniqueElement {
       // TODO: Instantiate
+
       o.assume(n, isBoundTo: pick.reference)
-      return assume(n, hasType: pick.type, in: &o)
+      if let t = program.types[pick.type] as? RemoteType {
+        return assume(n, hasType: t.projectee, in: &o)
+      } else {
+        return assume(n, hasType: pick.type, in: &o)
+      }
     }
 
     fatalError("TODO")
@@ -396,16 +559,13 @@ public struct Typer {
   private mutating func assume<T: SyntaxIdentity>(
     _ n: T, hasType t: AnyTypeIdentity, in o: inout Obligations
   ) -> AnyTypeIdentity {
+    if let u = o.syntaxToType[n.erased] {
+      o.assume(TypeEquality(lhs: t, rhs: u, site: program[n].site))
+    } else {
+      o.assume(.init(n), instanceOf: t)
+    }
+
     if t[.hasError] { o.setUnsatisfiable() }
-
-//    // Accumulate constraints on previous choices.
-//    if let u = o.syntaxToType[e] {
-//      if areEquivalent(t, u, in: program[e].scope) { return u }
-//      obligations.insert(EqualityConstraint(t, u, origin: .init(.structural, at: program[e].site)))
-//      return u
-//    }
-
-    o.assume(.init(n), instanceOf: t)
     return t
   }
 
@@ -415,10 +575,16 @@ public struct Typer {
   private mutating func discharge<T: SyntaxIdentity>(
     _ o: Obligations, relatedTo n: T
   ) -> Solution {
-    // TODO: solve/check constraints
-    let s = Solution(substitutions: .init(), bindings: o.nameToDeclaration)
-    commit(s)
-    return s
+    if o.constraints.isEmpty {
+      let s = Solution(substitutions: .init(), bindings: o.bindings)
+      commit(s)
+      return s
+    } else {
+      var solver = Solver(o, withLoggingEnabled: isLoggingEnabled?(n.erased, program) ?? false)
+      let s = solver.solution(using: &self)
+      commit(s)
+      return s
+    }
   }
 
   private mutating func commit(_ solution: Solution) {
@@ -615,10 +781,10 @@ public struct Typer {
         return .error
       }
 
-    case .explicit(let e):
+    case .explicit(let p):
       // First component is an arbitrary expression; use inference.
-      let t = inferredType(of: e, in: &context)
-      qualification = .init(qualification: .explicit(e), type: t)
+      let t = inferredType(of: p, in: &context)
+      qualification = .init(qualification: .explicit(p), type: t)
     }
 
     let scopeOfUse = program.parent(containing: e)
@@ -635,7 +801,7 @@ public struct Typer {
       if candidates.isEmpty {
         let n = program[component].name
         if let q = qualification {
-          let m = program.format("type %T has no member '\(n)'", [q.type])
+          let m = program.format("type '%T' has no member '\(n)'", [q.type])
           report(.init(.error, m, at: n.site))
         } else {
           report(.init(.error, "undefined symbol '\(n)'", at: n.site))
@@ -909,10 +1075,8 @@ public struct Typer {
     _ m: inout Memos.LookupTable, with ds: T
   ) {
     for d in ds {
-      if let n = program[d] as? any TypeDeclaration {
-        m[n.identifier.value, default: []].append(d)
-      } else if let n = program.cast(d, to: FunctionDeclaration.self) {
-        m[program.name(of: n).identifier, default: []].append(d)
+      if let n = program.names(introducedBy: d).first {
+        m[n.identifier, default: []].append(d)
       }
     }
   }
@@ -973,6 +1137,12 @@ public struct Typer {
   /// Returns the unique identity of a tree that is equal to `t`.
   private mutating func demand<T: TypeTree>(_ t: T) -> T.ID {
     program.types.demand(t)
+  }
+
+  /// Returns the identity of a fresh type variable.
+  public mutating func fresh() -> TypeVariable.ID {
+    defer { nextFreshIdentifier += 1 }
+    return .init(uncheckedFrom: AnyTypeIdentity(variable: nextFreshIdentifier))
   }
 
   /// Returns `n` assuming it identifies a node of type `U`.

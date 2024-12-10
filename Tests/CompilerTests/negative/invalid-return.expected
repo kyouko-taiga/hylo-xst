@@ -1,0 +1,3 @@
+negative/invalid-return.hylo:2.3-11: error: expected 'Void', found '{Void, Void}'
+  ((), ())
+  ~~~~~~~~

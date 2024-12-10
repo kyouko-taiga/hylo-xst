@@ -1,5 +1,11 @@
 extension Optional {
 
+  /// Returns the value wrapped in `self`, which is not `nil`, and assigns `self` to `nil`.
+  public mutating func sink() -> Wrapped {
+    defer { self = nil }
+    return self!
+  }
+
   /// Returns the value wrapped in `self`, if any, and assigns `self` to `nil`.
   public mutating func take() -> Wrapped? {
     if let wrapped = self {

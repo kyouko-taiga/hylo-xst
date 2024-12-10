@@ -27,6 +27,14 @@ final class TypeStoreTests: XCTestCase {
     XCTAssertEqual(store[i], t)
   }
 
+  func testDemandVariable() {
+    var store = TypeStore()
+    let t = TypeVariable(identifier: 123)
+    let i = store.demand(t)
+    XCTAssertEqual(i.erased, AnyTypeIdentity(variable: 123))
+    XCTAssertEqual(store[i], t)
+  }
+
   func testDemand() {
     var store = TypeStore()
     let t = Tuple(elements: [.init(label: "a", type: .void)])

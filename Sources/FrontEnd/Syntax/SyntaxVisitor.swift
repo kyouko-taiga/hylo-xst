@@ -68,12 +68,14 @@ extension Program {
 
     case BooleanLiteral.self:
       break
-    case FunctionallCall.self:
-      traverse(castUnchecked(n, to: FunctionallCall.self), calling: &v)
+    case Call.self:
+      traverse(castUnchecked(n, to: Call.self), calling: &v)
     case NameExpression.self:
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
     case RemoteTypeExpression.self:
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
+    case TupleLiteral.self:
+      traverse(castUnchecked(n, to: TupleLiteral.self), calling: &v)
 
     case Return.self:
       traverse(castUnchecked(n, to: Return.self), calling: &v)
@@ -148,7 +150,7 @@ extension Program {
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
-  public func traverse<T: SyntaxVisitor>(_ n: FunctionallCall.ID, calling v: inout T) {
+  public func traverse<T: SyntaxVisitor>(_ n: Call.ID, calling v: inout T) {
     visit(self[n].callee, calling: &v)
     for a in self[n].arguments { visit(a.value, calling: &v) }
   }
@@ -163,6 +165,11 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: RemoteTypeExpression.ID, calling v: inout T) {
     visit(self[n].projectee.erased, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: TupleLiteral.ID, calling v: inout T) {
+    for a in self[n].elements { visit(a.value, calling: &v) }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
