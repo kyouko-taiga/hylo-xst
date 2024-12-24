@@ -85,6 +85,8 @@ extension Program {
 
     case BindingPattern.self:
       traverse(castUnchecked(n, to: BindingPattern.self), calling: &v)
+    case TuplePattern.self:
+      traverse(castUnchecked(n, to: TuplePattern.self), calling: &v)
 
     case Discard.self:
       traverse(castUnchecked(n, to: Discard.self), calling: &v)
@@ -199,6 +201,11 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: BindingPattern.ID, calling v: inout T) {
     visit(self[n].pattern, calling: &v)
     visit(self[n].ascription, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: TuplePattern.ID, calling v: inout T) {
+    for a in self[n].elements { visit(a.value, calling: &v) }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

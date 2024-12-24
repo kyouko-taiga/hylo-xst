@@ -509,8 +509,7 @@ public struct Program {
   ) {
     for m in self[d].members {
       if let b = cast(m, to: BindingDeclaration.self) {
-        let p = self[self[b].pattern].pattern
-        forEachVariable(introducedIn: p, do: action)
+        forEachVariable(introducedIn: self[self[b].pattern].pattern, do: action)
       }
     }
   }
@@ -521,15 +520,23 @@ public struct Program {
   /// in the a record value having the type of `p`.
   public func forEachVariable(
     introducedIn p: PatternIdentity,
-    at i: IndexPath = [],
+    at path: IndexPath = [],
     do action: (VariableDeclaration.ID, IndexPath) -> Void
   ) {
     switch kind(of: p) {
     case BindingPattern.self:
       let q = castUnchecked(p, to: BindingPattern.self)
-      forEachVariable(introducedIn: self[q].pattern, at: i, do: action)
+      forEachVariable(introducedIn: self[q].pattern, at: path, do: action)
+
+    case TuplePattern.self:
+      let q = castUnchecked(p, to: TuplePattern.self)
+      for (i, e) in self[q].elements.enumerated() {
+        forEachVariable(introducedIn: e.value, at: path + [i], do: action)
+      }
+
     case VariableDeclaration.self:
-      action(castUnchecked(p), i)
+      action(castUnchecked(p), path)
+
     default:
       assert(isExpression(p))
     }

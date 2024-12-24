@@ -16,8 +16,9 @@ func main() async throws {
   let s1: SourceFile = """
     trait P { type X }
 
-    fun f() {
-      let y: A = y
+    fun f(x: A) {
+      let (y, y) = ((), ())
+      let (z, z): A
     }
 
     struct A {

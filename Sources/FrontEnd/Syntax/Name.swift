@@ -61,7 +61,9 @@ extension ArgumentLabels: ExpressibleByArrayLiteral {
 
 extension ArgumentLabels: CustomStringConvertible {
 
-  public var description: String { values.map({ "\($0 ?? "_"):" }).joined() }
+  public var description: String {
+    values.map({ "\($0 ?? "_"):" }).joined()
+  }
 
 }
 

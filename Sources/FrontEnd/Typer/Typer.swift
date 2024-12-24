@@ -564,10 +564,12 @@ public struct Typer {
     switch program.kind(of: p) {
     case BindingPattern.self:
       ascribe(t, to: program.castUnchecked(p, to: BindingPattern.self))
+    case TuplePattern.self:
+      ascribe(t, to: program.castUnchecked(p, to: TuplePattern.self))
     case VariableDeclaration.self:
       ascribe(t, to: program.castUnchecked(p, to: VariableDeclaration.self))
     default:
-      assert(program.isExpression(p))
+      check(program.castToExpression(p)!, expecting: t)
     }
   }
 
@@ -575,6 +577,30 @@ public struct Typer {
   private mutating func ascribe(_ t: AnyTypeIdentity, to p: BindingPattern.ID) {
     program[module].setType(t, for: p)
     ascribe(t, to: program[p].pattern)
+  }
+
+  /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
+  private mutating func ascribe(_ t: AnyTypeIdentity, to p: TuplePattern.ID) {
+    guard let u = program.types[t] as? Tuple else {
+      let m = program.format("tuple pattern cannot match values of type '%T'", [t])
+      report(.init(.error, m, at: program[p].site))
+      program[module].setType(.error, for: p)
+      return
+    }
+
+    guard u.labelsEqual(program[p].elements, \.label?.value) else {
+      let d: Diagnostic = program.incompatibleLabels(
+        found: program[p].elements.map(\.label?.value), expected: u.labels,
+        at: program[p].site)
+      report(d)
+      program[module].setType(.error, for: p)
+      return
+    }
+
+    program[module].setType(t, for: p)
+    for i in 0 ..< u.elements.count {
+      ascribe(u.elements[i].type, to: program[p].elements[i].value)
+    }
   }
 
   /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
@@ -764,7 +790,7 @@ public struct Typer {
     // information down the expression tree.
     if
       let h = context.expectedType.flatMap({ (t) in program.types[t] as? Tuple }),
-      h.elements.elementsEqual(es, by: { (a, b) in a.label == b.label?.value })
+      h.labelsEqual(es, \.label?.value)
     {
       for (e, t) in zip(es, h.elements) { ts.append(type(of: e, expecting: t.type)) }
     }
@@ -800,19 +826,16 @@ public struct Typer {
   private mutating func inferredType(
     of d: BindingDeclaration.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    let pattern = program[d].pattern
-
     // Fast path: if the pattern has no ascription, the type type is inferred from the initializer.
-    guard let a = program[pattern].ascription else {
+    guard let a = program[program[d].pattern].ascription else {
       let i = program[d].initializer ?? unreachable("ill-formed binding declaration")
       let t = inferredType(of: i, in: &context)
       return assume(d, hasType: t, in: &context.obligations)
     }
 
-    // Slow path: infer a type from the pattern and the initializer (if any).
+    // Slow path: infer a type from the ascription and the initializer (if any).
     var c = InferenceContext()
     let p = evaluateTypeAscription(a)
-    assume(pattern, hasType: p, in: &context.obligations)
 
     if let i = program[d].initializer {
       let v = c.withSubcontext(expectedType: p, do: { (s) in inferredType(of: i, in: &s) })

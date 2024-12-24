@@ -1,0 +1,6 @@
+struct A {}
+
+fun g(a: A) {
+  let (x, y): A = a
+  let (abc: z) = (bca: a)
+}

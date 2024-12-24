@@ -250,24 +250,6 @@ public struct Parser {
     else { throw expected("'init'") }
   }
 
-//  /// Parses the introducer of an initializer declaration.
-//  ///
-//  ///     initializer-introducer ::=
-//  ///       'memberwise'? 'init'
-//  ///
-//  private mutating func parseInitializerIntroducer()
-//    throws -> Parsed<InitializerDeclaration.Introducer>
-//  {
-//    if let t = take(.`init`) {
-//      return .init(.`init`, at: t.site)
-//    } else if let t = take(contextual: "memberwise") {
-//      let u = take(.`init`) ?? fix(expected("'init'"), with: t)
-//      return .init(.memberwiseinit, at: t.site.extended(toCover: u.site))
-//    } else {
-//      throw expected("'init'")
-//    }
-//  }
-
   /// Parses a parenthesized list of parameter declarations into `module`.
   private mutating func parseParameterList(
     in module: inout Module
@@ -673,6 +655,7 @@ public struct Parser {
   ///
   ///     pattern ::=
   ///       binding-pattern
+  ///       tuple-pattern
   ///       expression
   ///
   private mutating func parsePattern(in module: inout Module) throws -> PatternIdentity {
@@ -681,6 +664,8 @@ public struct Parser {
       return try .init(parseBindingPattern(in: &module))
     case .name where isParsingBindingSubpattern:
       return try .init(parseVariableDeclaration(in: &module))
+    case .leftParenthesis:
+      return try parseTuplePatternOrParenthesizedPattern(in: &module)
     default:
       return try .init(parseExpression(in: &module))
     }
@@ -725,6 +710,44 @@ public struct Parser {
     default:
       throw expected("binding introducer")
     }
+  }
+
+  /// Parses a tuple pattern or a parenthesized pattern into `module`.
+  ///
+  ///     tuple-pattern ::=
+  ///       '(' tuple-pattern-body? ')'
+  ///     tuple-pattern-body ::=
+  ///       labeled-pattern (',' labeled-pattern)*
+  ///
+  private mutating func parseTuplePatternOrParenthesizedPattern(
+    in module: inout Module
+  ) throws -> PatternIdentity {
+    let start = try peek() ?? expected("'('")
+    let (es, lastComma) = try parseLabeledPatternList(in: &module)
+
+    if (es.count == 1) && (es[0].label == nil) && (lastComma == nil) {
+      return es[0].value
+    } else {
+      let t = module.insert(
+        TuplePattern(
+          elements: es,
+          site: start.site.extended(upTo: position.index)),
+        in: file)
+      return .init(t)
+    }
+  }
+
+  /// Parses a parenthesized list of labeled expressions into `module`.
+  ///
+  ///     labeled-pattern-list ::=
+  ///       labeled-pattern (',' labeled-pattern)* ','?
+  ///     labeled-pattern ::=
+  ///       (expression-label ':')? pattern
+  ///
+  private mutating func parseLabeledPatternList(
+    in module: inout Module
+  ) throws -> ([LabeledPattern], lastComma: Token?) {
+    try labeledSyntaxList({ (me) in try me.parsePattern(in: &module) })
   }
 
   // MARK: Statements

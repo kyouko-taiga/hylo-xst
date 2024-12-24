@@ -17,9 +17,20 @@ public struct Tuple: TypeTree {
   /// The elements of the tuple.
   public let elements: [Element]
 
+  /// The labels associated with each element.
+  public var labels: some Sequence<String?> {
+    elements.lazy.map(\.label)
+  }
+
   /// Properties about `self`.
   public var properties: ValueProperties {
     elements.reduce([], { (a, e) in a.union(e.type.properties) })
+  }
+
+  /// Returns `true` iff the labels of the elements in `self` are equal to the labels of the
+  /// elements in `other`, which are at `path`.
+  public func labelsEqual<T: Sequence>(_ other: T, _ path: KeyPath<T.Element, String?>) -> Bool {
+    elements.elementsEqual(other, by: { (a, b) in a.label == b[keyPath: path] })
   }
 
   /// Returns a parsable representation of `self`, which is a type in `program`.

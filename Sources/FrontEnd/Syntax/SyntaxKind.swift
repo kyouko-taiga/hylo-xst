@@ -46,6 +46,7 @@ public struct SyntaxKind {
 
     // Patterns
     BindingPattern.self,
+    TuplePattern.self,
 
     // Statements
     Discard.self,
