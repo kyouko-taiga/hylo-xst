@@ -48,6 +48,7 @@ public struct SyntaxKind {
     BindingPattern.self,
 
     // Statements
+    Discard.self,
     Return.self,
   ]
 

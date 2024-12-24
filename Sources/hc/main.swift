@@ -22,7 +22,10 @@ func main() async throws {
     }
 
     fun g(_ x: A) -> A { A(m0: ()) }
-    fun f(_ x: A.X) { g(x) }
+    fun f(_ x: A.X) {
+      _ = g(x)
+      return g(x)
+    }
 
     conformance A: P { typealias X = A }
     """

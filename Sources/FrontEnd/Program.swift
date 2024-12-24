@@ -574,6 +574,10 @@ public struct Program {
       return self[castUnchecked(n, to: TraitDeclaration.self)].identifier.site
     case TypeAliasDeclaration.self:
       return self[castUnchecked(n, to: TypeAliasDeclaration.self)].identifier.site
+
+    case Return.self:
+      return .empty(at: self[castUnchecked(n, to: Return.self)].introducer.site.start)
+
     default:
       return self[n].site
     }

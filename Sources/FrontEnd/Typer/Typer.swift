@@ -190,7 +190,7 @@ public struct Typer {
       if let e = b.uniqueElement.flatMap(program.castToExpression(_:)) {
         check(e, expecting: r)
       } else {
-        // TODO
+        for s in b { check(s) }
       }
     } else if requiresDefinition(d) {
       // Only requirements, FFIs, and external functions can be without a body.
@@ -242,18 +242,62 @@ public struct Typer {
     }
   }
 
-  /// Type checks `e` expecting to find a value of type `r.
-  private mutating func check(_ e: ExpressionIdentity, expecting r: AnyTypeIdentity) {
+  /// Type checks `e` and returns its type, which is expected to be `r` from the context of `e`.
+  @discardableResult
+  private mutating func check(
+    _ e: ExpressionIdentity, inContextExpecting r: AnyTypeIdentity? = nil
+  ) -> AnyTypeIdentity {
     var c = InferenceContext(expectedType: r)
     let t = inferredType(of: e, in: &c)
-
     let s = discharge(c.obligations, relatedTo: e)
-    let u = s.substitutions.reify(t)
+    return s.substitutions.reify(t)
+  }
 
+  /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
+  private mutating func check(_ e: ExpressionIdentity, expecting r: AnyTypeIdentity) {
+    let u = check(e, inContextExpecting: r)
     if (u != r) && (u != .never) && !u[.hasError] {
       let m = program.format("expected '%T', found '%T'", [r, u])
       report(.init(.error, m, at: program[e].site))
     }
+  }
+
+  /// Type checks `s`.
+  private mutating func check(_ s: StatementIdentity) {
+    switch program.kind(of: s) {
+    case Discard.self:
+      check(program.castUnchecked(s, to: Discard.self))
+    case Return.self:
+      check(program.castUnchecked(s, to: Return.self))
+    default:
+      assert(program.isExpression(s))
+      // TODO
+    }
+  }
+
+  /// Type checks `s`.
+  private mutating func check(_ s: Discard.ID) {
+    check(program[s].value)
+    program[module].setType(.void, for: s)
+  }
+
+  /// Type checks `s`.
+  private mutating func check(_ s: Return.ID) {
+    let u = expectedOutputType(in: program.parent(containing: s)) ?? .error
+
+    if let v = program[s].value {
+      if u != .error {
+        check(v, expecting: u)
+      } else {
+        check(v)
+      }
+    } else if canonical(u) != .void {
+      let m = "expected value of type '\(program.show(u))'"
+      let s = program.spanForDiagnostic(about: s)
+      report(.init(.error, m, at: s))
+    }
+
+    program[module].setType(.void, for: s)
   }
 
   /// Returns the declared type of `d` without type checking its contents.
@@ -998,30 +1042,6 @@ public struct Typer {
     }
   }
 
-  /// Returns the innermost declaration of the type whose scope notionally contains `s`.
-  private mutating func innermostTypeScope(
-    containing s: ScopeIdentity
-  ) -> DeclarationIdentity? {
-    for t in program.scopes(from: s) {
-      guard let m = t.node else { break }
-      switch program.kind(of: m) {
-      case ConformanceDeclaration.self:
-        fatalError()
-      case ExtensionDeclaration.self:
-        fatalError()
-      case StructDeclaration.self:
-        return .init(uncheckedFrom: m)
-      case TraitDeclaration.self:
-        return .init(uncheckedFrom: m)
-      case TypeAliasDeclaration.self:
-        return .init(uncheckedFrom: m)
-      default:
-        continue
-      }
-    }
-    return nil
-  }
-
   // MARK: Name resolution
 
   /// A candidate for resolving a name component.
@@ -1435,6 +1455,51 @@ public struct Typer {
   }
 
   // MARK: Helpers
+
+  /// Returns the innermost declaration of the type whose scope notionally contains `s`.
+  private mutating func innermostTypeScope(containing s: ScopeIdentity) -> DeclarationIdentity? {
+    for t in program.scopes(from: s) {
+      guard let n = t.node else { break }
+      switch program.kind(of: n) {
+      case ConformanceDeclaration.self:
+        fatalError()
+      case ExtensionDeclaration.self:
+        fatalError()
+      case StructDeclaration.self:
+        return .init(uncheckedFrom: n)
+      case TraitDeclaration.self:
+        return .init(uncheckedFrom: n)
+      case TypeAliasDeclaration.self:
+        return .init(uncheckedFrom: n)
+      default:
+        continue
+      }
+    }
+    return nil
+  }
+
+  /// Returns the type of values expected to be returned or projected in `s`, or `nil` if `s` is
+  /// not in the body of a function or subscript.
+  private mutating func expectedOutputType(in s: ScopeIdentity) -> AnyTypeIdentity? {
+    for t in program.scopes(from: s) {
+      guard let n = t.node else { break }
+      switch program.kind(of: n) {
+      case FunctionDeclaration.self:
+        return expectedOutputType(in: program.castUnchecked(n, to: FunctionDeclaration.self))
+      case InitializerDeclaration.self:
+        return .void
+      default:
+        continue
+      }
+    }
+    return nil
+  }
+
+  /// Returns the type of values expected to be returned from `d`.
+  private mutating func expectedOutputType(in d: FunctionDeclaration.ID) -> AnyTypeIdentity {
+    let a = declaredType(of: d)
+    return (program.types[a] as? Arrow)?.output ?? .error
+  }
 
   /// Reports the diagnostic `d`.
   private mutating func report(_ d: Diagnostic) {

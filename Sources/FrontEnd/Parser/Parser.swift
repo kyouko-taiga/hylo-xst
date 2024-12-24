@@ -755,17 +755,37 @@ public struct Parser {
   /// Parses a statement into `module`.
   ///
   ///     statement ::=
+  ///       discard-statement
   ///       return-statement
   ///       declaration
   ///       expression
   ///
   private mutating func parseStatement(in module: inout Module) throws -> StatementIdentity {
     switch peek()?.kind {
+    case .underscore:
+      return try .init(parseDiscardStement(in: &module))
     case .return:
       return try .init(parseReturnStatement(in: &module))
     default:
       return try .init(parseExpression(in: &module))
     }
+  }
+
+  /// Parses a discard statement into `module`.
+  ///
+  ///     return-statement ::=
+  ///       '_' '=' expression
+  ///
+  private mutating func parseDiscardStement(in module: inout Module) throws -> Discard.ID {
+    let i = try take(.underscore) ?? expected("'_'")
+    if take(.assign) == nil {
+      throw expected("'='")
+    }
+    let v = try parseExpression(in: &module)
+
+    return module.insert(
+      Discard(value: v, site: span(from: i)),
+      in: file)
   }
 
   /// Parses a return statement into `module`.
@@ -788,10 +808,7 @@ public struct Parser {
     }
 
     return module.insert(
-      Return(
-        introducer: i,
-        value: v,
-        site: span(from: i)),
+      Return(introducer: i, value: v, site: span(from: i)),
       in: file)
   }
 
@@ -1054,6 +1071,15 @@ public struct Parser {
   /// Returns a parse error reporting a missing statement separator at `site`.
   func missingSemicolon(at site: SourceSpan) -> ParseError {
     .init("consecutive statements on the same line must be separated by ';'", at: site)
+  }
+
+  /// Returns a parse error reporting an unexpected wildcard at `site`.
+  func unexpectedWildcard(at site: SourceSpan) -> ParseError {
+    let m = """
+    '_' can only appear as a pattern, as a type argument, or on the left-hand side of an \
+    assignment
+    """
+    return .init(m, at:  site)
   }
 
   /// Reports `e` and returns `v`.

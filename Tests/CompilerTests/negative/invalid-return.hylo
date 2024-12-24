@@ -1,3 +1,13 @@
-fun f() {
-  ((), ())
+struct A {}
+
+fun f0() {
+  ((),)
+}
+
+fun f1() {
+  return ((),)
+}
+
+fun f2() -> A {
+  return
 }
