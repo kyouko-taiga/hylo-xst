@@ -256,8 +256,17 @@ public struct Typer {
   /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
   private mutating func check(_ e: ExpressionIdentity, expecting r: AnyTypeIdentity) {
     let u = check(e, inContextExpecting: r)
-    if (u != r) && (u != .never) && !u[.hasError] {
+    if (u != r) && (canonical(u) != .never) && !u[.hasError] {
       let m = program.format("expected '%T', found '%T'", [r, u])
+      report(.init(.error, m, at: program[e].site))
+    }
+  }
+
+  /// Type checks `e`, which occurs as a statement.
+  private mutating func checkAsStatement(_ e: ExpressionIdentity) {
+    let u = check(e, inContextExpecting: .void)
+    if (canonical(u) != .void) && !u[.hasError] {
+      let m = program.format("unused value of type %T", [u])
       report(.init(.error, m, at: program[e].site))
     }
   }
@@ -269,9 +278,12 @@ public struct Typer {
       check(program.castUnchecked(s, to: Discard.self))
     case Return.self:
       check(program.castUnchecked(s, to: Return.self))
+    case _ where program.isExpression(s):
+      checkAsStatement(ExpressionIdentity(uncheckedFrom: s.erased))
+    case _ where program.isDeclaration(s):
+      check(DeclarationIdentity(uncheckedFrom: s.erased))
     default:
-      assert(program.isExpression(s))
-      // TODO
+      program.unexpected(s)
     }
   }
 
@@ -292,7 +304,7 @@ public struct Typer {
         check(v)
       }
     } else if canonical(u) != .void {
-      let m = "expected value of type '\(program.show(u))'"
+      let m = program.format("expected value of type '%T'", [u])
       let s = program.spanForDiagnostic(about: s)
       report(.init(.error, m, at: s))
     }
@@ -305,6 +317,8 @@ public struct Typer {
     switch program.kind(of: d) {
     case AssociatedTypeDeclaration.self:
       return declaredType(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))
+    case BindingDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: BindingDeclaration.self))
     case ConformanceDeclaration.self:
       return declaredType(of: castUnchecked(d, to: ConformanceDeclaration.self))
     case FunctionDeclaration.self:
@@ -356,9 +370,8 @@ public struct Typer {
 
     // Cyclic reference detected.
     else {
-      let s = program.spanForDiagnostic(about: d)
+      let s = program[program[program[d].pattern].pattern].site
       report(.init(.error, "declaration refers to itself", at: s))
-      program[module].setType(.error, for: d)
       return .error
     }
   }
@@ -387,7 +400,7 @@ public struct Typer {
 
     // All is well.
     else {
-      let t = program.types.demand(TypeApplication(abstraction: c, arguments: [.type(e)])).erased
+      let t = demand(TypeApplication(abstraction: c, arguments: [.type(e)])).erased
       program[module].setType(t, for: d)
       return t
     }
@@ -428,7 +441,7 @@ public struct Typer {
         _ = declaredType(of: d)
         program.forEachVariable(introducedIn: .init(program[d].pattern)) { (v, _) in
           let t = program[module].type(assignedTo: d) ?? .error
-          let u = program.types.demand(RemoteType(projectee: t, access: .sink)).erased
+          let u = demand(RemoteType(projectee: t, access: .sink)).erased
           inputs.append(
             Parameter(
               label: program[v].identifier.value, type: u,
@@ -509,7 +522,6 @@ public struct Typer {
     else {
       let n = program[d].identifier
       report(.init(.error, "definition of '\(n)' refers to itself", at: n.site))
-      program[module].setType(.error, for: d)
       return .error
     }
   }
@@ -619,7 +631,7 @@ public struct Typer {
     /// obligations of `self`.
     mutating func withSubcontext<T>(
       expectedType: AnyTypeIdentity? = nil, role: SyntaxRole = .unspecified,
-      action: (inout Self) -> T
+      do action: (inout Self) -> T
     ) -> T {
       var s = InferenceContext(expectedType: expectedType, role: role)
       swap(&self.obligations, &s.obligations)
@@ -707,7 +719,7 @@ public struct Typer {
       let n = program[module].insert(
         NameExpression(
           qualification: .explicit(c),
-          name: .init(.init(identifier: "init"), at: program[c].site),
+          name: .init(.init(identifier: "new"), at: program[c].site),
           site: program[c].site),
         in: program.parent(containing: e))
       program[module].replace(.init(e), for: program[e].clone(callee: .init(n)))
@@ -763,7 +775,7 @@ public struct Typer {
       for e in es { ts.append(type(of: e, expecting: nil)) }
     }
 
-    let r = program.types.demand(Tuple(elements: ts))
+    let r = demand(Tuple(elements: ts))
     return assume(e, hasType: r.erased, in: &context.obligations)
   }
 
@@ -803,10 +815,10 @@ public struct Typer {
     assume(pattern, hasType: p, in: &context.obligations)
 
     if let i = program[d].initializer {
-      let v = c.withSubcontext(expectedType: p) { (s) in
-        inferredType(of: i, in: &s)
+      let v = c.withSubcontext(expectedType: p, do: { (s) in inferredType(of: i, in: &s) })
+      if v != .error {
+        c.obligations.assume(TypeEquality(lhs: p, rhs: v, site: program[i].site))
       }
-      c.obligations.assume(TypeEquality(lhs: p, rhs: v, site: program[i].site))
     }
 
     return assume(d, hasType: p, in: &context.obligations)
@@ -1163,14 +1175,14 @@ public struct Typer {
     switch n.identifier {
     case "Self":
       if let t = typeOfSelf(in: scopeOfUse) {
-        let u = program.types.demand(Metatype(inhabitant: t)).erased
+        let u = demand(Metatype(inhabitant: t)).erased
         return [.init(reference: .predefined, type: u)]
       } else {
         return []
       }
 
     case "Void":
-      let t = program.types.demand(Metatype(inhabitant: .void)).erased
+      let t = demand(Metatype(inhabitant: .void)).erased
       return [.init(reference: .predefined, type: t)]
 
     default:
@@ -1195,9 +1207,9 @@ public struct Typer {
     }
 
     for (concept, ds) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
-      let p = program.types.demand(Trait(declaration: concept)).erased
+      let p = demand(Trait(declaration: concept)).erased
       let a = Value.type(qualification.type)
-      let t = program.types.demand(TypeApplication(abstraction: p, arguments: [a])).erased
+      let t = demand(TypeApplication(abstraction: p, arguments: [a])).erased
       let definitions = summon(t, in: scopeOfUse)
 
       for n in definitions {
@@ -1416,9 +1428,9 @@ public struct Typer {
     // Only types have nominal scopes.
     switch program.kind(of: n) {
     case StructDeclaration.self:
-      return program.types.demand(Struct(declaration: castUnchecked(n))).erased
+      return demand(Struct(declaration: castUnchecked(n))).erased
     case TraitDeclaration.self:
-      return program.types.demand(Trait(declaration: castUnchecked(n))).erased
+      return demand(Trait(declaration: castUnchecked(n))).erased
     default:
       return nil
     }

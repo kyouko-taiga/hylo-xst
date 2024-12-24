@@ -89,7 +89,7 @@ public struct Token: Hashable {
   /// `true` iff `self` may be at the beginning of a declaration.
   public var isDeclarationHead: Bool {
     switch kind {
-    case .fun, .import, .trait, .type:
+    case .fun, .import, .inout, .let, .sink, .trait, .type, .var:
       return true
     default:
       return isDeclarationModifier

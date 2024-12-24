@@ -247,6 +247,11 @@ public struct StatementIdentity: SyntaxIdentity {
   }
 
   /// Creates an instance equal to `other`.
+  public init(_ other: DeclarationIdentity) {
+    self.erased = other.erased
+  }
+
+  /// Creates an instance equal to `other`.
   public init(_ other: ExpressionIdentity) {
     self.erased = other.erased
   }

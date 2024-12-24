@@ -1,2 +1,2 @@
 /// A syntax tree denoting a declaration.
-public protocol Declaration: Syntax {}
+public protocol Declaration: Statement {}

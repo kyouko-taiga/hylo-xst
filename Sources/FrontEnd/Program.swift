@@ -412,6 +412,8 @@ public struct Program {
     switch kind(of: d) {
     case AssociatedTypeDeclaration.self:
       return [name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))]
+    case BindingDeclaration.self:
+      return names(introducedBy: castUnchecked(d, to: BindingDeclaration.self))
     case ParameterDeclaration.self:
       return [name(of: castUnchecked(d, to: ParameterDeclaration.self))]
     case TraitDeclaration.self:
@@ -427,6 +429,15 @@ public struct Program {
     default:
       return []
     }
+  }
+
+  /// Returns the names introduced by `d`.
+  public func names(introducedBy d: BindingDeclaration.ID) -> [Name] {
+    var result: [Name] = []
+    forEachVariable(introducedIn: self[self[d].pattern].pattern) { (v, _) in
+      result.append(.init(identifier: self[v].identifier.value))
+    }
+    return result
   }
 
   /// Returns the name of `d`.
@@ -453,7 +464,7 @@ public struct Program {
     } else {
       labels.append(contentsOf: self[d].parameters.map(read(\.label?.value)))
     }
-    return Name(identifier: "init", labels: .init(labels))
+    return Name(identifier: "new", labels: .init(labels))
   }
 
   /// Returns the name of `d`.
@@ -486,18 +497,6 @@ public struct Program {
     default:
       return nil
     }
-  }
-
-  /// Returns the declarations of the stored properties of `n`.
-  public func fields(_ n: StructDeclaration.ID) -> [VariableDeclaration.ID] {
-    var fs: [VariableDeclaration.ID] = []
-    for m in self[n].members {
-      if let d = cast(m, to: BindingDeclaration.self) {
-        let p = self[self[d].pattern].pattern
-        forEachVariable(introducedIn: p, do: { (v, _) in fs.append(v) })
-      }
-    }
-    return fs
   }
 
   /// Calls `action` for each stored property declaration in `d`.
@@ -560,6 +559,8 @@ public struct Program {
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
       return self[castUnchecked(n, to: AssociatedTypeDeclaration.self)].identifier.site
+    case BindingDeclaration.self:
+      return self[self[castUnchecked(n, to: BindingDeclaration.self)].pattern].introducer.site
     case ConformanceDeclaration.self:
       return self[castUnchecked(n, to: ConformanceDeclaration.self)].introducer.site
     case ExtensionDeclaration.self:

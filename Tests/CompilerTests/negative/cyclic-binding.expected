@@ -1,0 +1,3 @@
+negative/cyclic-binding.hylo:2.7-8: error: declaration refers to itself
+  let y: Void = y
+      ^

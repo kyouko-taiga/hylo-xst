@@ -65,7 +65,7 @@ public struct Parser {
     guard let head = peek() else { throw expected("declaration") }
 
     switch head.kind {
-    case .inout, .let, .set, .sink:
+    case .inout, .let, .set, .sink, .var:
       return try .init(parseBindingDeclaration(in: &module))
     case .conformance:
       return try .init(parseConformanceDeclaration(in: &module))
@@ -761,11 +761,15 @@ public struct Parser {
   ///       expression
   ///
   private mutating func parseStatement(in module: inout Module) throws -> StatementIdentity {
-    switch peek()?.kind {
+    let head = try peek() ?? expected("statement")
+
+    switch head.kind {
     case .underscore:
       return try .init(parseDiscardStement(in: &module))
     case .return:
       return try .init(parseReturnStatement(in: &module))
+    case _ where head.isDeclarationHead:
+      return try .init(parseDeclaration(in: &module))
     default:
       return try .init(parseExpression(in: &module))
     }
