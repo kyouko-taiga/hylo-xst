@@ -17,6 +17,12 @@ public struct LabeledExpression: Hashable {
 
 }
 
+extension LabeledExpression: LabeledSyntax {
+
+  public typealias Value = ExpressionIdentity
+
+}
+
 extension LabeledExpression: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {

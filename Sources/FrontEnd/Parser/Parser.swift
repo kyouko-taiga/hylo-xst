@@ -486,39 +486,16 @@ public struct Parser {
   }
 
   /// Parses a parenthesized list of labeled expressions into `module`.
-  private mutating func parseLabeledExpressionList(
-    in module: inout Module
-  ) throws -> ([LabeledExpression], lastComma: Token?) {
-    try inParentheses { (m0) in
-      try m0.commaSeparated(deimitedBy: .rightParenthesis) { (m1) in
-        try m1.parseLabeledExpression(in: &module)
-      }
-    }
-  }
-
-  /// Parses a labeled expression into `module`.
   ///
+  ///     labeled-expression-list ::=
+  ///       labeled-expression (',' labeled-expression)* ','?
   ///     labeled-expression ::=
   ///       (expression-label ':')? expression
   ///
-  private mutating func parseLabeledExpression(
+  private mutating func parseLabeledExpressionList(
     in module: inout Module
-  ) throws -> LabeledExpression {
-    var backup = self
-
-    // Can we parse a label?
-    if let l = take(if: \.isArgumentLabel) {
-      if take(.colon) != nil {
-        let v = try parseExpression(in: &module)
-        return .init(label: .init(l), value: v)
-      } else {
-        swap(&self, &backup)
-      }
-    }
-
-    // No label
-    let v = try parseExpression(in: &module)
-    return .init(label: nil, value: v)
+  ) throws -> ([LabeledExpression], lastComma: Token?) {
+    try labeledSyntaxList({ (me) in try me.parseExpression(in: &module) })
   }
 
   /// Parses a primary expression into `module`.
@@ -624,7 +601,7 @@ public struct Parser {
   ///     tuple-literal ::=
   ///       '(' tuple-literal-body? ')'
   ///     tuple-literal-body ::=
-  ///       labeled-expression (',' expression)*
+  ///       labeled-expression (',' labeled-expression)*
   ///
   private mutating func parseTupleLiteralOrParenthesizedExpression(
     in module: inout Module
@@ -1000,6 +977,38 @@ public struct Parser {
     } catch {
       swap(&self, &backup)
       return nil
+    }
+  }
+
+  /// Parses an instance of `T` with an optional argument label.
+  private mutating func labeled<T: LabeledSyntax>(
+    _ parse: (inout Self) throws -> T.Value
+  ) rethrows -> T {
+    var backup = self
+
+    // Can we parse a label?
+    if let l = take(if: \.isArgumentLabel) {
+      if take(.colon) != nil {
+        let v = try parse(&self)
+        return .init(label: .init(l), value: v)
+      } else {
+        swap(&self, &backup)
+      }
+    }
+
+    // No label
+    let v = try parse(&self)
+    return .init(label: nil, value: v)
+  }
+
+  /// Parses a parenthesized list of labeled syntax.
+  private mutating func labeledSyntaxList<T: LabeledSyntax>(
+    _ parse: (inout Self) throws -> T.Value
+  ) throws -> ([T], lastComma: Token?) {
+    try inParentheses { (m0) in
+      try m0.commaSeparated(deimitedBy: .rightParenthesis) { (m1) in
+        try m1.labeled(parse)
+      }
     }
   }
 
