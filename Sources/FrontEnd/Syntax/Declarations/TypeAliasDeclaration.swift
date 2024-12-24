@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// The declaration of a type alias.
-public struct TypeAliasDeclaration: TypeDeclaration {
+public struct TypeAliasDeclaration: TypeDeclaration, Scope {
 
   /// The introducer of this declaration.
   public let introducer: Token

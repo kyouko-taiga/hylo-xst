@@ -26,6 +26,10 @@ public struct Call: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
+  public func clone(callee: ExpressionIdentity) -> Call {
+    .init(callee: callee, arguments: arguments, style: style, site: site)
+  }
+
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     let c = program.show(callee)

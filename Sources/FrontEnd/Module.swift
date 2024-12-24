@@ -103,7 +103,30 @@ public struct Module {
       let d = f.syntax.count
       f.syntax.append(.init(child))
       f.syntaxToKind.append(.init(T.self))
+      f.syntaxToParent.append(-1)
       return T.ID(uncheckedFrom: .init(file: file, offset: d))
+    }
+  }
+
+  /// Inserts `child` into `self` in the scope of `parent`.
+  public mutating func insert<T: Expression>(_ child: T, in parent: ScopeIdentity) -> T.ID {
+    let i = insert(child, in: parent.file)
+    if let p = parent.node {
+      sources.values[parent.file.offset].syntaxToParent[i.offset] = p.offset
+    }
+    return i
+  }
+
+  /// Replaces the node identified by `n` by `newValue`.
+  ///
+  /// The result of `kind(of: n)` denotes `T` after this method returns. No other property of `n`
+  /// is changed. The children of the node currently identified by `n` that are not children of
+  /// `newValue` are notionally removed from the tree after this method returns. 
+  public mutating func replace<T: Expression>(_ n: ExpressionIdentity, for replacement: T) {
+    assert(n.module == identity)
+    modify(&sources.values[n.file.offset]) { (f) in
+      f.syntax[n.offset] = .init(replacement)
+      f.syntaxToKind[n.offset] = .init(T.self)
     }
   }
 
@@ -177,6 +200,12 @@ public struct Module {
   internal func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
     assert(n.module == identity)
     return sources.values[n.file.offset].syntaxToType[n.offset]
+  }
+
+  /// Returns the declaration referred to by `n`, if any.
+  internal func declaration(referredToBy n: NameExpression.ID) -> DeclarationReference? {
+    assert(n.module == identity)
+    return sources.values[n.file.offset].nameToDeclaration[n.offset]
   }
 
 }

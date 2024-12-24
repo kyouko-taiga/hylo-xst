@@ -39,6 +39,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "fun": kind = .fun
     case "import": kind = .import
     case "infix": kind = .infix
+    case "init": kind = .`init`
     case "inout": kind = .inout
     case "internal": kind = .internal
     case "let": kind = .let
@@ -54,6 +55,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "true": kind = .true
     case "type": kind = .type
     case "typealias": kind = .typealias
+    case "var": kind = .var
     default: kind = .name
     }
     assert(!word.isEmpty)

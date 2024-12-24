@@ -24,15 +24,18 @@ public struct SyntaxKind {
   static let allValues: [any Syntax.Type] = [
     // Declarations
     AssociatedTypeDeclaration.self,
+    BindingDeclaration.self,
     ConformanceDeclaration.self,
     ExtensionDeclaration.self,
     FunctionDeclaration.self,
     GenericParameterDeclaration.self,
     ImportDeclaration.self,
+    InitializerDeclaration.self,
     ParameterDeclaration.self,
+    StructDeclaration.self,
     TraitDeclaration.self,
     TypeAliasDeclaration.self,
-    StructDeclaration.self,
+    VariableDeclaration.self,
 
     // Expressions
     BooleanLiteral.self,
@@ -40,6 +43,9 @@ public struct SyntaxKind {
     NameExpression.self,
     RemoteTypeExpression.self,
     TupleLiteral.self,
+
+    // Patterns
+    BindingPattern.self,
 
     // Statements
     Return.self,

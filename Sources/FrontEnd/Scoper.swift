@@ -9,7 +9,7 @@ public struct Scoper {
     let ts = p[m].sources.values.indices.map { (i) in
       Task.detached { [p] in
         let f = Program.SourceFileIdentity(module: m, offset: i)
-        var v = Visitor(syntaxCount: p[f].syntax.count)
+        var v = Visitor(p[f])
         for o in p[f].syntax.indices {
           let n = AnySyntaxIdentity(file: f, offset: o)
           p.visit(n, calling: &v)
@@ -38,9 +38,9 @@ public struct Scoper {
     /// The innermost lexical scope currently visited.
     var innermost: Int
 
-    /// Creates an instance for computing the relationships of a tree with `syntaxCount` nodes.
-    init(syntaxCount: Int) {
-      self.syntaxToParent = Array(repeating: -1, count: syntaxCount)
+    /// Creates an instance for computing the relationships of `f`.
+    init(_ f: Module.SourceContainer) {
+      self.syntaxToParent = f.syntaxToParent
       self.scopeToDeclarations = [:]
       self.innermost = -1
     }

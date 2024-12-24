@@ -15,10 +15,16 @@ func render(_ ds: DiagnosticSet) {
 func main() async throws {
   let s1: SourceFile = """
     trait P { type X }
-    struct A { }
-    conformance A: P { typealias X = A }
+    struct A {
+      memberwise init
+      let m0 = () 
+      // let m1: Self
+    }
+
+    fun g(_ x: A) -> A { A(m0: ()) }
     fun f(_ x: A.X) { g(x) }
-    fun g(_ x: A) -> A { (x) }
+
+    conformance A: P { typealias X = A }
     """
   let s2: SourceFile = """
     """

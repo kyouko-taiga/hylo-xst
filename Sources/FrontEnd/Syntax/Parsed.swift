@@ -21,9 +21,11 @@ extension Parsed: Equatable where T: Equatable {}
 
 extension Parsed: Hashable where T: Hashable {}
 
-extension Parsed: CustomStringConvertible where T: CustomStringConvertible {
+extension Parsed: CustomStringConvertible {
 
-  public var description: String { value.description }
+  public var description: String {
+    String(describing: value)
+  }
 
 }
 

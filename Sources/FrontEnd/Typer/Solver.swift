@@ -52,8 +52,7 @@ internal struct Solver {
   internal init(_ obligations: Obligations, withLoggingEnabled loggingIsEnabled: Bool) {
     self.bindings = obligations.bindings
     self.rootCount = obligations.constraints.count
-    // self.indentation = loggingIsEnabled ? 0 : -1
-    self.indentation = 0
+    self.indentation = loggingIsEnabled ? 0 : -1
     insert(fresh: obligations.constraints)
   }
 
@@ -77,9 +76,7 @@ internal struct Solver {
         log("- abort")
         return nil
       } else {
-        goals[g].update { (t) in
-          substitutions.reify(t, definedIn: &self.typer.program, withVariables: .kept)
-        }
+        goals[g].update({ (t) in substitutions.reify(t, withVariables: .kept) })
         log("- solve: " + self.typer.program.show(goals[g]))
         indenting { (me) in
           assert(me.outcomes[g].isPending, "goal already discharged")
@@ -116,8 +113,8 @@ internal struct Solver {
       return .success
     } else {
       return .failure { (s, o, p, d) in
-        let t = s.reify(k.lhs, definedIn: &p)
-        let u = s.reify(k.rhs, definedIn: &p)
+        let t = s.reify(k.lhs)
+        let u = s.reify(k.rhs)
         let m = p.format("type '%T' is not compatible with '%T'", [t, u])
         d.insert(.init(.error, m, at: k.site))
       }
@@ -161,12 +158,7 @@ internal struct Solver {
   /// Returns a failure to solve a `k` due to an invalid callee type.
   private func invalidCallee(_ k: CallConstraint) -> GoalOutcome {
     .failure { (s, o, p, d) in
-      let t = s.reify(k.callee, definedIn: &p)
-      if p.kind(of: k.origin) == Call.self {
-        d.insert(p.cannotCallAsFunction(t, at: p[k.origin].site))
-      } else {
-        d.insert(p.cannotCallAsSubscript(t, at: p[k.origin].site))
-      }
+      d.insert(p.cannotCall(s.reify(k.callee), p[k.origin].style, at: p[k.origin].site))
     }
   }
 
@@ -226,8 +218,8 @@ internal struct Solver {
 
   /// Extends the term substution table to map `tau` to `substitute`.
   private mutating func assume(_ t: TypeVariable.ID, equals u: AnyTypeIdentity) {
-//    log("- assume: \"\(tau) = \(substitute)\"")
-//    substitutions.assign(substitute, to: tau)
+    log("- assume: " + typer.program.format("%T = %T", [t.erased, u]))
+    substitutions.assign(u, to: t)
 //    refresh()
   }
 
@@ -242,15 +234,15 @@ internal struct Solver {
     case let p as RemoteType:
       let s = schedule(TypeEquality(lhs: k.lhs, rhs: p.projectee, site: k.site))
       return .split([s]) { (s, _, p, d) in
-        let t = s.reify(k.lhs, definedIn: &p)
-        let u = s.reify(k.rhs, definedIn: &p)
+        let t = s.reify(k.lhs)
+        let u = s.reify(k.rhs)
         let m = p.format("cannot pass value of type '%T' to parameter '%T' ", [t, u])
         d.insert(.init(.error, m, at: k.site))
       }
 
     default:
       return .failure { (s, _, p, d) in
-        let t = s.reify(k.rhs, definedIn: &p)
+        let t = s.reify(k.rhs)
         let m = p.format("invalid parameter type '%T' ", [t])
         d.insert(.init(.error, m, at: k.site))
       }

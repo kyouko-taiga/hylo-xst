@@ -4,6 +4,9 @@ internal protocol Constraint {
   /// The site from which the constraint originates.
   var site: SourceSpan { get }
 
+  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
+  var isTrivial: Bool { get }
+
   /// Applies `transform` on constituent types of `self`.
   mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity)
 
@@ -37,6 +40,11 @@ internal struct TypeEquality: Constraint {
 
   /// The site from which the constraint originates.
   internal let site: SourceSpan
+
+  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
+  internal var isTrivial: Bool {
+    lhs == rhs
+  }
 
   /// Applies `transform` on constituent types of `self`.
   internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
@@ -81,6 +89,11 @@ internal struct CallConstraint: Constraint {
   /// The site from which the constraint originates.
   internal let site: SourceSpan
 
+  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
+  internal var isTrivial: Bool {
+    false
+  }
+
   /// The expected labels of `callee`.
   internal var labels: some Sequence<String?> {
     arguments.lazy.map(\.label)
@@ -122,6 +135,11 @@ internal struct ArgumentConstraint: Constraint {
 
   /// The site from which the constraint originates.
   internal let site: SourceSpan
+
+  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
+  internal var isTrivial: Bool {
+    false
+  }
 
   /// Applies `transform` on constituent types of `self`.
   internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {

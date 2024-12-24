@@ -15,7 +15,7 @@ public struct RemoteTypeExpression: Expression {
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    "\(access.value) \(program.show(projectee))"
+    "\(access) \(program.show(projectee))"
   }
 
 }

@@ -47,6 +47,8 @@ extension Program {
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
       traverse(castUnchecked(n, to: AssociatedTypeDeclaration.self), calling: &v)
+    case BindingDeclaration.self:
+      traverse(castUnchecked(n, to: BindingDeclaration.self), calling: &v)
     case ConformanceDeclaration.self:
       traverse(castUnchecked(n, to: ConformanceDeclaration.self), calling: &v)
     case ExtensionDeclaration.self:
@@ -57,6 +59,8 @@ extension Program {
       break
     case ImportDeclaration.self:
       break
+    case InitializerDeclaration.self:
+      traverse(castUnchecked(n, to: InitializerDeclaration.self), calling: &v)
     case ParameterDeclaration.self:
       traverse(castUnchecked(n, to: ParameterDeclaration.self), calling: &v)
     case StructDeclaration.self:
@@ -65,6 +69,8 @@ extension Program {
       traverse(castUnchecked(n, to: TraitDeclaration.self), calling: &v)
     case TypeAliasDeclaration.self:
       traverse(castUnchecked(n, to: TypeAliasDeclaration.self), calling: &v)
+    case VariableDeclaration.self:
+      break
 
     case BooleanLiteral.self:
       break
@@ -76,6 +82,9 @@ extension Program {
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
     case TupleLiteral.self:
       traverse(castUnchecked(n, to: TupleLiteral.self), calling: &v)
+
+    case BindingPattern.self:
+      traverse(castUnchecked(n, to: BindingPattern.self), calling: &v)
 
     case Return.self:
       traverse(castUnchecked(n, to: Return.self), calling: &v)
@@ -110,6 +119,12 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: AssociatedTypeDeclaration.ID, calling v: inout T) {}
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: BindingDeclaration.ID, calling v: inout T) {
+    visit(self[n].pattern, calling: &v)
+    visit(self[n].initializer, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ConformanceDeclaration.ID, calling v: inout T) {
     visit(self[n].extendee.erased, calling: &v)
     visit(self[n].concept.erased, calling: &v)
@@ -126,6 +141,12 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: FunctionDeclaration.ID, calling v: inout T) {
     visit(self[n].parameters, calling: &v)
     visit(self[n].output, calling: &v)
+    if let b = self[n].body { visit(b, calling: &v) }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: InitializerDeclaration.ID, calling v: inout T) {
+    visit(self[n].parameters, calling: &v)
     if let b = self[n].body { visit(b, calling: &v) }
   }
 
@@ -170,6 +191,12 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: TupleLiteral.ID, calling v: inout T) {
     for a in self[n].elements { visit(a.value, calling: &v) }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: BindingPattern.ID, calling v: inout T) {
+    visit(self[n].pattern, calling: &v)
+    visit(self[n].ascription, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

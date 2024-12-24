@@ -44,17 +44,21 @@ internal struct SubstitutionTable {
     types[walked] = substitution
   }
 
-  /// Returns a copy of `t`, which is defined in `p`, where each variable is substituted by either
-  /// its corresponding value in `self` or the application of `substitutionPolicy` is no such
-  /// substitution exists.
+  /// Returns a copy of `t`, where each variable is substituted by either its corresponding value
+  /// in `self` or the application of `substitutionPolicy` is no such substitution exists.
   ///
   /// The default substitution policy is `substituteByError` because we typically use `reify` on
   /// fully formed solutions, thus not expecting any open variables.
   internal func reify(
-    _ t: AnyTypeIdentity, definedIn p: inout Program,
+    _ t: AnyTypeIdentity,
     withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
   ) -> AnyTypeIdentity {
-    t
+    let u = self[t]
+    if !u.isVariable || (substitutionPolicy == .kept) {
+      return u
+    } else {
+      return .error
+    }
   }
 
   /// Returns a copy of `self` with its internal representation optimized.

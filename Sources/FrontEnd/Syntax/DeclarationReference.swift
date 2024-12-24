@@ -11,6 +11,9 @@ public indirect enum DeclarationReference: Hashable {
 
   }
 
+  /// A reference to a predefined entity.
+  case predefined
+
   /// A direct reference.
   case direct(DeclarationIdentity)
 

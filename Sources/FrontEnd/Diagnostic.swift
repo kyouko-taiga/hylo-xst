@@ -76,15 +76,17 @@ extension Diagnostic: CustomStringConvertible {
 extension Program {
 
   /// Returns an error diagnosing an illegal function application.
-  internal func cannotCallAsFunction(_ f: AnyTypeIdentity, at site: SourceSpan) -> Diagnostic {
-    let m = format("cannot call value of type '%T' as a function", [f])
-    return .init(.error, m, at: site)
-  }
-
-  /// Returns an error diagnosing an illegal subscript application.
-  internal func cannotCallAsSubscript(_ f: AnyTypeIdentity, at site: SourceSpan) -> Diagnostic {
-    let m = format("cannot call value of type '%T' as a subscript", [f])
-    return .init(.error, m, at: site)
+  internal func cannotCall(
+    _ f: AnyTypeIdentity, _ s: Call.Style, at site: SourceSpan
+  ) -> Diagnostic {
+    switch s {
+    case .parenthesized:
+      let m = format("cannot call value of type '%T' as a function", [f])
+      return .init(.error, m, at: site)
+    case .bracketed:
+      let m = format("cannot call value of type '%T' as a subscript", [f])
+      return .init(.error, m, at: site)
+    }
   }
 
   /// Returns an error diagnosing incompatible labels in a function or subscript application.
@@ -96,6 +98,11 @@ extension Program {
       expected '(\(ArgumentLabels(expected)))'
       """
     return .init(.error, m, at: site)
+  }
+
+  /// Returns an error diagnosing name.
+  internal func undefinedSymbol(_ n: Name, at site: SourceSpan) -> Diagnostic {
+    .init(.error, "undefined symbol '\(n)'", at: site)
   }
 
 }

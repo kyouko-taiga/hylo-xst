@@ -18,6 +18,9 @@ public struct Parser {
   /// The position immediately after the last consumed token.
   private var position: SourcePosition
 
+  /// `true` iff we're parsing the subpattern of binding pattern.
+  private var isParsingBindingSubpattern = false
+
   /// Creates an instance parsing `source`, inserting syntax trees in `file`.
   public init(_ source: SourceFile, insertingNodesIn file: Program.SourceFileIdentity) {
     self.file = file
@@ -50,20 +53,28 @@ public struct Parser {
   ///
   ///     declaration ::=
   ///       associated-type-declaration
-  ///       struct-declaration
+  ///       binding-declaration
+  ///       conformance-declaration
   ///       extension-declaration
+  ///       struct-declaration
   ///       trait-declaration
   ///
   private mutating func parseDeclaration(
     in module: inout Module
   ) throws -> DeclarationIdentity {
-    switch peek()?.kind {
+    guard let head = peek() else { throw expected("declaration") }
+
+    switch head.kind {
+    case .inout, .let, .set, .sink:
+      return try .init(parseBindingDeclaration(in: &module))
     case .conformance:
       return try .init(parseConformanceDeclaration(in: &module))
     case .extension:
       return try .init(parseExtensionDeclaration(in: &module))
     case .fun:
       return try .init(parseFunctionDeclaration(in: &module))
+    case .`init`:
+      return try .init(parseInitializerDeclaration(in: &module))
     case .struct:
       return try .init(parseStructDeclaration(in: &module))
     case .trait:
@@ -72,6 +83,8 @@ public struct Parser {
       return try .init(parseAssociatedTypeDeclaration(in: &module))
     case .typealias:
       return try .init(parseTypeAliasDeclaration(in: &module))
+    case .name where head.text == "memberwise":
+      return try .init(parseInitializerDeclaration(in: &module))
     default:
       throw expected("declaration")
     }
@@ -94,6 +107,39 @@ public struct Parser {
         identifier: identifier,
         site: span(from: introducer)),
       in: file)
+  }
+
+  /// Parses a binding declaration into `module`.
+  ///
+  ///     binding-declaration ::=
+  ///       binding-pattern ('=' expression)?
+  ///
+  private mutating func parseBindingDeclaration(
+    in module: inout Module
+  ) throws -> BindingDeclaration.ID {
+    let b = try parseBindingPattern(in: &module)
+    let i = try parseOptionalInitializer(in: &module)
+
+    return module.insert(
+      BindingDeclaration(
+        pattern: b, initializer: i,
+        site: span(from: module[b].site.start)),
+      in: file)
+  }
+
+  /// Parses an initializer/default expression into `module` iff the next token an equal sign.
+  ///
+  ///     initializer-expression ::=
+  ///       '=' expression
+  ///
+  private mutating func parseOptionalInitializer(
+    in module: inout Module
+  ) throws -> ExpressionIdentity? {
+    if take(.assign) != nil {
+      return try parseExpression(in: &module)
+    } else {
+      return nil
+    }
   }
 
   /// Parses a conformance declaration into `module`.
@@ -165,6 +211,62 @@ public struct Parser {
         site: introducer.site.extended(upTo: position.index)),
       in: file)
   }
+
+  /// Parses an initializer declaration into `module`.
+  ///
+  ///     initializer-declaration ::=
+  ///       'memberwise' 'init'
+  ///       'init' parameters callable-body?
+  ///
+  private mutating func parseInitializerDeclaration(
+    in module: inout Module
+  ) throws -> InitializerDeclaration.ID {
+    // Memberwise initializer?
+    if let head = take(contextual: "memberwise") {
+      let t = take(.`init`) ?? fix(expected("'init'"), with: head)
+      let i = InitializerDeclaration.Introducer.memberwiseinit
+      let s = head.site.extended(toCover: t.site)
+
+      return module.insert(
+        InitializerDeclaration(
+          introducer: .init(i, at: s), parameters: [], body: nil,
+          site: s),
+        in: file)
+    }
+
+    // Regular initializer?
+    else if let head = take(.`init`) {
+      let parameters = try parseParameterList(in: &module)
+      let body = try parseOptionalCallableBody(in: &module)
+
+      return module.insert(
+        InitializerDeclaration(
+          introducer: .init(.`init`, at: head.site), parameters: parameters, body: body,
+          site: head.site.extended(upTo: position.index)),
+        in: file)
+    }
+
+    // Missing introducer.
+    else { throw expected("'init'") }
+  }
+
+//  /// Parses the introducer of an initializer declaration.
+//  ///
+//  ///     initializer-introducer ::=
+//  ///       'memberwise'? 'init'
+//  ///
+//  private mutating func parseInitializerIntroducer()
+//    throws -> Parsed<InitializerDeclaration.Introducer>
+//  {
+//    if let t = take(.`init`) {
+//      return .init(.`init`, at: t.site)
+//    } else if let t = take(contextual: "memberwise") {
+//      let u = take(.`init`) ?? fix(expected("'init'"), with: t)
+//      return .init(.memberwiseinit, at: t.site.extended(toCover: u.site))
+//    } else {
+//      throw expected("'init'")
+//    }
+//  }
 
   /// Parses a parenthesized list of parameter declarations into `module`.
   private mutating func parseParameterList(
@@ -316,6 +418,14 @@ public struct Parser {
       in: file)
   }
 
+  /// Parses a variable declaration into `module`.
+  private mutating func parseVariableDeclaration(
+    in module: inout Module
+  ) throws -> VariableDeclaration.ID {
+    let n = try take(.name) ?? expected("identifier")
+    return module.insert(VariableDeclaration(identifier: .init(n)), in: file)
+  }
+
   // MARK: Expressions
 
   /// Parses an expression into `module`.
@@ -394,28 +504,21 @@ public struct Parser {
   private mutating func parseLabeledExpression(
     in module: inout Module
   ) throws -> LabeledExpression {
+    var backup = self
+
+    // Can we parse a label?
     if let l = take(if: \.isArgumentLabel) {
-      // Can we parse a colon after an label?
       if take(.colon) != nil {
         let v = try parseExpression(in: &module)
         return .init(label: .init(l), value: v)
+      } else {
+        swap(&self, &backup)
       }
-
-      // There was no colon; did we parse a simple identifier?
-      else if l.kind == .name {
-        let n = Parsed(Name(identifier: String(l.text)), at: l.site)
-        let v = module.insert(
-          NameExpression(qualification: .none, name: n, site: n.site), in: file)
-        return .init(label: nil, value: .init(v))
-      }
-
-      // A colon is missing.
-      throw ParseError("expected argument", at: l.site)
-    } else {
-      // No label
-      let v = try parseExpression(in: &module)
-      return .init(label: nil, value: v)
     }
+
+    // No label
+    let v = try parseExpression(in: &module)
+    return .init(label: nil, value: v)
   }
 
   /// Parses a primary expression into `module`.
@@ -584,6 +687,66 @@ public struct Parser {
       let s = module[b].site
       let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))
       return module.insert(RemoteTypeExpression(access: k, projectee: b, site: s), in: file)
+    }
+  }
+
+  // MARK: Patterns
+
+  /// Parses a pattern into `module`.
+  ///
+  ///     pattern ::=
+  ///       binding-pattern
+  ///       expression
+  ///
+  private mutating func parsePattern(in module: inout Module) throws -> PatternIdentity {
+    switch peek()?.kind {
+    case .inout, .let, .set, .sink:
+      return try .init(parseBindingPattern(in: &module))
+    case .name where isParsingBindingSubpattern:
+      return try .init(parseVariableDeclaration(in: &module))
+    default:
+      return try .init(parseExpression(in: &module))
+    }
+  }
+
+  /// Parses a binding pattern into `module`.
+  private mutating func parseBindingPattern(in module: inout Module) throws -> BindingPattern.ID {
+    let i = try parseBindingIntroducer()
+
+    // Identifiers occurring in binding subpatterns denote variable declarations.
+    isParsingBindingSubpattern = true
+    defer { isParsingBindingSubpattern = false }
+
+    let p = try parsePattern(in: &module)
+    let a = try parseOptionalTypeAscription(in: &module)
+
+    return module.insert(
+      BindingPattern(
+        introducer: i, pattern: p, ascription: a,
+        site: i.site.extended(upTo: position.index)),
+      in: file)
+  }
+
+  /// Parses the introducer of a binding pattern.
+  ///
+  ///     binding-introducer ::=
+  ///       'sink'? 'let'
+  ///       'var'
+  ///       'inout'
+  ///
+  private mutating func parseBindingIntroducer() throws -> Parsed<BindingPattern.Introducer> {
+    switch peek()?.kind {
+    case .let:
+      return Parsed(.let, at: take()!.site)
+    case .var:
+      return Parsed(.var, at: take()!.site)
+    case .inout:
+      return Parsed(.inout, at: take()!.site)
+    case .sink:
+      if take(.let) == nil { report(expected("'let'")) }
+      return Parsed(.sinklet, at: take()!.site)
+    default:
+      throw expected("binding introducer")
     }
   }
 
@@ -770,6 +933,11 @@ public struct Parser {
     } else {
       return nil
     }
+  }
+
+  /// COnsumes and returns the next token iff it is a contextual keyword withe the given value.
+  private mutating func take(contextual s: String) -> Token? {
+    take(if: { (t) in (t.kind == .name) && (t.text == s) })
   }
 
   /// Consumes and returns the next token iff its kind is in `ks`; otherwise, returns `nil`.

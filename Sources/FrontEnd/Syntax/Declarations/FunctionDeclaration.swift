@@ -18,7 +18,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   /// The introducer of this declaration.
   public let introducer: Token
 
-  /// The name of the declared trait.
+  /// The name of the declared function.
   public let identifier: Parsed<Identifier>
 
   /// The declarations of the function's parameters.
@@ -50,6 +50,18 @@ public struct FunctionDeclaration: Declaration, Scope {
 
 }
 
+extension FunctionDeclaration: Archivable {
+
+  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
+    fatalError()
+  }
+
+  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
+    fatalError()
+  }
+
+}
+
 extension FunctionDeclaration.Identifier: CustomStringConvertible {
 
   public var description: String {
@@ -59,18 +71,6 @@ extension FunctionDeclaration.Identifier: CustomStringConvertible {
     case .operator(let n, let s):
       return "\(n)\(s)"
     }
-  }
-
-}
-
-extension FunctionDeclaration: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    fatalError()
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    fatalError()
   }
 
 }

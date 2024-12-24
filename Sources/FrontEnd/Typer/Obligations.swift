@@ -7,7 +7,7 @@ internal struct Obligations {
   internal private(set) var constraints: [any Constraint]
 
   /// A table from syntax tree to its type.
-  internal private(set) var syntaxToType: [AnySyntaxIdentity: AnyTypeIdentity]
+  internal private(set) var syntaxToType: OrderedDictionary<AnySyntaxIdentity, AnyTypeIdentity>
 
   /// A table from name component to its declaration.
   internal private(set) var bindings: BindingTable
@@ -30,7 +30,7 @@ internal struct Obligations {
 
   /// Assumes that `k` holds.
   internal mutating func assume(_ k: any Constraint) {
-    constraints.append(k)
+    if !k.isTrivial { constraints.append(k) }
   }
 
   /// Assumes that `n` has type `t`.

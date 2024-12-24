@@ -18,6 +18,7 @@ public struct Token: Hashable {
     case fun
     case `import`
     case infix
+    case `init`
     case `inout`
     case `internal`
     case `let`
@@ -33,6 +34,7 @@ public struct Token: Hashable {
     case `true`
     case type
     case `typealias`
+    case `var`
 
     // Operators
     case ampersand

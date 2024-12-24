@@ -218,12 +218,43 @@ public struct Program {
     }
   }
 
+  /// Returns `true` iff `n` is notionally in the scope of a type declaration.
+  ///
+  /// - Requires: The module containing `n` is scoped.
+  public func isInTypeScope<T: SyntaxIdentity>(_ n: T) -> Bool {
+    isInTypeScope(castToScope(n) ?? parent(containing: n))
+  }
+
+  /// Returns `true` iff `s` is a type declaration or it is notionally in the scope of one.
+  public func isInTypeScope(_ s: ScopeIdentity) -> Bool {
+    for t in scopes(from: s) {
+      guard let m = t.node else { break }
+      switch kind(of: m) {
+      case ConformanceDeclaration.self:
+        return true
+      case ExtensionDeclaration.self:
+        return true
+      case StructDeclaration.self:
+        return true
+      case TraitDeclaration.self:
+        return true
+      case TypeAliasDeclaration.self:
+        return true
+      default:
+        continue
+      }
+    }
+    return false
+  }
+
   /// Returns `true` iff `n` is a trait requirement.
   public func isRequirement<T: SyntaxIdentity>(_ n: T) -> Bool {
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
       return true
     case FunctionDeclaration.self:
+      return parent(containing: n, as: TraitDeclaration.self) != nil
+    case InitializerDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self) != nil
     default:
       return false
@@ -307,14 +338,14 @@ public struct Program {
     }
   }
 
-  /// Returns the innermost scope that contains `n`.
+  /// Returns the innermost scope that strictly contains `n`.
   ///
   /// - Requires: The module containing `s` is scoped.
   public func parent(containing s: ScopeIdentity) -> ScopeIdentity? {
     s.node.map(parent(containing:))
   }
 
-  /// Returns the innermost scope that contains `n`.
+  /// Returns the innermost scope that strictly contains `n`.
   ///
   /// - Requires: The module containing `n` is scoped.
   public func parent<T: SyntaxIdentity>(containing n: T) -> ScopeIdentity {
@@ -387,6 +418,8 @@ public struct Program {
       return [name(of: castUnchecked(d, to: TraitDeclaration.self))]
     case FunctionDeclaration.self:
       return [name(of: castUnchecked(d, to: FunctionDeclaration.self))]
+    case InitializerDeclaration.self:
+      return [name(of: castUnchecked(d, to: InitializerDeclaration.self))]
     case StructDeclaration.self:
       return [name(of: castUnchecked(d, to: StructDeclaration.self))]
     case TypeAliasDeclaration.self:
@@ -409,6 +442,18 @@ public struct Program {
     case .operator(let n, let x):
       return Name(identifier: x, notation: n)
     }
+  }
+
+  /// Returns the name of `d`.
+  public func name(of d: InitializerDeclaration.ID) -> Name {
+    var labels: [String?] = []
+    if self[d].isMemberwise {
+      let s = parent(containing: d, as: StructDeclaration.self)!
+      forEachStoredProperty(of: s, do: { (v, _) in labels.append(self[v].identifier.value) })
+    } else {
+      labels.append(contentsOf: self[d].parameters.map(read(\.label?.value)))
+    }
+    return Name(identifier: "init", labels: .init(labels))
   }
 
   /// Returns the name of `d`.
@@ -440,6 +485,54 @@ public struct Program {
     //case SubscriptCall.self:
     default:
       return nil
+    }
+  }
+
+  /// Returns the declarations of the stored properties of `n`.
+  public func fields(_ n: StructDeclaration.ID) -> [VariableDeclaration.ID] {
+    var fs: [VariableDeclaration.ID] = []
+    for m in self[n].members {
+      if let d = cast(m, to: BindingDeclaration.self) {
+        let p = self[self[d].pattern].pattern
+        forEachVariable(introducedIn: p, do: { (v, _) in fs.append(v) })
+      }
+    }
+    return fs
+  }
+
+  /// Calls `action` for each stored property declaration in `d`.
+  ///
+  /// `action` accepts a variable declaration and an index path identifying its abstract position
+  /// in a record value having the type declared by `d`.
+  public func forEachStoredProperty(
+    of d: StructDeclaration.ID,
+    do action: (VariableDeclaration.ID, IndexPath) -> Void
+  ) {
+    for m in self[d].members {
+      if let b = cast(m, to: BindingDeclaration.self) {
+        let p = self[self[b].pattern].pattern
+        forEachVariable(introducedIn: p, do: action)
+      }
+    }
+  }
+
+  /// Calls `action` for each variable declaration introduced in `p`.
+  ///
+  /// `action` accepts a variable declaration and an index path identifying its abstract position
+  /// in the a record value having the type of `p`.
+  public func forEachVariable(
+    introducedIn p: PatternIdentity,
+    at i: IndexPath = [],
+    do action: (VariableDeclaration.ID, IndexPath) -> Void
+  ) {
+    switch kind(of: p) {
+    case BindingPattern.self:
+      let q = castUnchecked(p, to: BindingPattern.self)
+      forEachVariable(introducedIn: self[q].pattern, at: i, do: action)
+    case VariableDeclaration.self:
+      action(castUnchecked(p), i)
+    default:
+      assert(isExpression(p))
     }
   }
 
