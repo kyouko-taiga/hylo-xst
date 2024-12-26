@@ -36,6 +36,9 @@ public struct Module {
     /// A table from scope to the declarations that it contains directly.
     internal var scopeToDeclarations: [Int: [DeclarationIdentity]] = [:]
 
+    /// A table from variable declaration to its containing binding declaration, if any.
+    internal var variableToBindingDeclaration: [Int: BindingDeclaration.ID] = [:]
+
     /// A table from syntax tree to its type.
     internal var syntaxToType: [Int: AnyTypeIdentity] = [:]
 

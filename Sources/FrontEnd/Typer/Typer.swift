@@ -142,6 +142,13 @@ public struct Typer {
     if let i = program[d].initializer {
       check(i, expecting: t)
     }
+
+    let p = program.parent(containing: d)
+    program.forEachVariable(introducedBy: d) { (v, _) in
+      if v.erased != lookup(program[v].identifier.value, lexicallyIn: p).uniqueElement?.erased {
+        report(.init(.error, "duplicate declaration", at: program[v].site))
+      }
+    }
   }
 
   /// Type checks `d`.
@@ -333,6 +340,8 @@ public struct Typer {
       return declaredType(of: castUnchecked(d, to: TraitDeclaration.self))
     case TypeAliasDeclaration.self:
       return declaredType(of: castUnchecked(d, to: TypeAliasDeclaration.self))
+    case VariableDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: VariableDeclaration.self))
     default:
       program.unexpected(d)
     }
@@ -435,12 +444,12 @@ public struct Typer {
 
       var inputs: [Parameter] = []
       for m in program[s].members {
-        guard let d = program.cast(m, to: BindingDeclaration.self) else { continue }
+        guard let b = program.cast(m, to: BindingDeclaration.self) else { continue }
 
         // Make sure there's a type for each of the variables introduced by the declaration.
-        _ = declaredType(of: d)
-        program.forEachVariable(introducedIn: .init(program[d].pattern)) { (v, _) in
-          let t = program[module].type(assignedTo: d) ?? .error
+        _ = declaredType(of: b)
+        program.forEachVariable(introducedBy: b) { (v, _) in
+          let t = program[module].type(assignedTo: b) ?? .error
           let u = demand(RemoteType(projectee: t, access: .sink)).erased
           inputs.append(
             Parameter(
@@ -528,9 +537,13 @@ public struct Typer {
 
   /// Returns the declared type of `d` without checking.
   private mutating func declaredType(of d: VariableDeclaration.ID) -> AnyTypeIdentity {
-    // Variable declarations are typed through their containing pattern, which is visited before
-    // any reference to the variable can be formed.
-    program[module].type(assignedTo: d) ?? unreachable("containing pattern is not typed")
+    if let memoized = program[module].type(assignedTo: d) { return memoized }
+
+    // Variable declarations outside of a binding declaration are typed through their containing
+    // pattern, which is visited before any reference to the variable can be formed.
+    let b = program.bindingDeclaration(containing: d) ?? unreachable("pattern is not typed")
+    _ = declaredType(of: b)
+    return program[module].type(assignedTo: d) ?? .error
   }
 
   /// Returns the declared properties of the parameters in `ds` without checking.
@@ -1437,7 +1450,15 @@ public struct Typer {
     _ m: inout Memos.LookupTable, with ds: T
   ) {
     for d in ds {
-      if let n = program.names(introducedBy: d).first {
+      // Is `d` a binding declaration?
+      if let b = program.cast(d, to: BindingDeclaration.self) {
+        program.forEachVariable(introducedBy: b) { (v, _) in
+          m[program[v].identifier.value, default: []].append(.init(v))
+        }
+      }
+
+      // Is `d` declaraing a single entity?
+      else if let n = program.name(of: d) {
         m[n.identifier, default: []].append(d)
       }
     }

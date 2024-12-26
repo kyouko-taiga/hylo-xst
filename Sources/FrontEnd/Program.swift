@@ -167,6 +167,11 @@ public struct Program {
     modules.values[n.module].kind(of: n)
   }
 
+  /// `true` iff `f` has gone through scoping.
+  public func isScoped(_ f: SourceFileIdentity) -> Bool {
+    self[f].syntaxToParent.count == self[f].syntax.count
+  }
+
   /// Returns `true` iff `n` denotes a declaration.
   public func isDeclaration<T: SyntaxIdentity>(_ n: T) -> Bool {
     kind(of: n).value is any Declaration.Type
@@ -349,10 +354,8 @@ public struct Program {
   ///
   /// - Requires: The module containing `n` is scoped.
   public func parent<T: SyntaxIdentity>(containing n: T) -> ScopeIdentity {
-    let s = self[n.file]
-    precondition(s.syntaxToParent.count > n.offset, "unscoped module")
-
-    let p = s.syntaxToParent[n.offset]
+    assert(isScoped(n.file), "unscoped module")
+    let p = self[n.file].syntaxToParent[n.offset]
     if p >= 0 {
       return .init(uncheckedFrom: .init(file: n.file, offset: p))
     } else {
@@ -407,6 +410,14 @@ public struct Program {
     collect(t, in: declarations(lexicallyIn: s))
   }
 
+  /// Returns the binding declaration that contains `d`, if any.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func bindingDeclaration(containing d: VariableDeclaration.ID) -> BindingDeclaration.ID? {
+    assert(isScoped(d.file), "unscoped module")
+    return self[d.file].variableToBindingDeclaration[d.offset]
+  }
+
   /// Returns the names introduced by `d`.
   public func names(introducedBy d: DeclarationIdentity) -> [Name] {
     switch kind(of: d) {
@@ -434,10 +445,33 @@ public struct Program {
   /// Returns the names introduced by `d`.
   public func names(introducedBy d: BindingDeclaration.ID) -> [Name] {
     var result: [Name] = []
-    forEachVariable(introducedIn: self[self[d].pattern].pattern) { (v, _) in
+    forEachVariable(introducedBy: self[self[d].pattern].pattern) { (v, _) in
       result.append(.init(identifier: self[v].identifier.value))
     }
     return result
+  }
+
+  /// Returns the name of the unique entity declared by `d`, or `nil` if `d` declares zero or more
+  /// than one named entity.
+  public func name(of d: DeclarationIdentity) -> Name? {
+    switch kind(of: d) {
+    case AssociatedTypeDeclaration.self:
+      return name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))
+    case ParameterDeclaration.self:
+      return name(of: castUnchecked(d, to: ParameterDeclaration.self))
+    case TraitDeclaration.self:
+      return name(of: castUnchecked(d, to: TraitDeclaration.self))
+    case FunctionDeclaration.self:
+      return name(of: castUnchecked(d, to: FunctionDeclaration.self))
+    case InitializerDeclaration.self:
+      return name(of: castUnchecked(d, to: InitializerDeclaration.self))
+    case StructDeclaration.self:
+      return name(of: castUnchecked(d, to: StructDeclaration.self))
+    case TypeAliasDeclaration.self:
+      return name(of: castUnchecked(d, to: TypeAliasDeclaration.self))
+    default:
+      return nil
+    }
   }
 
   /// Returns the name of `d`.
@@ -509,9 +543,20 @@ public struct Program {
   ) {
     for m in self[d].members {
       if let b = cast(m, to: BindingDeclaration.self) {
-        forEachVariable(introducedIn: self[self[b].pattern].pattern, do: action)
+        forEachVariable(introducedBy: self[self[b].pattern].pattern, do: action)
       }
     }
+  }
+
+  /// Calls `action` for each variable declaration introduced by `d`.
+  ///
+  /// `action` accepts a variable declaration and an index path identifying its abstract position
+  /// in the a record value having the type of `d`.
+  public func forEachVariable(
+    introducedBy d: BindingDeclaration.ID,
+    do action: (VariableDeclaration.ID, IndexPath) -> Void
+  ) {
+    forEachVariable(introducedBy: self[self[d].pattern].pattern, do: action)
   }
 
   /// Calls `action` for each variable declaration introduced in `p`.
@@ -519,19 +564,19 @@ public struct Program {
   /// `action` accepts a variable declaration and an index path identifying its abstract position
   /// in the a record value having the type of `p`.
   public func forEachVariable(
-    introducedIn p: PatternIdentity,
+    introducedBy p: PatternIdentity,
     at path: IndexPath = [],
     do action: (VariableDeclaration.ID, IndexPath) -> Void
   ) {
     switch kind(of: p) {
     case BindingPattern.self:
       let q = castUnchecked(p, to: BindingPattern.self)
-      forEachVariable(introducedIn: self[q].pattern, at: path, do: action)
+      forEachVariable(introducedBy: self[q].pattern, at: path, do: action)
 
     case TuplePattern.self:
       let q = castUnchecked(p, to: TuplePattern.self)
       for (i, e) in self[q].elements.enumerated() {
-        forEachVariable(introducedIn: e.value, at: path + [i], do: action)
+        forEachVariable(introducedBy: e.value, at: path + [i], do: action)
       }
 
     case VariableDeclaration.self:
