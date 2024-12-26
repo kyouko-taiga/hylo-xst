@@ -31,7 +31,7 @@ public struct Diagnostic: Hashable {
 
   /// Creates a new diagnostic.
   ///
-  /// - Precondition: elements of `notes` have `self.level == .note`
+  /// - Requires: elements of `notes` have `self.level == .note`
   public init(
     _ level: Level, _ message: String, at site: SourceSpan, notes: [Diagnostic] = []
   ) {
