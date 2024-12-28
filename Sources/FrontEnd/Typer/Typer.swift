@@ -74,6 +74,9 @@ public struct Typer {
     /// The cache of `Typer.summon(_:in:)`.
     var scopeToSummoned: [ScopeIdentity: [AnyTypeIdentity: [DeclarationReference]]]
 
+    /// The cache of `Typer.typeOfSelf(in:)`.
+    var scopeToTypeOfSelf: [ScopeIdentity: AnyTypeIdentity?]
+
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
       self.moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
@@ -83,6 +86,7 @@ public struct Typer {
       self.scopeToTypeToLookupTable = [:]
       self.scopeToTraits = [:]
       self.scopeToSummoned = [:]
+      self.scopeToTypeOfSelf = [:]
     }
 
   }
@@ -424,7 +428,20 @@ public struct Typer {
       evaluateTypeAscription(a)
     }
 
-    let t = demand(Arrow(inputs: inputs, output: output ?? .void)).erased
+    let environment: AnyTypeIdentity
+    if program.isMember(d) {
+      let r = typeOfSelf(in: program.parent(containing: d))!
+      let e = demand(RemoteType(projectee: r, access: program[d].effect.value)).erased
+      environment = demand(Tuple(elements: [.init(label: "self", type: e)])).erased
+    } else {
+      environment = .void
+    }
+
+    let a = Arrow(
+      environment: environment,
+      inputs: inputs,
+      output: output ?? .void)
+    let t = demand(a).erased
     program[module].setType(t, for: d)
     return t
   }
@@ -466,8 +483,8 @@ public struct Typer {
 
     // We're looking at a custom initializer.
     else {
-      let i = declaredTypes(of: program[d].parameters)
-      let t = demand(Arrow(inputs: i, output: output)).erased
+      let inputs = declaredTypes(of: program[d].parameters)
+      let t = demand(Arrow(inputs: inputs, output: output)).erased
       program[module].setType(t, for: d)
       return t
     }
@@ -1011,19 +1028,44 @@ public struct Typer {
     }
   }
 
+  /// Reports that `d` has no implementation.
   private mutating func reportMissingImplementation(of d: AssociatedTypeDeclaration.ID) {
     let n = program[d].identifier.value
     let m = "no implementation of associated type requirement '\(n)'"
     report(.init(.error, m, at: program.spanForDiagnostic(about: d)))
   }
 
-  /// Returns `true` iff `r` denotes a reference to a value whose computation is pure.
+  /// Returns `true` iff `r` refers to a value whose computation is pure.
   private func isStable(_ r: DeclarationReference) -> Bool {
     switch r {
     case .direct(let d):
-      return program.isGlobal(d)
+      return isStable(d)
     default:
       return false
+    }
+  }
+
+  /// Returns `true` iff `r` declares a value whose computation is pure.
+  private func isStable(_ d: DeclarationIdentity) -> Bool {
+    switch program.kind(of: d) {
+    case AssociatedTypeDeclaration.self:
+      return true
+    case ConformanceDeclaration.self:
+      return true
+    case ExtensionDeclaration.self:
+      return true
+    case GenericParameterDeclaration.self:
+      return true
+    case ImportDeclaration.self:
+      return true
+    case StructDeclaration.self:
+      return true
+    case TraitDeclaration.self:
+      return true
+    case TypeAliasDeclaration.self:
+      return true
+    default:
+      return program.parent(containing: d).node == nil
     }
   }
 
@@ -1080,14 +1122,33 @@ public struct Typer {
   /// Returns value of `Self` evaluated in `s`, or `nil` if `s` isn't notionally in the scope of a
   /// type declaration.
   private mutating func typeOfSelf(in s: ScopeIdentity) -> AnyTypeIdentity? {
-    guard let d = innermostTypeScope(containing: s) else { return nil }
-    let t = declaredType(of: d)
+    if let memoized = cache.scopeToTypeOfSelf[s] { return memoized }
 
-    if let m = program.types[t] as? Metatype {
-      return m.inhabitant
-    } else {
-      return .error
+    guard let n = s.node else { return nil }
+    let result: AnyTypeIdentity?
+
+    switch program.kind(of: n) {
+    case ConformanceDeclaration.self:
+      fatalError()
+    case ExtensionDeclaration.self:
+      result = extendeeType(program.castUnchecked(n, to: ExtensionDeclaration.self))
+    case StructDeclaration.self:
+      result = typeOfInstance(program.castUnchecked(n, to: StructDeclaration.self))
+    case TraitDeclaration.self:
+      result = typeOfInstance(program.castUnchecked(n, to: TraitDeclaration.self))
+    case TypeAliasDeclaration.self:
+      result = typeOfInstance(program.castUnchecked(n, to: TypeAliasDeclaration.self))
+    default:
+      result = typeOfSelf(in: program.parent(containing: n))
     }
+
+    cache.scopeToTypeOfSelf[s] = .some(result)
+    return result
+  }
+
+  private mutating func typeOfInstance<T: TypeDeclaration>(_ d: T.ID) -> AnyTypeIdentity {
+    let t = declaredType(of: .init(d))
+    return (program.types[t] as? Metatype)?.inhabitant ?? .error
   }
 
   // MARK: Name resolution
@@ -1213,6 +1274,13 @@ public struct Typer {
       if let t = typeOfSelf(in: scopeOfUse) {
         let u = demand(Metatype(inhabitant: t)).erased
         return [.init(reference: .predefined, type: u)]
+      } else {
+        return []
+      }
+
+    case "self":
+      if let t = typeOfSelf(in: scopeOfUse) {
+        return [.init(reference: .predefined, type: t)]
       } else {
         return []
       }
@@ -1511,28 +1579,6 @@ public struct Typer {
   }
 
   // MARK: Helpers
-
-  /// Returns the innermost declaration of the type whose scope notionally contains `s`.
-  private mutating func innermostTypeScope(containing s: ScopeIdentity) -> DeclarationIdentity? {
-    for t in program.scopes(from: s) {
-      guard let n = t.node else { break }
-      switch program.kind(of: n) {
-      case ConformanceDeclaration.self:
-        fatalError()
-      case ExtensionDeclaration.self:
-        fatalError()
-      case StructDeclaration.self:
-        return .init(uncheckedFrom: n)
-      case TraitDeclaration.self:
-        return .init(uncheckedFrom: n)
-      case TypeAliasDeclaration.self:
-        return .init(uncheckedFrom: n)
-      default:
-        continue
-      }
-    }
-    return nil
-  }
 
   /// Returns the type of values expected to be returned or projected in `s`, or `nil` if `s` is
   /// not in the body of a function or subscript.

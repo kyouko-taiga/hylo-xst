@@ -182,6 +182,11 @@ public struct Program {
     kind(of: n).value is any TypeDeclaration.Type
   }
 
+  //// Returns `true` iff `n` denotes an extension or conformance declaration.
+  public func isTypeExtendingDeclaration<T: SyntaxIdentity>(_ n: T) -> Bool {
+    kind(of: n).value is any TypeExtendingDeclaration.Type
+  }
+
   /// Returns `true` iff `n` introduces a name that can be overloaded.
   public func isOverloadable<T: SyntaxIdentity>(_ n: T) -> Bool {
     switch kind(of: n) {
@@ -197,61 +202,6 @@ public struct Program {
     kind(of: n).value is any Scope.Type
   }
 
-  /// Returns `true` iff `n` denotes a declaration that can be lifted at global scope.
-  ///
-  /// - Requires: The module containing `n` is scoped.
-  public func isGlobal(_ n: DeclarationIdentity) -> Bool {
-    switch kind(of: n) {
-    case AssociatedTypeDeclaration.self:
-      return true
-    case ConformanceDeclaration.self:
-      return true
-    case ExtensionDeclaration.self:
-      return true
-    case GenericParameterDeclaration.self:
-      return true
-    case ImportDeclaration.self:
-      return true
-    case StructDeclaration.self:
-      return true
-    case TraitDeclaration.self:
-      return true
-    case TypeAliasDeclaration.self:
-      return true
-    default:
-      return parent(containing: n).node == nil
-    }
-  }
-
-  /// Returns `true` iff `n` is notionally in the scope of a type declaration.
-  ///
-  /// - Requires: The module containing `n` is scoped.
-  public func isInTypeScope<T: SyntaxIdentity>(_ n: T) -> Bool {
-    isInTypeScope(castToScope(n) ?? parent(containing: n))
-  }
-
-  /// Returns `true` iff `s` is a type declaration or it is notionally in the scope of one.
-  public func isInTypeScope(_ s: ScopeIdentity) -> Bool {
-    for t in scopes(from: s) {
-      guard let m = t.node else { break }
-      switch kind(of: m) {
-      case ConformanceDeclaration.self:
-        return true
-      case ExtensionDeclaration.self:
-        return true
-      case StructDeclaration.self:
-        return true
-      case TraitDeclaration.self:
-        return true
-      case TypeAliasDeclaration.self:
-        return true
-      default:
-        continue
-      }
-    }
-    return false
-  }
-
   /// Returns `true` iff `n` is a trait requirement.
   public func isRequirement<T: SyntaxIdentity>(_ n: T) -> Bool {
     switch kind(of: n) {
@@ -262,6 +212,17 @@ public struct Program {
     case InitializerDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self) != nil
     default:
+      return false
+    }
+  }
+
+  /// Returns `true` iff `n` declares non-static a member entity.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func isMember(_ n: FunctionDeclaration.ID) -> Bool {
+    if let m = parent(containing: n).node {
+      return isTypeDeclaration(m) || isTypeExtendingDeclaration(m)
+    } else {
       return false
     }
   }

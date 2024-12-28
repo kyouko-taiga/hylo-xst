@@ -131,6 +131,16 @@ public struct Token: Hashable {
     (kind == .name) || (kind == .underscore) || isKeyword
   }
 
+  /// `true` iff `self` is an access effect.
+  public var isAccessEffect: Bool {
+    switch kind {
+    case .let, .inout, .set, .sink:
+      return true
+    default:
+      return false
+    }
+  }
+
 }
 
 extension Token: Archivable {

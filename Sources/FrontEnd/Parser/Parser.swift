@@ -198,6 +198,7 @@ public struct Parser {
     let introducer = try take(.fun) ?? expected("'fun'")
     let identifier = try parseFunctionIdentifier()
     let parameters = try parseParameterList(in: &module)
+    let effect = parseOptionalAccessEffect() ?? Parsed(.let, at: .empty(at: position))
     let output = try parseOptionalReturnTypeAscription(in: &module)
     let body = try parseOptionalCallableBody(in: &module)
 
@@ -206,6 +207,7 @@ public struct Parser {
         introducer: introducer,
         identifier: identifier,
         parameters: parameters,
+        effect: effect,
         output: output,
         body: body,
         site: introducer.site.extended(upTo: position.index)),
@@ -519,12 +521,12 @@ public struct Parser {
   /// Parses a remote type expression into `module`.
   ///
   ///     remote-type-expression ::=
-  ///       access-specifier expression
+  ///       access-effect expression
   ///
   private mutating func parseRemoteTypeExpression(
     in module: inout Module
   ) throws -> RemoteTypeExpression.ID {
-    let k = parseAccessSpecifcier()
+    let k = parseAccessEffect()
     let e = try parseExpression(in: &module)
     return module.insert(
       RemoteTypeExpression(
@@ -534,12 +536,21 @@ public struct Parser {
       in: file)
   }
 
-  /// Parses an access specifier.
+  /// Parses an access effect.
   ///
-  ///     access-specifier ::= (one of)
+  ///     access-effect ::= (one of)
   ///       let inout set sink
   ///
-  private mutating func parseAccessSpecifcier() -> Parsed<AccessEffect> {
+  private mutating func parseAccessEffect() -> Parsed<AccessEffect> {
+    if let k = parseOptionalAccessEffect() {
+      return k
+    } else {
+      return fix(expected("access specifier"), with: Parsed(.let, at: .empty(at: position)))
+    }
+  }
+
+  /// Parses an access effect iff the next token denotes one.
+  private mutating func parseOptionalAccessEffect() -> Parsed<AccessEffect>? {
     switch peek()?.kind {
     case .let:
       return Parsed(.let, at: take()!.site)
@@ -550,7 +561,7 @@ public struct Parser {
     case .sink:
       return Parsed(.sink, at: take()!.site)
     default:
-      return fix(expected("access specifier"), with: Parsed(.let, at: .empty(at: position)))
+      return nil
     }
   }
 

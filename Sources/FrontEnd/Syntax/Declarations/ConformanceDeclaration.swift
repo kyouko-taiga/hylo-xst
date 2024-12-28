@@ -1,7 +1,7 @@
 import Archivist
 
 /// The declaration of a conformance of a type to a trait.
-public struct ConformanceDeclaration: Declaration, Scope {
+public struct ConformanceDeclaration: TypeExtendingDeclaration {
 
   /// The introducer of this declaration.
   public let introducer: Token

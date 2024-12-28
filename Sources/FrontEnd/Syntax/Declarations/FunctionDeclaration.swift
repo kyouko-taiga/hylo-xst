@@ -24,6 +24,9 @@ public struct FunctionDeclaration: Declaration, Scope {
   /// The declarations of the function's parameters.
   public let parameters: [ParameterDeclaration.ID]
 
+  /// The effect of the function's call operator.
+  public let effect: Parsed<AccessEffect>
+
   /// The type of the function's return value.
   public let output: ExpressionIdentity?
 
@@ -36,8 +39,9 @@ public struct FunctionDeclaration: Declaration, Scope {
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     let i = parameters.map(program.show(_:)).descriptions()
+    let k = String(describing: effect.value)
     let o = output.map(program.show(_:)) ?? "Void"
-    var result = "fun \(identifier)(\(i)) -> \(o)"
+    var result = "fun \(identifier)(\(i)) \(k) -> \(o)"
 
     if let b = body {
       result.append(" {\n")

@@ -1,7 +1,7 @@
 import Archivist
 
 /// The declaration of a type extension.
-public struct ExtensionDeclaration: Declaration, Scope {
+public struct ExtensionDeclaration: TypeExtendingDeclaration {
 
   /// The introducer of this declaration.
   public let introducer: Token
