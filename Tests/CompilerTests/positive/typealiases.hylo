@@ -12,7 +12,7 @@ trait P {
   type X
 }
 
-conformance A: P {
+given A: P {
   typealias X = A
 }
 

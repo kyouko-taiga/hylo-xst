@@ -67,7 +67,7 @@ public struct Parser {
     switch head.kind {
     case .inout, .let, .set, .sink, .var:
       return try .init(parseBindingDeclaration(in: &module))
-    case .conformance:
+    case .given:
       return try .init(parseConformanceDeclaration(in: &module))
     case .extension:
       return try .init(parseExtensionDeclaration(in: &module))
@@ -145,12 +145,12 @@ public struct Parser {
   /// Parses a conformance declaration into `module`.
   ///
   ///     conformance-declaration ::=
-  ///       'conformance' expression ':' expression type-body
+  ///       'given' expression ':' expression type-body
   ///
   private mutating func parseConformanceDeclaration(
     in module: inout Module
   ) throws -> ConformanceDeclaration.ID {
-    let introducer = try take(.conformance) ?? expected("'conformance'")
+    let introducer = try take(.given) ?? expected("'given'")
     let extendee = try parseExpression(in: &module)
     _ = try take(.colon) ?? expected("':'")
     let concept = try parseExpression(in: &module)

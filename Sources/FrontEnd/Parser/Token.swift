@@ -12,10 +12,10 @@ public struct Token: Hashable {
     case underscore
 
     // Reserved keywords
-    case conformance
     case `extension`
     case `false`
     case fun
+    case given
     case `import`
     case infix
     case `init`
@@ -89,7 +89,7 @@ public struct Token: Hashable {
   /// `true` iff `self` may be at the beginning of a declaration.
   public var isDeclarationHead: Bool {
     switch kind {
-    case .fun, .import, .inout, .let, .sink, .trait, .type, .var:
+    case .fun, .given, .import, .inout, .let, .sink, .struct, .trait, .type, .var:
       return true
     default:
       return isDeclarationModifier
