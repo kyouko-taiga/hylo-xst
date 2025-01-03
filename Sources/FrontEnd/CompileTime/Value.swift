@@ -7,6 +7,11 @@ public enum Value: Hashable {
   /// A type.
   case type(AnyTypeIdentity)
 
+  /// Creates an instance equal to `t`.
+  public init<T: Term>(_ t: T) {
+    self = .term(.init(t))
+  }
+
   /// Properties about `self`.
   public var properties: ValueProperties {
     switch self {

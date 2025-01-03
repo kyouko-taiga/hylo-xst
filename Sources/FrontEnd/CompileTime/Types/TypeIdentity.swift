@@ -79,6 +79,11 @@ public struct AnyTypeIdentity: Hashable {
     return self.bits & m == m
   }
 
+  /// Returns `self` iff it is not `.error`. Otherwise, returns `nil`.
+  public var unlessError: AnyTypeIdentity? {
+    self == .error ? nil : self
+  }
+
   /// Returns whether the specified flags are raised for `self`.
   public subscript(f: ValueProperties) -> Bool {
     properties.contains(f)

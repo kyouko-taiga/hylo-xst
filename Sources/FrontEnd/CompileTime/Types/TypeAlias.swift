@@ -12,6 +12,14 @@ public struct TypeAlias: TypeTree {
     .notCanonical
   }
 
+  /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
+  public func modified(
+    in store: inout TypeStore,
+    by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> TypeAlias {
+    .init(declaration: declaration, aliasee: store.map(aliasee, transform))
+  }
+
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     "\(program[declaration].identifier)"

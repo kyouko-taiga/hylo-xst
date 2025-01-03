@@ -119,6 +119,21 @@ extension Program {
     if let m = n { visit(m, calling: &v) }
   }
 
+  /// Visits `ps` and their children in pre-order, calling back `v` when a node is entered or left.
+  public func visit<T: SyntaxVisitor>(_ ps: StaticParameters, calling v: inout T) {
+    visit(ps.explicit, calling: &v)
+    visit(ps.implicit, calling: &v)
+  }
+
+  /// Visits `p` and its children in pre-order, calling back `v` when a node is entered or left.
+  public func visit<T: SyntaxVisitor>(_ p: ConstraintDeclaration, calling v: inout T) {
+    switch p {
+    case .conformance(let t, let u):
+      visit(t, calling: &v)
+      visit(u, calling: &v)
+    }
+  }
+
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: AssociatedTypeDeclaration.ID, calling v: inout T) {}
 
@@ -143,6 +158,7 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: FunctionDeclaration.ID, calling v: inout T) {
+    visit(self[n].staticParameters, calling: &v)
     visit(self[n].parameters, calling: &v)
     visit(self[n].output, calling: &v)
     if let b = self[n].body { visit(b, calling: &v) }
@@ -166,6 +182,7 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: TraitDeclaration.ID, calling v: inout T) {
+    visit(self[n].parameters, calling: &v)
     visit(self[n].members, calling: &v)
   }
 

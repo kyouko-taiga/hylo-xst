@@ -12,6 +12,14 @@ public struct Tuple: TypeTree {
     /// The type of the element.
     public let type: AnyTypeIdentity
 
+    /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
+    public func modified(
+      in store: inout TypeStore,
+      by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+    ) -> Element {
+      .init(label: label, type: store.map(type, transform))
+    }
+
   }
 
   /// The elements of the tuple.
@@ -31,6 +39,14 @@ public struct Tuple: TypeTree {
   /// elements in `other`, which are at `path`.
   public func labelsEqual<T: Sequence>(_ other: T, _ path: KeyPath<T.Element, String?>) -> Bool {
     elements.elementsEqual(other, by: { (a, b) in a.label == b[keyPath: path] })
+  }
+
+  /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
+  public func modified(
+    in store: inout TypeStore,
+    by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> Tuple {
+    .init(elements: elements.map({ (e) in e.modified(in: &store, by: transform) }))
   }
 
   /// Returns a parsable representation of `self`, which is a type in `program`.

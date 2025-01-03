@@ -42,6 +42,9 @@ public struct Module {
     /// A table from syntax tree to its type.
     internal var syntaxToType: [Int: AnyTypeIdentity] = [:]
 
+    /// A table from declaration to its static context.
+    internal var declarationToStaticContext: [Int: StaticContext] = [:]
+
     /// A table from name to its declaration.
     internal var nameToDeclaration: [Int: DeclarationReference] = [:]
 
@@ -189,20 +192,33 @@ public struct Module {
   internal mutating func setType<T: SyntaxIdentity>(_ t: AnyTypeIdentity, for n: T) {
     assert(n.module == identity)
     let u = sources.values[n.file.offset].syntaxToType[n.offset].wrapIfEmpty(t)
-    assert(t == u, "inconsistent type assignment")
+    assert(t == u, "inconsistent property assignment")
+  }
+
+  /// Assigns a static context to `n`.
+  internal mutating func setStaticContext<T: Declaration>(_ c: StaticContext, for n: T.ID) {
+    assert(n.module == identity)
+    let d = sources.values[n.file.offset].declarationToStaticContext[n.offset].wrapIfEmpty(c)
+    assert(c == d, "inconsistent property assignment")
   }
 
   /// Sets the declaration to which `n` refers.
   internal mutating func bind(_ n: NameExpression.ID, to r: DeclarationReference) {
     assert(n.module == identity)
     let s = sources.values[n.file.offset].nameToDeclaration[n.offset].wrapIfEmpty(r)
-    assert(r == s, "inconsistent name binding")
+    assert(r == s, "inconsistent property assignment")
   }
 
   /// Returns the type assigned to `n`, if any.
   internal func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
     assert(n.module == identity)
     return sources.values[n.file.offset].syntaxToType[n.offset]
+  }
+
+  /// Returns the static context of `n`, if any.
+  internal func staticContext<T: Declaration>(of n: T.ID) -> StaticContext? {
+    assert(n.module == identity)
+    return sources.values[n.file.offset].declarationToStaticContext[n.offset]
   }
 
   /// Returns the declaration referred to by `n`, if any.

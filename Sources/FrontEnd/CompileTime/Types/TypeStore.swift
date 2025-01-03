@@ -15,22 +15,26 @@ public struct TypeStore {
     self.types = []
   }
 
-  /// Inserts `t` in `self` it isn't already present and returns the unique identity of a tree that
-  /// is equal to `t`.
+  /// Inserts `t` in `self` it isn't already present and returns the identity of an equal tree.
   public mutating func demand<T: TypeTree>(_ t: T) -> T.ID {
+    .init(uncheckedFrom: demand(any: t))
+  }
+
+  /// Inserts `t` in `self` it isn't already present and returns the identity of an equal tree.
+  private mutating func demand(any t: any TypeTree) -> AnyTypeIdentity {
     switch t {
     case is ErrorType:
-      return .init(uncheckedFrom: AnyTypeIdentity.error)
+      return AnyTypeIdentity.error
     case let u as Tuple where u.elements.isEmpty:
-      return .init(uncheckedFrom: AnyTypeIdentity.void)
+      return AnyTypeIdentity.void
     case let u as Union where u.elements.isEmpty:
-      return .init(uncheckedFrom: AnyTypeIdentity.never)
+      return AnyTypeIdentity.never
     case let u as TypeVariable:
-      return .init(uncheckedFrom: AnyTypeIdentity(variable: u.identifier))
+      return AnyTypeIdentity(variable: u.identifier)
     default:
       let i = types.insert(.init(t)).position
       assert(i < (1 << 55), "too many types")  // 8 bits are reserved for the properties.
-      return .init(uncheckedFrom: .init(offset: i, properties: t.properties))
+      return .init(offset: i, properties: t.properties)
     }
   }
 
@@ -120,34 +124,35 @@ public struct TypeStore {
   ) -> AnyTypeIdentity {
     switch transform(&self, n) {
     case .stepInto(let m):
-      return map(m, transform)
+      return modified(m, by: transform)
     case .stepOver(let m):
       return m
-
     }
   }
 
   /// Returns `n` with its parts transformed by `transform(_:_:)`.
   ///
   /// This operation is endomorphic: the result is an instance with the same type as `n`.
-  public mutating func modify(
+  public mutating func modified(
     _ n: AnyTypeIdentity,
-    _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+    by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
   ) -> AnyTypeIdentity {
-    switch kind(of: n) {
-    case Arrow.self:
-      return modify(castUnchecked(n, to: Arrow.self), transform).erased
-    default:
-      unreachable()
-    }
+    let t = self[n].modified(in: &self, by: transform)
+    return demand(any: t)
   }
 
-  /// Returns `n` with its parts transformed by `transform(_:_:)`.
-  public mutating func modify(
-    _ n: Arrow.ID,
-    _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
-  ) -> Arrow.ID {
-    fatalError()
+  public mutating func substitute(
+    in n: AnyTypeIdentity,
+    _ substitution: (TypeStore, AnyTypeIdentity) -> AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    self.map(n, { (s, t) in .stepInto(substitution(s, t)) })
+  }
+
+  /// Returns `n` with all occurrences of `old` substituted for `new`.
+  public mutating func substitute(
+    _ old: AnyTypeIdentity, for new: AnyTypeIdentity, in n: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    self.map(n, { (s, t) in .stepInto((t == old) ? new : t) })
   }
 
   public mutating func adapt(_ t: AnyTypeIdentity, to w: Model) -> AnyTypeIdentity {

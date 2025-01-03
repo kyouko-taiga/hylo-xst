@@ -51,11 +51,13 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "set": kind = .set
     case "sink": kind = .sink
     case "struct": kind = .struct
+    case "subscript": kind = .subscript
     case "trait": kind = .trait
     case "true": kind = .true
     case "type": kind = .type
     case "typealias": kind = .typealias
     case "var": kind = .var
+    case "where": kind = .where
     default: kind = .name
     }
     assert(!word.isEmpty)

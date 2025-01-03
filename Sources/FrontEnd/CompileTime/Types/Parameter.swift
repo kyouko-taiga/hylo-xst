@@ -18,6 +18,15 @@ public struct Parameter: Hashable {
     hasDefault || isImplicit
   }
 
+  /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
+  public func modified(
+    in store: inout TypeStore,
+    by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> Parameter {
+    let t = store.map(type, transform)
+    return .init(label: label, type: t, hasDefault: hasDefault, isImplicit: isImplicit)
+  }
+
 }
 
 extension Program {

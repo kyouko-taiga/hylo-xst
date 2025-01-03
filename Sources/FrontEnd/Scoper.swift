@@ -83,7 +83,7 @@ public struct Scoper {
     }
 
     mutating func willExit(_ n: AnySyntaxIdentity, in program: Program) {
-      if let m = program.cast(n, to: BindingDeclaration.self) {
+      if program.kind(of: n) == BindingDeclaration.self {
         bindingDeclarationsOnStack.removeLast()
       } else if program.isScope(n) {
         innermostScope = syntaxToParent[n.offset]

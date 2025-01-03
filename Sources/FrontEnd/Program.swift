@@ -216,6 +216,13 @@ public struct Program {
     }
   }
 
+  /// Returns `true` iff `n` occurs at the top-level of a source file.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func isTopLevel<T: SyntaxIdentity>(_ n: T) -> Bool {
+    parent(containing: n).node == nil
+  }
+
   /// Returns `true` iff `n` declares non-static a member entity.
   ///
   /// - Requires: The module containing `s` is scoped.
@@ -575,7 +582,7 @@ public struct Program {
     case BindingDeclaration.self:
       return self[self[castUnchecked(n, to: BindingDeclaration.self)].pattern].introducer.site
     case ConformanceDeclaration.self:
-      return self[castUnchecked(n, to: ConformanceDeclaration.self)].introducer.site
+      return spanForDiagnostic(about: castUnchecked(n, to: ConformanceDeclaration.self))
     case ExtensionDeclaration.self:
       return self[castUnchecked(n, to: ExtensionDeclaration.self)].introducer.site
     case FunctionDeclaration.self:
@@ -595,6 +602,11 @@ public struct Program {
     default:
       return self[n].site
     }
+  }
+
+  /// Returns a source span suitable to emit a disgnostic related to `n` as a whole.
+  public func spanForDiagnostic(about n: ConformanceDeclaration.ID) -> SourceSpan {
+    self[n].introducer?.site ?? .empty(at: self[n].site.start)
   }
 
   /// Returns `message` with placeholders replaced by their corresponding values in `arguments`.
@@ -730,6 +742,12 @@ public indirect enum SyntaxFilter {
   /// Matches any node with the given kind.
   case kind(any Syntax.Type)
 
+  /// Matches top-level declarations.
+  case topLevel
+
+  /// Matches any node satisfying the given predicate.
+  case satisfies((AnySyntaxIdentity) -> Bool)
+
   /// Returns `true` if the node `n` of program `p` satisfies `self`.
   public func callAsFunction(_ n: AnySyntaxIdentity, in p: Program) -> Bool {
     switch self {
@@ -739,6 +757,10 @@ public indirect enum SyntaxFilter {
       return p.identity(module: m) == n.module
     case .kind(let k):
       return p.kind(of: n) == k
+    case .topLevel:
+      return p.isTopLevel(n)
+    case .satisfies(let p):
+      return p(n)
     }
   }
 

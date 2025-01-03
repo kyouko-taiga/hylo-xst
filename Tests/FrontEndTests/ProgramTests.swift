@@ -6,12 +6,12 @@ final class ProgramTests: XCTestCase {
 
   func testSelectAll() throws {
     let p = Program.test
-    XCTAssertEqual(p.select(.all).count, 8)
+    XCTAssertEqual(p.select(.all).count, 12)
   }
 
   func testSelectByModule() throws {
     let p = Program.test
-    XCTAssertEqual(p.select(.from("org.hylo.M0")).count, 4)
+    XCTAssertEqual(p.select(.from("org.hylo.M0")).count, 6)
   }
 
   func testSelectByKind() throws {

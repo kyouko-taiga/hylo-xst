@@ -12,6 +12,14 @@ public struct RemoteType: TypeTree {
     projectee.properties
   }
 
+  /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
+  public func modified(
+    in store: inout TypeStore,
+    by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> RemoteType {
+    .init(projectee: store.map(projectee, transform), access: access)
+  }
+
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     "\(access) \(program.show(projectee))"

@@ -86,7 +86,7 @@ public struct Parser {
     case .name where head.text == "memberwise":
       return try .init(parseInitializerDeclaration(in: &module))
     default:
-      throw expected("declaration")
+      throw expected("declaration", at: .empty(at: head.site.start))
     }
   }
 
@@ -190,13 +190,16 @@ public struct Parser {
   /// Parses a function declaration into `module`.
   ///
   ///     function-declaration ::=
-  ///       'fun' function-identifier parameters return-type-ascription? callable-body?
+  ///       'fun' function-identifier parameter-clauses return-type-ascription? callable-body?
+  ///     parameter-clauses ::=
+  ///       compile-time-parameters? run-time-parameters
   ///
   private mutating func parseFunctionDeclaration(
     in module: inout Module
   ) throws -> FunctionDeclaration.ID {
     let introducer = try take(.fun) ?? expected("'fun'")
     let identifier = try parseFunctionIdentifier()
+    let context = try parseCompileTimeParameters(in: &module)
     let parameters = try parseParameterList(in: &module)
     let effect = parseOptionalAccessEffect() ?? Parsed(.let, at: .empty(at: position))
     let output = try parseOptionalReturnTypeAscription(in: &module)
@@ -206,12 +209,81 @@ public struct Parser {
       FunctionDeclaration(
         introducer: introducer,
         identifier: identifier,
+        staticParameters: context,
         parameters: parameters,
         effect: effect,
         output: output,
         body: body,
         site: introducer.site.extended(upTo: position.index)),
       in: file)
+  }
+
+  /// Parses a compile-time parameter list into `module` iff the next token is a left angle
+  /// bracket. Otherwise, returns an empty list.
+  ///
+  ///     compile-time-parameters ::=
+  ///       '<' generic-parameters where-clause? '>'
+  ///
+  private mutating func parseCompileTimeParameters(
+    in module: inout Module
+  ) throws -> StaticParameters {
+    guard let start = peek(), start.kind == .leftAngle else {
+      return .init(explicit: [], implicit: [], site: .empty(at: position))
+    }
+
+    return try between((.leftAngle, .rightAngle)) { (me) in
+      let xs = try me.parseCommaSeparatedGenericParameters(in: &module)
+      let ys = try me.parseOptionalWhereClause(in: &module)
+      return StaticParameters(explicit: xs, implicit: ys, site: me.span(from: start))
+    }
+  }
+
+  /// Parses the generic parameter declarations of a context clause into `module`.
+  private mutating func parseCommaSeparatedGenericParameters(
+    in module: inout Module
+  ) throws -> [GenericParameterDeclaration.ID] {
+    let (ps, _) = try commaSeparated(deimitedBy: Token.oneOf([.rightAngle, .where])) { (me) in
+      try me.parseGenericParameterDeclaration(in: &module)
+    }
+    return ps
+  }
+
+  /// Parses a generic parameter declaration into `module`.
+  private mutating func parseGenericParameterDeclaration(
+    in module: inout Module
+  ) throws -> GenericParameterDeclaration.ID {
+    let n = try take(.name) ?? expected("identifier")
+    return module.insert(
+      GenericParameterDeclaration(identifier: .init(n), site: n.site),
+      in: file)
+  }
+
+  /// Parses a where clause into `module` iff the next token is `.where`. Otherwise, returns an
+  /// empty clause.
+  private mutating func parseOptionalWhereClause(
+    in module: inout Module
+  ) throws -> [DeclarationIdentity] {
+    guard take(.where) != nil else { return [] }
+    let (ps, _) = try commaSeparated(deimitedBy: .rightAngle) { (me) in
+      try me.parseContextParameter(in: &module)
+    }
+    return ps
+  }
+
+  /// Parses a context parameter into `module`.
+  private mutating func parseContextParameter(
+    in module: inout Module
+  ) throws -> DeclarationIdentity {
+    let lhs = try parseExpression(in: &module)
+    _ = try take(.colon) ?? expected("':'")
+    let rhs = try parseExpression(in: &module)
+
+    let d = module.insert(
+      ConformanceDeclaration(
+        introducer: nil, extendee: lhs, concept: rhs, members: [],
+        site: module[lhs].site.extended(toCover: module[rhs].site)),
+      in: file)
+    return .init(d)
   }
 
   /// Parses an initializer declaration into `module`.
@@ -304,7 +376,7 @@ public struct Parser {
       in: file)
   }
 
-  /// Parses the body of a callable abstraction into `module` if the next token is a left brace.
+  /// Parses the body of a callable abstraction into `module` iff the next token is a left brace.
   private mutating func parseOptionalCallableBody(
     in module: inout Module
   ) throws -> [StatementIdentity]? {
@@ -354,10 +426,16 @@ public struct Parser {
     let identifier = parseSimpleIdentifier()
     let members = try parseTypeBody(in: &module)
 
+    let conformer = module.insert(
+      GenericParameterDeclaration(
+        identifier: .init("Self", at: identifier.site), site: identifier.site),
+      in: file)
+
     return module.insert(
       TraitDeclaration(
         introducer: introducer,
         identifier: identifier,
+        parameters: [conformer],
         members: members,
         site: span(from: introducer)),
       in: file)
@@ -994,8 +1072,10 @@ public struct Parser {
       switch t.kind {
       case .leftBrace:
         nesting += 1
+      case .rightBrace where nesting <= 0:
+        _ = take(); return
       case .rightBrace:
-        if nesting == 0 { return } else { nesting -= 1 }
+        nesting -= 1
       default:
          break
       }
@@ -1073,26 +1153,33 @@ public struct Parser {
     try between((.leftParenthesis, .rightParenthesis), parse)
   }
 
-  /// parses a list of instances of `T` separated by colons.
+  /// Parses a list of instances of `T` separated by colons.
   private mutating func commaSeparated<T>(
-    deimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
+    deimitedBy isRightDelimiter: (Token) -> Bool, _ parse: (inout Self) throws -> T
   ) throws -> ([T], lastComma: Token?) {
     var xs: [T] = []
     var lastComma: Token? = nil
     while let head = peek() {
-      if head.kind == rightDelimiter { break }
+      if isRightDelimiter(head) { break }
       do {
         try xs.append(parse(&self))
       } catch let e as ParseError {
         report(e)
-        recover(at: { (t) in t.kind == rightDelimiter || t.kind == .comma })
+        recover(at: { (t) in isRightDelimiter(t) || t.kind == .comma })
       }
       if let c = take(.comma) { lastComma = c }
     }
     return (xs, lastComma)
   }
 
-  /// parses a list of instances of `T` separated by semicolons.
+  /// Parses a list of instances of `T` separated by colons.
+  private mutating func commaSeparated<T>(
+    deimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
+  ) throws -> ([T], lastComma: Token?) {
+    try commaSeparated(deimitedBy: { (t) in t.kind == rightDelimiter }, parse)
+  }
+
+  /// Parses a list of instances of `T` separated by semicolons.
   private mutating func semicolonSeparated<T>(
     deimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
   ) throws -> [T] {
@@ -1112,7 +1199,12 @@ public struct Parser {
 
   /// Returns a parse error reporting that `s` was expected at the current position.
   private func expected(_ s: String) -> ParseError {
-    .init("expected \(s)", at: .empty(at: position))
+    expected(s, at: .empty(at: position))
+  }
+
+  /// Returns a parse error reporting that `s` was expected at `site`.
+  private func expected(_ s: String, at site: SourceSpan) -> ParseError {
+    .init("expected \(s)", at: site)
   }
 
   /// Returns a parse error reporting a missing statement separator at `site`.
@@ -1173,6 +1265,15 @@ extension Parsed<String> {
   /// Creates an instance with the text of `t`.
   fileprivate init(_ t: Token) {
     self.init(String(t.text), at: t.site)
+  }
+
+}
+
+extension Token {
+
+  /// Returns a predicate that holds for a token iff that token's kind is in `ks`.
+  fileprivate static func oneOf<T: Collection<Token.Kind>>(_ ks: T) -> (Token) -> Bool {
+    { (t) in ks.contains(t.kind) }
   }
 
 }

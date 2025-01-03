@@ -3,8 +3,8 @@ import Archivist
 /// The declaration of a conformance of a type to a trait.
 public struct ConformanceDeclaration: TypeExtendingDeclaration {
 
-  /// The introducer of this declaration.
-  public let introducer: Token
+  /// The introducer of this declaration, unless it is part of a context clause.
+  public let introducer: Token?
 
   /// The type for which the conformance is declared.
   public let extendee: ExpressionIdentity
@@ -18,19 +18,29 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
+  /// `true` iff this declaration occurs in a context clause.
+  public var isAbstract: Bool {
+    introducer == nil
+  }
+
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     let e = program.show(extendee)
     let c = program.show(concept)
-    let ms = members.map(program.show(_:)).lazy
-      .map(\.indented)
-      .joined(separator: "\n")
 
-    return """
-    conformance \(e): \(c) {
-    \(ms)
+    if isAbstract {
+      return "\(e): \(c)"
+    } else {
+      let ms = members.map(program.show(_:)).lazy
+        .map(\.indented)
+        .joined(separator: "\n")
+
+      return """
+      conformance \(e): \(c) {
+      \(ms)
+      }
+      """
     }
-    """
   }
 
 }

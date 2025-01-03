@@ -30,11 +30,13 @@ public struct Token: Hashable {
     case set
     case sink
     case `struct`
+    case `subscript`
     case trait
     case `true`
     case type
     case `typealias`
     case `var`
+    case `where`
 
     // Operators
     case ampersand
@@ -86,10 +88,24 @@ public struct Token: Hashable {
     (kind.rawValue >= Kind.false.rawValue) && (kind.rawValue <= Kind.type.rawValue)
   }
 
+  /// `true` iff `self` is a binding introducer.
+  public var isBindingIntroducer: Bool {
+    switch kind {
+    case .inout, .let, .sink, .var:
+      return true
+    default:
+      return false
+    }
+  }
+
   /// `true` iff `self` may be at the beginning of a declaration.
   public var isDeclarationHead: Bool {
     switch kind {
-    case .fun, .given, .import, .inout, .let, .sink, .struct, .trait, .type, .var:
+    case .given, .inout, .let, .sink, .var:
+      return true
+    case .import, .struct, .trait, .type, .typealias:
+      return true
+    case .fun, .subscript:
       return true
     default:
       return isDeclarationModifier

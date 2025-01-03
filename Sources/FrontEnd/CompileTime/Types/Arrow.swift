@@ -50,6 +50,25 @@ public struct Arrow: TypeTree {
     inputs.reduce(output.properties, { (a, i) in a.union(i.type.properties) })
   }
 
+  /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
+  public func modified(
+    in store: inout TypeStore,
+    by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> Arrow {
+    if isByName {
+      return .init(
+        effect: effect,
+        environment: store.map(environment, transform),
+        byName: store.map(output, transform))
+    } else {
+      return .init(
+        effect: effect,
+        environment: store.map(environment, transform),
+        inputs: inputs.map({ (p) in p.modified(in: &store, by: transform) }),
+        output: store.map(output, transform))
+    }
+  }
+
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     let e = program.show(environment)
