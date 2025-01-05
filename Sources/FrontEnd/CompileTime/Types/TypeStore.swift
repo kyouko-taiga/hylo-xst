@@ -58,6 +58,30 @@ public struct TypeStore {
     return false
   }
 
+  /// Returns `t` sans context parameters.
+  public func head(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
+    if let i = self[t] as? Implication {
+      return head(i.head)
+    } else {
+      return t
+    }
+  }
+
+  /// Returns the curried form of `n`.
+  public mutating func curried(_ n: Implication.ID) -> AnyTypeIdentity {
+    let i = self[n]
+
+    // Nothing to do if the implication has a singlement element on the LHS.
+    if i.context.count == 1 { return n.erased }
+
+    // Otherwise, build a sequence of implications.
+    var result = i.head
+    for c in i.context.reversed() {
+      result = demand(Implication(context: [c], head: result)).erased
+    }
+    return result
+  }
+
   /// Returns `n` if it identifies a tree of type `U`; otherwise, returns `nil`.
   public func cast<T: TypeIdentity, U: TypeTree>(_ n: T, to: U.Type) -> U.ID? {
     if type(of: self[n]) == U.self {

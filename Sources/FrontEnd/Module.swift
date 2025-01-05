@@ -82,8 +82,15 @@ public struct Module {
   ///
   /// - requires: The diagnostic relates to a source in `self`.
   public mutating func addDiagnostic(_ d: Diagnostic) {
-    precondition(sources.keys.contains(d.site.source.name))
+    assert(sources.keys.contains(d.site.source.name))
     diagnostics.insert(d)
+  }
+
+  /// Adds the diagnostics of `ds` to this module.
+  ///
+  /// - requires: Each diagnostic in `ds` relates to a source in `self`.
+  public mutating func addDiagnostics<S: Sequence<Diagnostic>>(_ ds: S) {
+    for d in ds { addDiagnostic(d) }
   }
 
   /// Adds a source file to this module.

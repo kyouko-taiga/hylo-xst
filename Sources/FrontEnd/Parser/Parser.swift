@@ -151,6 +151,7 @@ public struct Parser {
     in module: inout Module
   ) throws -> ConformanceDeclaration.ID {
     let introducer = try take(.given) ?? expected("'given'")
+    let contextParameters = try parseCompileTimeParameters(in: &module)
     let extendee = try parseExpression(in: &module)
     _ = try take(.colon) ?? expected("':'")
     let concept = try parseExpression(in: &module)
@@ -159,6 +160,7 @@ public struct Parser {
     return module.insert(
       ConformanceDeclaration(
         introducer: introducer,
+        contextParameters: contextParameters,
         extendee: extendee,
         concept: concept,
         members: members,
@@ -199,8 +201,8 @@ public struct Parser {
   ) throws -> FunctionDeclaration.ID {
     let introducer = try take(.fun) ?? expected("'fun'")
     let identifier = try parseFunctionIdentifier()
-    let context = try parseCompileTimeParameters(in: &module)
-    let parameters = try parseParameterList(in: &module)
+    let contextParameters = try parseCompileTimeParameters(in: &module)
+    let runtimeParameters = try parseParenthesizedParameterList(in: &module)
     let effect = parseOptionalAccessEffect() ?? Parsed(.let, at: .empty(at: position))
     let output = try parseOptionalReturnTypeAscription(in: &module)
     let body = try parseOptionalCallableBody(in: &module)
@@ -209,8 +211,8 @@ public struct Parser {
       FunctionDeclaration(
         introducer: introducer,
         identifier: identifier,
-        staticParameters: context,
-        parameters: parameters,
+        contextParameters: contextParameters,
+        parameters: runtimeParameters,
         effect: effect,
         output: output,
         body: body,
@@ -228,7 +230,7 @@ public struct Parser {
     in module: inout Module
   ) throws -> StaticParameters {
     guard let start = peek(), start.kind == .leftAngle else {
-      return .init(explicit: [], implicit: [], site: .empty(at: position))
+      return .empty(at: .empty(at: position))
     }
 
     return try between((.leftAngle, .rightAngle)) { (me) in
@@ -242,7 +244,7 @@ public struct Parser {
   private mutating func parseCommaSeparatedGenericParameters(
     in module: inout Module
   ) throws -> [GenericParameterDeclaration.ID] {
-    let (ps, _) = try commaSeparated(deimitedBy: Token.oneOf([.rightAngle, .where])) { (me) in
+    let (ps, _) = try commaSeparated(delimitedBy: Token.oneOf([.rightAngle, .where])) { (me) in
       try me.parseGenericParameterDeclaration(in: &module)
     }
     return ps
@@ -264,7 +266,7 @@ public struct Parser {
     in module: inout Module
   ) throws -> [DeclarationIdentity] {
     guard take(.where) != nil else { return [] }
-    let (ps, _) = try commaSeparated(deimitedBy: .rightAngle) { (me) in
+    let (ps, _) = try commaSeparated(delimitedBy: .rightAngle) { (me) in
       try me.parseContextParameter(in: &module)
     }
     return ps
@@ -280,7 +282,11 @@ public struct Parser {
 
     let d = module.insert(
       ConformanceDeclaration(
-        introducer: nil, extendee: lhs, concept: rhs, members: [],
+        introducer: nil,
+        contextParameters: .empty(at: .empty(at: module[lhs].site.start)),
+        extendee: lhs,
+        concept: rhs,
+        members: [],
         site: module[lhs].site.extended(toCover: module[rhs].site)),
       in: file)
     return .init(d)
@@ -310,7 +316,7 @@ public struct Parser {
 
     // Regular initializer?
     else if let head = take(.`init`) {
-      let parameters = try parseParameterList(in: &module)
+      let parameters = try parseParenthesizedParameterList(in: &module)
       let body = try parseOptionalCallableBody(in: &module)
 
       return module.insert(
@@ -325,11 +331,11 @@ public struct Parser {
   }
 
   /// Parses a parenthesized list of parameter declarations into `module`.
-  private mutating func parseParameterList(
+  private mutating func parseParenthesizedParameterList(
     in module: inout Module
   ) throws -> [ParameterDeclaration.ID] {
     let (ps, _) = try inParentheses { (m0) in
-      try m0.commaSeparated(deimitedBy: .rightParenthesis) { (m1) in
+      try m0.commaSeparated(delimitedBy: .rightParenthesis) { (m1) in
         try m1.parseParameterDeclaration(in: &module)
       }
     }
@@ -386,7 +392,7 @@ public struct Parser {
   /// Parses the body of a function, lambda, or subscript into `module`.
   private mutating func parseCallableBody(in module: inout Module) throws -> [StatementIdentity] {
     try inBraces { (m0) in
-      try m0.semicolonSeparated(deimitedBy: .rightBrace) { (m1) in
+      try m0.semicolonSeparated(delimitedBy: .rightBrace) { (m1) in
         try m1.parseStatement(in: &module)
       }
     }
@@ -452,7 +458,7 @@ public struct Parser {
     in module: inout Module
   ) throws -> [DeclarationIdentity] {
     try inBraces { (m0) in
-      try m0.semicolonSeparated(deimitedBy: .rightBrace) { (m1) in
+      try m0.semicolonSeparated(delimitedBy: .rightBrace) { (m1) in
         try m1.parseDeclaration(in: &module)
       }
     }
@@ -539,7 +545,9 @@ public struct Parser {
     to h: inout ExpressionIdentity, in module: inout Module
   ) throws -> Bool {
     if peek()?.kind != .leftParenthesis { return false }
-    let (a, _) = try parseLabeledExpressionList(in: &module)
+    let (a, _) = try inParentheses { (me) in
+      try me.parseLabeledExpressionList(delimitedBy: .rightParenthesis, in: &module)
+    }
     let s = module[h].site.extended(upTo: position.index)
     let m = module.insert(
       Call(callee: h, arguments: a, style: .parenthesized, site: s), in: file)
@@ -547,7 +555,7 @@ public struct Parser {
     return true
   }
 
-  /// Parses a parenthesized list of labeled expressions into `module`.
+  /// Parses a list of labeled expressions into `module`.
   ///
   ///     labeled-expression-list ::=
   ///       labeled-expression (',' labeled-expression)* ','?
@@ -555,9 +563,12 @@ public struct Parser {
   ///       (expression-label ':')? expression
   ///
   private mutating func parseLabeledExpressionList(
+    delimitedBy rightDelimiter: Token.Kind,
     in module: inout Module
   ) throws -> ([LabeledExpression], lastComma: Token?) {
-    try labeledSyntaxList({ (me) in try me.parseExpression(in: &module) })
+    try labeledSyntaxList(delimitedBy: rightDelimiter) { (me) in
+      try me.parseExpression(in: &module)
+    }
   }
 
   /// Parses a primary expression into `module`.
@@ -589,6 +600,8 @@ public struct Parser {
       return try .init(parseRemoteTypeExpression(in: &module))
     case .name:
       return try .init(parseUnqualifiedNameExpression(in: &module))
+    case .leftBrace:
+      return try .init(parseTupleTypeExpression(in: &module))
     case .leftParenthesis:
       return try parseTupleLiteralOrParenthesizedExpression(in: &module)
     default:
@@ -667,6 +680,28 @@ public struct Parser {
     return .init(Name(identifier: String(identifier.text)), at: identifier.site)
   }
 
+  /// Parses a tuple type expression into `module`.
+  ///
+  ///     tuple-type-expression ::=
+  ///       '{' tuple-type-body? '}'
+  ///     tuple-type-body ::=
+  ///       labeled-expression (',' labeled-expression)*
+  ///
+  private mutating func parseTupleTypeExpression(
+    in module: inout Module
+  ) throws -> TupleTypeExpression.ID {
+    let start = try peek() ?? expected("'{'")
+    let (elements, _) = try inBraces { (me) in
+      try me.parseLabeledExpressionList(delimitedBy: .rightBrace, in: &module)
+    }
+
+    return module.insert(
+      TupleTypeExpression(
+        elements: elements,
+        site: start.site.extended(upTo: position.index)),
+      in: file)
+  }
+
   /// Parses a tuple literal or a parenthesized expression into `module`.
   ///
   ///     tuple-literal ::=
@@ -678,14 +713,16 @@ public struct Parser {
     in module: inout Module
   ) throws -> ExpressionIdentity {
     let start = try peek() ?? expected("'('")
-    let (es, lastComma) = try parseLabeledExpressionList(in: &module)
+    let (elements, lastComma) = try inParentheses { (me) in
+      try me.parseLabeledExpressionList(delimitedBy: .rightParenthesis, in: &module)
+    }
 
-    if (es.count == 1) && (es[0].label == nil) && (lastComma == nil) {
-      return es[0].value
+    if (elements.count == 1) && (elements[0].label == nil) && (lastComma == nil) {
+      return elements[0].value
     } else {
       let t = module.insert(
         TupleLiteral(
-          elements: es,
+          elements: elements,
           site: start.site.extended(upTo: position.index)),
         in: file)
       return .init(t)
@@ -812,7 +849,9 @@ public struct Parser {
     in module: inout Module
   ) throws -> PatternIdentity {
     let start = try peek() ?? expected("'('")
-    let (es, lastComma) = try parseLabeledPatternList(in: &module)
+    let (es, lastComma) = try inParentheses { (me) in
+      try me.parseLabeledPatternList(in: &module)
+    }
 
     if (es.count == 1) && (es[0].label == nil) && (lastComma == nil) {
       return es[0].value
@@ -836,7 +875,9 @@ public struct Parser {
   private mutating func parseLabeledPatternList(
     in module: inout Module
   ) throws -> ([LabeledPattern], lastComma: Token?) {
-    try labeledSyntaxList({ (me) in try me.parsePattern(in: &module) })
+    try labeledSyntaxList(delimitedBy: .rightParenthesis) { (me) in
+      try me.parsePattern(in: &module)
+    }
   }
 
   // MARK: Statements
@@ -1117,12 +1158,11 @@ public struct Parser {
 
   /// Parses a parenthesized list of labeled syntax.
   private mutating func labeledSyntaxList<T: LabeledSyntax>(
+    delimitedBy rightDelimiter: Token.Kind,
     _ parse: (inout Self) throws -> T.Value
   ) throws -> ([T], lastComma: Token?) {
-    try inParentheses { (m0) in
-      try m0.commaSeparated(deimitedBy: .rightParenthesis) { (m1) in
-        try m1.labeled(parse)
-      }
+    try commaSeparated(delimitedBy: rightDelimiter) { (me) in
+      try me.labeled(parse)
     }
   }
 
@@ -1155,7 +1195,7 @@ public struct Parser {
 
   /// Parses a list of instances of `T` separated by colons.
   private mutating func commaSeparated<T>(
-    deimitedBy isRightDelimiter: (Token) -> Bool, _ parse: (inout Self) throws -> T
+    delimitedBy isRightDelimiter: (Token) -> Bool, _ parse: (inout Self) throws -> T
   ) throws -> ([T], lastComma: Token?) {
     var xs: [T] = []
     var lastComma: Token? = nil
@@ -1174,14 +1214,14 @@ public struct Parser {
 
   /// Parses a list of instances of `T` separated by colons.
   private mutating func commaSeparated<T>(
-    deimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
+    delimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
   ) throws -> ([T], lastComma: Token?) {
-    try commaSeparated(deimitedBy: { (t) in t.kind == rightDelimiter }, parse)
+    try commaSeparated(delimitedBy: { (t) in t.kind == rightDelimiter }, parse)
   }
 
   /// Parses a list of instances of `T` separated by semicolons.
   private mutating func semicolonSeparated<T>(
-    deimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
+    delimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
   ) throws -> [T] {
     var xs: [T] = []
     while let head = peek() {

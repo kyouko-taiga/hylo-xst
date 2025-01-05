@@ -636,22 +636,30 @@ public struct Program {
     var a = arguments[...]
     while let head = s.popFirst() {
       if head == "%" {
-        output.append(take(s.popFirst(), from: &a))
+        output.append(next(&s, &a))
       } else {
         output.append(head)
       }
     }
     return output
 
-    /// Converts the next element in `arguments` based on `placeholder`.
-    func take(_ placeholder: Character?, from arguments: inout ArraySlice<Any>) -> String {
-      switch placeholder {
+    /// Replaces the placeholder at the start of `prefix` with its corresponding representation,
+    /// taking values from `arguments`.
+    func next(_ prefix: inout Substring, _ arguments: inout ArraySlice<Any>) -> String {
+      switch prefix.popFirst() {
       case "S":
         return String(describing: arguments.popFirst() ?? expected("item"))
+
+      case "T" where prefix.removeFirst(if: "*"):
+        let ts = (arguments.popFirst() as? [AnyTypeIdentity]) ?? expected("array of types")
+        return "\(list: ts.map(show(_:)))"
+
       case "T":
         return show((arguments.popFirst() as? AnyTypeIdentity) ?? expected("type"))
+
       case "%":
         return "%"
+
       case let c:
         let s = c.map(String.init(_:)) ?? ""
         fatalError("invalid placeholder '%\(s)'", file: file, line: line)

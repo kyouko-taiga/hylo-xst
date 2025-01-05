@@ -21,6 +21,36 @@ extension StringProtocol {
 
 }
 
+extension Substring {
+
+  /// Returns `true` and removes the first element in `self` if it satisfies `predicate`.
+  /// Otherwise, returns `false`.
+  ///
+  /// - Complexity: O(1).
+  public mutating func removeFirst(if predicate: (Character) -> Bool) -> Bool {
+    if let h = first, predicate(h) {
+      removeFirst()
+      return true
+    } else {
+      return false
+    }
+  }
+
+  /// Returns `true` and removes the first element in `self` if it is equal to `pattern`.
+  /// Otherwise, returns `false`.
+  ///
+  /// - Complexity: O(1).
+  public mutating func removeFirst(if pattern: Character) -> Bool {
+    if first == pattern {
+      removeFirst()
+      return true
+    } else {
+      return false
+    }
+  }
+
+}
+
 extension String.StringInterpolation {
 
   /// Appends the string descriptions of the elements in `list` separated by `separator`.

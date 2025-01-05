@@ -22,7 +22,7 @@ public struct RemoteType: TypeTree {
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    "\(access) \(program.show(projectee))"
+    program.format("\(access) %T", [projectee])
   }
 
 }

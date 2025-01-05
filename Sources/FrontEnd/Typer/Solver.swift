@@ -101,6 +101,8 @@ internal struct Solver {
       return solve(call: g)
     case is ArgumentConstraint:
       return solve(argument: g)
+    case is Summonable:
+      return solve(summonable: g)
     default:
       unreachable()
     }
@@ -175,9 +177,9 @@ internal struct Solver {
       return true
     }
 
-    // Not canonical yet?
-    if t[.notCanonical] || u[.notCanonical] {
-      return matches(typer.canonical(t), typer.canonical(u))
+    // Contains aliases?
+    if t[.hasAliases] || u[.hasAliases] {
+      return matches(typer.dealiased(t), typer.dealiased(u))
     }
 
     // Otherwise, compare types side by side.
@@ -249,6 +251,36 @@ internal struct Solver {
     }
   }
 
+  /// Discharges `g`, which is a summonable constraint.
+  private mutating func solve(summonable g: GoalIdentity) -> GoalOutcome {
+    let k = goals[g] as! Summonable
+
+    // Can't summon until we've inferred free variables.
+    if k.type[.hasVariable] {
+      return postpone(g)
+    }
+
+    let cs = typer.summon(k.type, in: k.scope)
+    switch cs.count {
+    case 1:
+      return .success
+
+    case 0:
+      return .failure { (s, o, p, d) in
+        let t = s.reify(k.type)
+        let m = p.format("no given instance of '%T' in this scope", [t])
+        d.insert(.init(.error, m, at: k.site))
+      }
+
+    default:
+      return .failure { (s, o, p, d) in
+        let t = s.reify(k.type)
+        let m = p.format("ambiguous given instance of '%T'", [t])
+        d.insert(.init(.error, m, at: k.site))
+      }
+    }
+  }
+
   /// Creates a solution with the current state.
   private mutating func formSolution() -> Solution {
     let ss = substitutions.optimized()
@@ -260,7 +292,7 @@ internal struct Solver {
       }
     }
 
-    return Solution(substitutions: ss, bindings: bindings)
+    return Solution(substitutions: ss, bindings: bindings, diagnostics: ds)
   }
 
   /// Inserts `gs` into the fresh set and return their identities.

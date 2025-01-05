@@ -19,8 +19,7 @@ public struct Metatype: TypeTree {
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    let i = program.show(inhabitant)
-    return "Metatype<\(i)>"
+    program.format("Metatype<%T>", [inhabitant])
   }
 
 }

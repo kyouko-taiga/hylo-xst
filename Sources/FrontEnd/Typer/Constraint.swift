@@ -15,6 +15,13 @@ internal protocol Constraint {
 
 }
 
+extension Constraint {
+
+  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
+  internal var isTrivial: Bool { false }
+
+}
+
 extension Program {
 
   /// Returns a debug representation of `k`.
@@ -89,11 +96,6 @@ internal struct CallConstraint: Constraint {
   /// The site from which the constraint originates.
   internal let site: SourceSpan
 
-  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
-  internal var isTrivial: Bool {
-    false
-  }
-
   /// The expected labels of `callee`.
   internal var labels: some Sequence<String?> {
     arguments.lazy.map(\.label)
@@ -136,11 +138,6 @@ internal struct ArgumentConstraint: Constraint {
   /// The site from which the constraint originates.
   internal let site: SourceSpan
 
-  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
-  internal var isTrivial: Bool {
-    false
-  }
-
   /// Applies `transform` on constituent types of `self`.
   internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
     lhs = transform(lhs)
@@ -150,6 +147,30 @@ internal struct ArgumentConstraint: Constraint {
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
     program.format("%T ↓ %T", [lhs, rhs])
+  }
+
+}
+
+/// A constraint stating that a value of given type can be summoned in a given scope.
+internal struct Summonable: Constraint {
+
+  /// The type of the value to summon.
+  internal private(set) var type: AnyTypeIdentity
+
+  /// The scope in which the value can be summoned.
+  internal let scope: ScopeIdentity
+
+  /// The site from which the constraint originates.
+  internal let site: SourceSpan
+
+  /// Applies `transform` on constituent types of `self`.
+  internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    type = transform(type)
+  }
+
+  /// Returns a textual representation of `self`, reading contents from `program`.
+  internal func show(using program: Program) -> String {
+    program.format("\u{22A9} %T", [type])
   }
 
 }

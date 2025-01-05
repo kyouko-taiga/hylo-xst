@@ -72,13 +72,10 @@ public struct Typer {
     var scopeToTraits: [ScopeIdentity: [TraitDeclaration.ID]]
 
     /// The cache of `Typer.summon(_:in:)`.
-    var scopeToSummoned: [ScopeIdentity: [AnyTypeIdentity: [DeclarationReference]]]
+    var scopeToSummoned: [ScopeIdentity: [AnyTypeIdentity: [WitnessExpression]]]
 
     /// The cache of `Typer.typeOfSelf(in:)`.
     var scopeToTypeOfSelf: [ScopeIdentity: AnyTypeIdentity?]
-
-    /// The cache of `Typer.possiblyPartialStaticContext(of:)`.
-    var declarationToStaticContext: [DeclarationIdentity: StaticContext]
 
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
@@ -90,28 +87,28 @@ public struct Typer {
       self.scopeToTraits = [:]
       self.scopeToSummoned = [:]
       self.scopeToTypeOfSelf = [:]
-      self.declarationToStaticContext = [:]
     }
 
   }
 
   // MARK: Type relations
 
-  /// Returns the canonical form of `t`.
-  public func canonical(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
-    if !t[.notCanonical] { return t }
-
-    switch program.types[t] {
-    case let u as TypeAlias:
-      return u.aliasee
-    default:
-      program.unexpected(t)
+  /// Returns `t` without any type alias.
+  public mutating func dealiased(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
+    program.types.map(t) { (s, u) in
+      if let a = s[u] as? TypeAlias {
+        return .stepInto(a.aliasee)
+      } else if u[.hasAliases] {
+        return .stepInto(u)
+      } else {
+        return .stepOver(u)
+      }
     }
   }
 
   /// Returns `true` iff `t` and `u` are equal.
   public func equal(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> Bool {
-    (t == u) || program.types[canonical(t)].equals(program.types[canonical(u)])
+    (t == u)
   }
 
   // MARK: Type checking
@@ -129,6 +126,8 @@ public struct Typer {
       check(castUnchecked(d, to: ExtensionDeclaration.self))
     case FunctionDeclaration.self:
       check(castUnchecked(d, to: FunctionDeclaration.self))
+    case GenericParameterDeclaration.self:
+      check(castUnchecked(d, to: GenericParameterDeclaration.self))
     case InitializerDeclaration.self:
       check(castUnchecked(d, to: InitializerDeclaration.self))
     case ParameterDeclaration.self:
@@ -168,7 +167,10 @@ public struct Typer {
   /// Type checks `d`.
   private mutating func check(_ d: ConformanceDeclaration.ID) {
     _ = declaredType(of: d)
+
+    check(program[d].contextParameters)
     for m in program[d].members { check(m) }
+
     // TODO: Check requirement satisfaction
   }
 
@@ -183,10 +185,16 @@ public struct Typer {
     let t = declaredType(of: d)
 
     // Nothing more to do if the declaration doesn't have an arrow type.
-    if let a = program.types[t] as? Arrow {
-      for p in program[d].parameters { check(p) }
-      check(body: program[d].body, of: .init(d), expectingResultOfType: a.output)
+    if let a = program.types[program.types.head(t)] as? Arrow {
+      check(program[d].contextParameters)
+      check(program[d].parameters)
+      check(body: program[d].body, of: .init(d), expectingOutputType: a.output)
     }
+  }
+
+  /// Type checks `d`.
+  private mutating func check(_ d: GenericParameterDeclaration.ID) {
+    _ = declaredType(of: d)
   }
 
   /// Type checks `d`.
@@ -194,9 +202,9 @@ public struct Typer {
     let t = declaredType(of: d)
 
     // Nothing more to do if the declaration doesn't have an arrow type.
-    if let a = program.types[t] as? Arrow {
-      for p in program[d].parameters { check(p) }
-      check(body: program[d].body, of: .init(d), expectingResultOfType: a.output)
+    if let a = program.types[program.types.head(t)] as? Arrow {
+      check(program[d].parameters)
+      check(body: program[d].body, of: .init(d), expectingOutputType: a.output)
     }
   }
 
@@ -204,7 +212,7 @@ public struct Typer {
   /// outputs an instance of `r`.
   private mutating func check(
     body: [StatementIdentity]?, of d: DeclarationIdentity,
-    expectingResultOfType r: AnyTypeIdentity
+    expectingOutputType r: AnyTypeIdentity
   ) {
     if let b = body {
       // Is the function expression-bodied?
@@ -244,6 +252,17 @@ public struct Typer {
     // TODO
   }
 
+  /// Type checks `ps`.
+  private mutating func check(_ ps: [ParameterDeclaration.ID]) {
+    for p in ps { check(p) }
+  }
+
+  /// Type checks `ps`.
+  private mutating func check(_ ps: StaticParameters) {
+    for p in ps.explicit { check(p) }
+    for p in ps.implicit { check(p) }
+  }
+
   /// Returns `true` iff `d` needs a user-defined a definition.
   ///
   /// A declaration requires a definition unless it is a trait requirement, an FFI, an external
@@ -277,7 +296,7 @@ public struct Typer {
   /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
   private mutating func check(_ e: ExpressionIdentity, expecting r: AnyTypeIdentity) {
     let u = check(e, inContextExpecting: r)
-    if (u != r) && (canonical(u) != .never) && !u[.hasError] {
+    if (u != r) && !equal(u, .never) && !u[.hasError] {
       let m = program.format("expected '%T', found '%T'", [r, u])
       report(.init(.error, m, at: program[e].site))
     }
@@ -286,7 +305,7 @@ public struct Typer {
   /// Type checks `e`, which occurs as a statement.
   private mutating func checkAsStatement(_ e: ExpressionIdentity) {
     let u = check(e, inContextExpecting: .void)
-    if (canonical(u) != .void) && !u[.hasError] {
+    if !equal(u, .void) && !u[.hasError] {
       let m = program.format("unused value of type %T", [u])
       report(.init(.error, m, at: program[e].site))
     }
@@ -324,54 +343,13 @@ public struct Typer {
       } else {
         check(v)
       }
-    } else if canonical(u) != .void {
+    } else if !equal(u, .void) {
       let m = program.format("expected value of type '%T'", [u])
       let s = program.spanForDiagnostic(about: s)
       report(.init(.error, m, at: s))
     }
 
     program[module].setType(.void, for: s)
-  }
-
-  /// Builds and type checks the static context of `d`.
-  private mutating func checkStaticContext(of d: FunctionDeclaration.ID) {
-    _ = staticContext(of: d)
-  }
-
-  /// Builds and returns the static context of `d`
-  ///
-  /// The returned context is partially formed if this method is called during the the context's
-  /// construction.
-  private mutating func possiblyPartialStaticContext(of d: DeclarationIdentity) -> StaticContext {
-    if let c = cache.declarationToStaticContext[d] {
-      return c
-    } else {
-      return staticContext(of: d)
-    }
-  }
-
-  /// Builds and returns the static context of `d`, which is a generic declaration.
-  private mutating func staticContext(of d: DeclarationIdentity) -> StaticContext {
-    switch program.kind(of: d) {
-    default:
-      program.unexpected(d)
-    }
-  }
-
-  /// Builds and returns the static context of `d`.
-  private mutating func staticContext(of d: FunctionDeclaration.ID) -> StaticContext {
-    if let c = program[module].staticContext(of: d) { return c }
-    var partialContext = StaticContext()
-
-    for p in program[d].staticParameters.implicit {
-      if let t = declaredType(of: p).unlessError {
-        partialContext.add(.abstract(type: program.types.castUnchecked(t)))
-      }
-      cache.declarationToStaticContext[.init(d)] = partialContext
-    }
-
-    program[module].setStaticContext(partialContext, for: d)
-    return partialContext
   }
 
   /// Returns the declared type of `d` without type checking its contents.
@@ -445,16 +423,24 @@ public struct Typer {
   private mutating func declaredType(of d: ConformanceDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    let t = declaredConformanceType(program[d].extendee, program[d].concept)
-    program[module].setType(t, for: d)
-    return t
+    let witness = declaredConformanceType(program[d].extendee, program[d].concept)
+    let context = program[d].contextParameters.implicit.map { (p) in
+      declaredType(of: p)
+    }
+
+    if context.isEmpty {
+      program[module].setType(witness, for: d)
+      return witness
+    } else {
+      let u = demand(Implication(context: context, head: witness)).erased
+      program[module].setType(u, for: d)
+      return u
+    }
   }
 
   /// Returns the declared type of `d` without checking.
   private mutating func declaredType(of d: FunctionDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
-
-    checkStaticContext(of: d)
 
     let inputs = declaredTypes(of: program[d].parameters)
     let output = program[d].output.map { (a) in
@@ -474,9 +460,20 @@ public struct Typer {
       environment: environment,
       inputs: inputs,
       output: output ?? .void)
-    let t = demand(a).erased
-    program[module].setType(t, for: d)
-    return t
+    let head = demand(a).erased
+
+    let context = program[d].contextParameters.implicit.map { (p) in
+      declaredType(of: p)
+    }
+
+    if context.isEmpty {
+      program[module].setType(head, for: d)
+      return head
+    } else {
+      let u = demand(Implication(context: context, head: head)).erased
+      program[module].setType(u, for: d)
+      return u
+    }
   }
 
   /// Returns the declared type of `d` without checking.
@@ -565,7 +562,6 @@ public struct Typer {
     return u
   }
 
-
   /// Returns the declared type of `d` without checking.
   private mutating func declaredType(of d: TypeAliasDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
@@ -574,7 +570,7 @@ public struct Typer {
     if declarationsOnStack.insert(.init(d)).inserted {
       defer { declarationsOnStack.remove(.init(d)) }
 
-      switch canonical(evaluateTypeAscription(program[d].aliasee)) {
+      switch evaluateTypeAscription(program[d].aliasee) {
       case .error:
         program[module].setType(.error, for: d)
         return .error
@@ -780,6 +776,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
     case TupleLiteral.self:
       return inferredType(of: castUnchecked(e, to: TupleLiteral.self), in: &context)
+    case TupleTypeExpression.self:
+      return inferredType(of: castUnchecked(e, to: TupleTypeExpression.self), in: &context)
     default:
       program.unexpected(e)
     }
@@ -837,21 +835,35 @@ public struct Typer {
       inferredType(of: program[e].callee, in: &ctx)
     }
 
-    // Is the callee bound to a type?
-    if program.types[f] is Metatype {
-      let c = program[e].callee
-      let n = program[module].insert(
-        NameExpression(
-          qualification: .explicit(c),
-          name: .init(.init(identifier: "new"), at: program[c].site),
-          site: program[c].site),
-        in: program.parent(containing: e))
-      program[module].replace(.init(e), for: program[e].clone(callee: .init(n)))
-      return inferredType(calleeOf: e, in: &context)
+    func adapt(_ f: AnyTypeIdentity) -> AnyTypeIdentity {
+      // Is the callee expecting contextual parameters?
+      if let i = program.types[f] as? Implication {
+        let p = program.parent(containing: e)
+        let s = program[program[e].callee].site
+        for t in i.context {
+          context.obligations.assume(Summonable(type: t, scope: p, site: s))
+        }
+        return adapt(i.head)
+      }
+
+      // Is the callee bound to a type?
+      else if program.types[f] is Metatype {
+        let c = program[e].callee
+        let n = program[module].insert(
+          NameExpression(
+            qualification: .explicit(c),
+            name: .init(.init(identifier: "new"), at: program[c].site),
+            site: program[c].site),
+          in: program.parent(containing: e))
+        program[module].replace(.init(e), for: program[e].clone(callee: .init(n)))
+        return inferredType(calleeOf: e, in: &context)
+      }
+
+      // Otherwise, returns the inferred type as-is.
+      else { return f }
     }
 
-    // Otherwise, returns the inferred type as-is.
-    else { return f }
+    return adapt(f)
   }
 
   /// Returns the inferred type of `e`.
@@ -901,6 +913,19 @@ public struct Typer {
 
     let r = demand(Tuple(elements: ts))
     return assume(e, hasType: r.erased, in: &context.obligations)
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: TupleTypeExpression.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let es = program[e].elements.map { (e) in
+      Tuple.Element(label: e.label?.value, type: evaluateTypeAscription(e.value))
+    }
+
+    let t = demand(Tuple(elements: es)).erased
+    let u = demand(Metatype(inhabitant: t)).erased
+    return assume(e, hasType: u, in: &context.obligations)
   }
 
   /// Returns the inferred type of `p`, which occurs in `context`.
@@ -995,7 +1020,7 @@ public struct Typer {
     _ o: Obligations, relatedTo n: T
   ) -> Solution {
     if o.constraints.isEmpty {
-      let s = Solution(substitutions: .init(), bindings: o.bindings)
+      let s = Solution(substitutions: .init(), bindings: o.bindings, diagnostics: .init())
       commit(s, to: o)
       return s
     } else {
@@ -1007,6 +1032,7 @@ public struct Typer {
   }
 
   private mutating func commit(_ s: Solution, to o: Obligations) {
+    report(s.diagnostics.elements)
     for (n, t) in o.syntaxToType {
       program[module].setType(t, for: n)
     }
@@ -1035,7 +1061,17 @@ public struct Typer {
     }
   }
 
-  /// Returns the value of the declaration referred to by `r`.
+  /// Returns the value of `w`.
+  private mutating func evaluate(_ w: WitnessExpression) -> Value {
+    switch w.value {
+    case .reference(let r):
+      return evaluate(r)
+    case .application(let f, _):
+      return evaluate(f)
+    }
+  }
+
+  /// Returns the value of the entity referred to by `r`.
   private mutating func evaluate(_ r: DeclarationReference) -> Value {
     precondition(isStable(r), "declaration reference is not stable")
 
@@ -1053,7 +1089,8 @@ public struct Typer {
   /// `d` is ill-formed.
   private mutating func evaluate(_ d: ConformanceDeclaration.ID) -> Value {
     let t = declaredType(of: d)
-    guard let (concept, _) = program.types.castToTraitApplication(t) else {
+    let witness = program.types.head(t)
+    guard let (concept, _) = program.types.castToTraitApplication(witness) else {
       assert(t == .error)
       return .term(.error)
     }
@@ -1144,62 +1181,118 @@ public struct Typer {
 
   // MARK: Implicit search
 
-  /// Returns the declarations of values in the implicit store of `s` and having type `t`.
-  private mutating func summon(
-    _ t: AnyTypeIdentity, in s: ScopeIdentity
-  ) -> [DeclarationReference] {
+  /// The result of a derivation step produced by implicit resolution.
+  private enum ImplicitDeduction {
+
+    /// The type of a continuation representing the premise of resolution rule.
+    typealias Continuation = (inout Typer) -> [ImplicitDeduction]
+
+    /// Resolution failed.
+    case fail
+
+    /// Resolution succeeded.
+    case done(WitnessExpression)
+
+    /// Resolution requires a recursive lookup.
+    case next(Continuation)
+
+  }
+
+  /// Returns witnesses of values of type `t` derivable from the implicit store in `scopeOfUse`.
+  internal mutating func summon(
+    _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity
+  ) -> [WitnessExpression] {
+    summon(t, in: scopeOfUse, withoutSummoning: [t], continuation: { (_, ws) in ws })
+  }
+
+  /// Returns the result of `continuation` called with witnesses of values of type `t` derivable
+  /// from the implicit store in `scopeOfUse` without summoning any of the types in `usings`.
+  private mutating func summon<T>(
+    _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
+    withoutSummoning usings: Set<AnyTypeIdentity>,
+    continuation: (inout Self, [WitnessExpression]) -> T
+  ) -> T {
     // Did we already compute the result?
-    if let table = cache.scopeToSummoned[s], let cs = table[t] {
-      return cs
+    if let table = cache.scopeToSummoned[scopeOfUse], let result = table[t] {
+      return continuation(&self, result)
     }
 
-    var ds = program.declarations(of: ConformanceDeclaration.self, lexicallyIn: s)
+    var ds = program.declarations(of: ConformanceDeclaration.self, lexicallyIn: scopeOfUse)
 
     // If there aren't any givens in `s`, just summon in the parent scope.
     if ds.isEmpty {
-      let cs = program.parent(containing: s).map({ (p) in summon(t, in: p) }) ?? []
-      cache.scopeToSummoned[s, default: [:]][t] = cs
-      return cs
+      let result = program.parent(containing: scopeOfUse).map({ (p) in summon(t, in: p) }) ?? []
+      cache.scopeToSummoned[scopeOfUse, default: [:]][t] = result
+      return continuation(&self, result)
     }
 
     // We can't just extend the set of candidates summoned in the outer scope as the introduction
     // of a new given may change the result of implicit resolution. Instead, we must consider all
     // visible givens at once.
-    for p in program.scopes(from: s).dropFirst() {
+    for p in program.scopes(from: scopeOfUse).dropFirst() {
       ds.append(contentsOf: program.declarations(of: ConformanceDeclaration.self, lexicallyIn: p))
     }
 
-    var cs: [DeclarationReference] = []
-
-    for d in ds {
-      // `u` is a trait application `P<T>` or a universal type or an implicit function type.
-      // Otherwise `declaredType(of:)` returned an error because `d` is ill-formed.
+    var done: [WitnessExpression] = []
+    var work: [ImplicitDeduction.Continuation] = ds.map { (d) in
       let u = declaredType(of: d)
-
-      if equal(u, t) {
-        cs.append(.direct(.init(d)))
-      } else {
-        // TODO: conditional and universal conformances
-      }
+      let w = WitnessExpression(value: .reference(.direct(.init(d))), type: u)
+      return { (me) in me.match(w, t, in: scopeOfUse, withoutSummoning: usings) }
     }
 
-    // TODO: conditional and universal conformances
+    while done.isEmpty && !work.isEmpty {
+      var next: [ImplicitDeduction.Continuation] = []
 
-    cache.scopeToSummoned[s, default: [:]][t] = cs
-    return cs
+      for step in work {
+        for r in step(&self) {
+          switch r {
+          case .fail: continue
+          case .done(let w): done.append(w)
+          case .next(let s): next.append(s)
+          }
+        }
+      }
+
+      swap(&next, &work)
+    }
+
+    cache.scopeToSummoned[scopeOfUse, default: [:]][t] = done
+    return continuation(&self, done)
   }
 
-  /// Returns the models given as compile-time arguments in `s`.
-  private mutating func models(givenIn s: ScopeIdentity) -> [Model] {
-    return []
-//    guard let n = s.node else { return [] }
-//
-//    switch program.kind(of: n) {
-//    case FunctionDeclaration.self:
-//      return possiblyPartialStaticContext(of: .init(uncheckedFrom: n)).givens
-//    default:
-//      return []
-//    }
+  /// Returns the result of a derivation step in the matching of `w` with `t` in `scopeOfUse`
+  /// without summoning any of the types in `usings`.
+  private mutating func match(
+    _ w: WitnessExpression, _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
+    withoutSummoning usings: Set<AnyTypeIdentity>
+  ) -> [ImplicitDeduction] {
+    // The witness has the desired type?
+    if equal(w.type, t) { return [.done(w)] }
+
+    // The witness is an implication?
+    else if let i = program.types[w.type] as? Implication {
+      // Assume that the implication has a non-empty context.
+      let (x, xs) = i.context.headAndTail!
+
+      var us = usings
+      if !us.insert(x).inserted { return [.fail] }
+
+      let v = xs.isEmpty ? i.head : demand(Implication(context: .init(xs), head: i.head)).erased
+      let r = ImplicitDeduction.next { (me) in
+        me.summon(x, in: scopeOfUse, withoutSummoning: us) { (me, arguments) in
+          var rs: [ImplicitDeduction] = []
+          for a in arguments {
+            let x = WitnessExpression(value: .application(w, a), type: v)
+            rs.append(contentsOf: me.match(x, t, in: scopeOfUse, withoutSummoning: usings))
+          }
+          return rs
+        }
+      }
+      return [r]
+    }
+
+    // Resolution failed.
+    else { return [.fail] }
   }
 
   /// Returns the value of `Self` evaluated in `s`, or `nil` if `s` isn't notionally in the scope
@@ -1421,15 +1514,15 @@ public struct Typer {
       let p = demand(Trait(declaration: concept)).erased
       let a = Value.type(qualification.type)
       let t = demand(TypeApplication(abstraction: p, arguments: [a])).erased
-      let definitions = summon(t, in: scopeOfUse)
+      let witnesses = summon(t, in: scopeOfUse)
 
       // TODO: report ambiguous resolution results
 
-      for n in definitions {
-        guard let witness = evaluate(n).cast(as: Model.self) else { continue }
+      for w in witnesses {
+        guard let m = evaluate(w).cast(as: Model.self) else { continue }
         for d in ds {
-          let u = typeOfImplementation(satisfying: d, in: witness)
-          let c = NameResolutionCandidate(reference: .inherited(witness: n, member: d), type: u)
+          let u = typeOfImplementation(satisfying: d, in: m)
+          let c = NameResolutionCandidate(reference: .inherited(witness: w, member: d), type: u)
           candidates.append(c)
         }
       }
@@ -1708,13 +1801,22 @@ public struct Typer {
 
   /// Returns the type of values expected to be returned from `d`.
   private mutating func expectedOutputType(in d: FunctionDeclaration.ID) -> AnyTypeIdentity {
-    let a = declaredType(of: d)
-    return (program.types[a] as? Arrow)?.output ?? .error
+    let t = declaredType(of: d)
+    if let a = program.types[program.types.head(t)] as? Arrow {
+      return a.output
+    } else {
+      return .error
+    }
   }
 
   /// Reports the diagnostic `d`.
   private mutating func report(_ d: Diagnostic) {
     program[module].addDiagnostic(d)
+  }
+
+  /// Reports the diagnostics in `ds`.
+  private mutating func report<S: Sequence<Diagnostic>>(_ ds: S) {
+    program[module].addDiagnostics(ds)
   }
 
   /// Returns the unique identity of a tree that is equal to `t`.

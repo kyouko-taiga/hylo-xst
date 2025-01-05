@@ -21,8 +21,7 @@ extension Term {
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    let t = program.show(type)
-    return "<instance of \(t)>"
+    program.format("<instance of %T>", [type])
   }
 
 }

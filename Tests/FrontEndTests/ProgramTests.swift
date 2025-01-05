@@ -21,10 +21,12 @@ final class ProgramTests: XCTestCase {
 
   func testFormat() throws {
     let p = Program.test
+    let v = AnyTypeIdentity.void
     XCTAssertEqual(p.format("> xy <", []), "> xy <")
     XCTAssertEqual(p.format("> %S, %S <", [10, true]), "> 10, true <")
-    XCTAssertEqual(p.format("> %T <", [AnyTypeIdentity.void]), "> Void <")
-    XCTAssertEqual(p.format("> %% <", [AnyTypeIdentity.void]), "> % <")
+    XCTAssertEqual(p.format("> %T <", [v]), "> Void <")
+    XCTAssertEqual(p.format("> %T* <", [[v, v]]), "> Void, Void <")
+    XCTAssertEqual(p.format("> %% <", [v]), "> % <")
   }
 
   func testArchiveConsistency() throws {

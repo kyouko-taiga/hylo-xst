@@ -17,6 +17,11 @@ public struct StaticParameters: Equatable {
     explicit.isEmpty && implicit.isEmpty
   }
 
+  /// Returns an empty clause anchored at `site`.
+  public static func empty(at site: SourceSpan) -> StaticParameters {
+    .init(explicit: [], implicit: [], site: site)
+  }
+
 }
 
 extension StaticParameters: Archivable {

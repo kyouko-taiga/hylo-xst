@@ -1,0 +1,13 @@
+trait P {}
+trait Q {}
+
+struct A {}
+struct B {}
+
+fun f<where A: Q>() {}
+
+fun g() {
+  given B: P {}
+  given <where A: P> A: Q {}
+  f()
+}

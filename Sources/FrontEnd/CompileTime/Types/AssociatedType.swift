@@ -24,9 +24,8 @@ public struct AssociatedType: TypeTree {
   public func show(readingChildrenFrom program: Program) -> String {
     let concept = program.parent(containing: declaration, as: TraitDeclaration.self)!
     let l = program[concept].identifier.value
-    let q = program.show(qualification)
     let n = program[declaration].identifier.value
-    return "\(q)::\(l).\(n)"
+    return program.format("%T::\(l)::\(n)", [qualification])
   }
 
 }

@@ -23,7 +23,7 @@ public struct ValueProperties: Hashable, OptionSet {
   /// The value contains skolems (aka rigid variables).
   public static let hasSkolem = ValueProperties(rawValue: 1 << 2)
 
-  /// The value is not canonical.
-  public static let notCanonical = ValueProperties(rawValue: 1 << 3)
+  /// The value contains type aliasess.
+  public static let hasAliases = ValueProperties(rawValue: 1 << 3)
 
 }

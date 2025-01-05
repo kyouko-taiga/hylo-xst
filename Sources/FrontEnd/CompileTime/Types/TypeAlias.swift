@@ -9,7 +9,7 @@ public struct TypeAlias: TypeTree {
 
   /// Properties about `self`.
   public var properties: ValueProperties {
-    .notCanonical
+    .hasAliases
   }
 
   /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.

@@ -82,6 +82,8 @@ extension Program {
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
     case TupleLiteral.self:
       traverse(castUnchecked(n, to: TupleLiteral.self), calling: &v)
+    case TupleTypeExpression.self:
+      traverse(castUnchecked(n, to: TupleTypeExpression.self), calling: &v)
 
     case BindingPattern.self:
       traverse(castUnchecked(n, to: BindingPattern.self), calling: &v)
@@ -145,20 +147,21 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ConformanceDeclaration.ID, calling v: inout T) {
-    visit(self[n].extendee.erased, calling: &v)
-    visit(self[n].concept.erased, calling: &v)
+    visit(self[n].contextParameters, calling: &v)
+    visit(self[n].extendee, calling: &v)
+    visit(self[n].concept, calling: &v)
     visit(self[n].members, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ExtensionDeclaration.ID, calling v: inout T) {
-    visit(self[n].extendee.erased, calling: &v)
+    visit(self[n].extendee, calling: &v)
     visit(self[n].members, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: FunctionDeclaration.ID, calling v: inout T) {
-    visit(self[n].staticParameters, calling: &v)
+    visit(self[n].contextParameters, calling: &v)
     visit(self[n].parameters, calling: &v)
     visit(self[n].output, calling: &v)
     if let b = self[n].body { visit(b, calling: &v) }
@@ -200,17 +203,22 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: NameExpression.ID, calling v: inout T) {
     if case .explicit(let e) = self[n].qualification {
-      visit(e.erased, calling: &v)
+      visit(e, calling: &v)
     }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: RemoteTypeExpression.ID, calling v: inout T) {
-    visit(self[n].projectee.erased, calling: &v)
+    visit(self[n].projectee, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: TupleLiteral.ID, calling v: inout T) {
+    for a in self[n].elements { visit(a.value, calling: &v) }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: TupleTypeExpression.ID, calling v: inout T) {
     for a in self[n].elements { visit(a.value, calling: &v) }
   }
 

@@ -6,6 +6,9 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   /// The introducer of this declaration, unless it is part of a context clause.
   public let introducer: Token?
 
+  /// The parameters of the conformance.
+  public let contextParameters: StaticParameters
+
   /// The type for which the conformance is declared.
   public let extendee: ExpressionIdentity
 
@@ -29,15 +32,19 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
     let c = program.show(concept)
 
     if isAbstract {
+      assert(contextParameters.isEmpty)
       return "\(e): \(c)"
     } else {
-      let ms = members.map(program.show(_:)).lazy
+      let w = contextParameters.isEmpty
+        ? ""
+        : " \(program.show(contextParameters))"
+      let m = members.map(program.show(_:)).lazy
         .map(\.indented)
         .joined(separator: "\n")
 
       return """
-      conformance \(e): \(c) {
-      \(ms)
+      given\(w) \(e): \(c) {
+      \(m)
       }
       """
     }

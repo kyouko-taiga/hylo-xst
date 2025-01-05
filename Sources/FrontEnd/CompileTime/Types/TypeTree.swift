@@ -30,6 +30,7 @@ extension TypeTree {
     self == other as? Self
   }
 
+  /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
   public func modified(
     in store: inout TypeStore,
     by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction

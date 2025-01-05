@@ -11,7 +11,7 @@ public struct TypeApplication: TypeTree {
 
   /// Properties about `self`.
   public var properties: ValueProperties {
-    .notCanonical
+    arguments.reduce(abstraction.properties, { (a, i) in a.union(i.properties) })
   }
 
   /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.

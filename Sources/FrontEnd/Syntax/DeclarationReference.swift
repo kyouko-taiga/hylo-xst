@@ -19,7 +19,7 @@ public indirect enum DeclarationReference: Hashable {
 
   /// A reference to a member inherited by conformance.
   case inherited(
-    witness: DeclarationReference,
+    witness: WitnessExpression,
     member: DeclarationIdentity)
 
 }

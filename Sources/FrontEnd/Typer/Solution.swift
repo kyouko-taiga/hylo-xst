@@ -12,19 +12,25 @@ internal struct Solution {
   /// The name binding assumptions made by the solver.
   internal private(set) var bindings: BindingTable
 
+  /// The diagnostics associated with the solution.
+  internal let diagnostics: DiagnosticSet
+
   /// Creates an empty solution.
   internal init() {
     self.substitutions = .init()
     self.bindings = .init()
+    self.diagnostics = .init()
   }
 
   /// Creates an instance with the given properties.
   internal init(
     substitutions: SubstitutionTable,
-    bindings: BindingTable
+    bindings: BindingTable,
+    diagnostics: DiagnosticSet
   ) {
     self.substitutions = substitutions
     self.bindings = bindings
+    self.diagnostics = diagnostics
   }
 
 }
