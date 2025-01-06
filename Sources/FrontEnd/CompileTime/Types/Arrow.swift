@@ -1,6 +1,6 @@
 import Utilities
 
-/// The type of a returning abstraction.
+/// The type of term abstraction returning independent values.
 public struct Arrow: TypeTree {
 
   /// The effect of the abstraction's call operator.

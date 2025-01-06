@@ -45,9 +45,9 @@ extension Program {
   /// Returns a source-like representation of `ps`.
   public func show(_ ps: StaticParameters) -> String {
     if ps.implicit.isEmpty {
-      return "<>"
+      return "<\(list: ps.explicit.map(show(_:)))>"
     } else {
-      return "<where \(list: ps.implicit.map({ (p) in show(p) }))>"
+      return "<\(list: ps.explicit.map(show(_:))) where \(list: ps.implicit.map(show(_:)))>"
     }
   }
 

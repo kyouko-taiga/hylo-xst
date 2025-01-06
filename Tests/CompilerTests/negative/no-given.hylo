@@ -11,3 +11,8 @@ fun g() {
   given <where A: P> A: Q {}
   f()
 }
+
+fun h() {
+  given <T where T: P> T: Q {}
+  f()
+}

@@ -1,5 +1,5 @@
 /// A substitution table mapping type and term variables to their values.
-internal struct SubstitutionTable {
+public struct SubstitutionTable {
 
   /// A policy for substituting variables during reification.
   internal enum SubstitutionPolicy {
@@ -16,7 +16,7 @@ internal struct SubstitutionTable {
   private var types: [TypeVariable.ID: AnyTypeIdentity]
 
   /// Creates an empty table.
-  internal  init() {
+  internal init() {
     self.types = [:]
   }
 
@@ -34,8 +34,19 @@ internal struct SubstitutionTable {
     return a
   }
 
+  /// Returns a table containing the assignments in `self` and in `other`.
+  internal func union(_ other: SubstitutionTable) -> SubstitutionTable {
+    var result = self
+    for t in other.types.keys {
+      let u = other[t]
+      assert(result.types[t] == nil || result[t] == u)
+      result.types[t] = u
+    }
+    return result
+  }
+
   /// Assigns `substitution` to `variable`.
-  mutating func assign(_ substitution: AnyTypeIdentity, to variable: TypeVariable.ID) {
+  internal mutating func assign(_ substitution: AnyTypeIdentity, to variable: TypeVariable.ID) {
     var walked = variable
     while let a = types[walked] {
       assert(a.isVariable || a == substitution, "variable is already bound")

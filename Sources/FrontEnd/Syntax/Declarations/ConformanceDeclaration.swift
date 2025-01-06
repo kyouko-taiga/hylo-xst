@@ -35,9 +35,7 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
       assert(contextParameters.isEmpty)
       return "\(e): \(c)"
     } else {
-      let w = contextParameters.isEmpty
-        ? ""
-        : " \(program.show(contextParameters))"
+      let w = contextParameters.isEmpty ? "" : " \(program.show(contextParameters))"
       let m = members.map(program.show(_:)).lazy
         .map(\.indented)
         .joined(separator: "\n")

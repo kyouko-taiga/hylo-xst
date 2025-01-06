@@ -4,9 +4,14 @@ public struct WitnessExpression: Hashable {
   /// The expression of a witness.
   public indirect enum Value: Hashable {
 
+    /// A reference to a term declaration.
     case reference(DeclarationReference)
 
-    case application(WitnessExpression, WitnessExpression)
+    /// A context function applied to a term.
+    case termApplication(WitnessExpression, WitnessExpression)
+
+    /// A type abstraction applied to type arguments.
+    case typeApplication(WitnessExpression, [AnyTypeIdentity])
 
   }
 

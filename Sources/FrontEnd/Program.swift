@@ -399,6 +399,8 @@ public struct Program {
       return [name(of: castUnchecked(d, to: TraitDeclaration.self))]
     case FunctionDeclaration.self:
       return [name(of: castUnchecked(d, to: FunctionDeclaration.self))]
+    case GenericParameterDeclaration.self:
+      return [name(of: castUnchecked(d, to: GenericParameterDeclaration.self))]
     case InitializerDeclaration.self:
       return [name(of: castUnchecked(d, to: InitializerDeclaration.self))]
     case StructDeclaration.self:
@@ -431,6 +433,8 @@ public struct Program {
       return name(of: castUnchecked(d, to: TraitDeclaration.self))
     case FunctionDeclaration.self:
       return name(of: castUnchecked(d, to: FunctionDeclaration.self))
+    case GenericParameterDeclaration.self:
+      return name(of: castUnchecked(d, to: GenericParameterDeclaration.self))
     case InitializerDeclaration.self:
       return name(of: castUnchecked(d, to: InitializerDeclaration.self))
     case StructDeclaration.self:
@@ -455,6 +459,11 @@ public struct Program {
     case .operator(let n, let x):
       return Name(identifier: x, notation: n)
     }
+  }
+
+  /// Returns the name of `d`.
+  public func name(of d: GenericParameterDeclaration.ID) -> Name {
+    Name(identifier: self[d].identifier.value)
   }
 
   /// Returns the name of `d`.

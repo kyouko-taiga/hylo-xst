@@ -1,4 +1,5 @@
 trait P {}
+trait Q {}
 
 struct A {}
 struct B {}
@@ -9,5 +10,11 @@ fun f<where B: P>() {
 fun g() {
   given A: P {}
   given <where A: P> B: P {}
+  f()
+}
+
+fun h() {
+  given B: Q {}
+  given <T where T: Q> T: P {}
   f()
 }

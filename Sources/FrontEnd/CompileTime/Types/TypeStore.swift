@@ -60,9 +60,12 @@ public struct TypeStore {
 
   /// Returns `t` sans context parameters.
   public func head(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
-    if let i = self[t] as? Implication {
+    switch self[t] {
+    case let i as Implication:
       return head(i.head)
-    } else {
+    case let u as UniversalType:
+      return head(u.body)
+    default:
       return t
     }
   }
@@ -108,6 +111,16 @@ public struct TypeStore {
     {
       assert(self[t].arguments.count == 1)
       return (concept: u, subject: v)
+    } else {
+      return nil
+    }
+  }
+
+  /// Returns the value at `p` on the type identified by `n` if that type is an instance of `T`.
+  /// Otherwise, returns `nil`.
+  public func select<T: TypeTree, U>(_ p: KeyPath<T, U>, on n: AnyTypeIdentity) -> U? {
+    if let t = self[n] as? T {
+      return t[keyPath: p]
     } else {
       return nil
     }
@@ -179,8 +192,186 @@ public struct TypeStore {
     self.map(n, { (s, t) in .stepInto((t == old) ? new : t) })
   }
 
-  public mutating func adapt(_ t: AnyTypeIdentity, to w: Model) -> AnyTypeIdentity {
-    t
+  /// Returns `n` with each occurrences of every key in `substitutions` substituted for its
+  /// corresponding value.
+  public mutating func substitute(
+    _ substitutions: [AnyTypeIdentity: AnyTypeIdentity], in n: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    self.map(n) { (s, t) in .stepInto(substitutions[t] ?? t) }
+  }
+
+  /// Returns `true` if `t` and `u` can be unified, , recording substitutions in `subs`.
+  public func unifiable(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> SubstitutionTable? {
+    var s = SubstitutionTable()
+    if unifiable(t, u, &s) { return s } else { return nil }
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ t: Value, _ u: Value, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    if let a = t.type, let b = u.type {
+      return unifiable(a, b, &subs)
+    } else {
+      return t == u
+    }
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ t: AnyTypeIdentity, _ u: AnyTypeIdentity, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    let a = subs[t]
+    let b = subs[u]
+
+    // The two types are trivially equal?
+    if a == b { return true }
+
+    // There are type variables?
+    else if a.isVariable {
+      subs.assign(b, to: .init(uncheckedFrom: a))
+      return true
+    } else if b.isVariable {
+      subs.assign(a, to: .init(uncheckedFrom: b))
+      return true
+    }
+
+    /// There are aliases?
+    else if let lhs = self[a] as? TypeAlias {
+      return unifiable(lhs.aliasee, b, &subs)
+    } else if let rhs = self[a] as? TypeAlias {
+      return unifiable(a, rhs.aliasee, &subs)
+    }
+
+    // The two types have the same shape?
+    switch (self[a], self[b]) {
+    case (let lhs as Arrow, let rhs as Arrow):
+      return unifiable(lhs, rhs, &subs)
+    case (let lhs as AssociatedType, let rhs as AssociatedType):
+      return unifiable(lhs, rhs, &subs)
+    case (_ as BuiltinType, _ as BuiltinType):
+      return false
+    case (_ as ErrorType, _ as ErrorType):
+      return false
+    case (let lhs as Implication, let rhs as Implication):
+      return unifiable(lhs, rhs, &subs)
+    case (let lhs as Metatype, let rhs as Metatype):
+      return unifiable(lhs, rhs, &subs)
+    case (let lhs as RemoteType, let rhs as RemoteType):
+      return unifiable(lhs, rhs, &subs)
+    case (_ as Struct, _ as Struct):
+      return false
+    case (_ as Trait, _ as Trait):
+      return false
+    case (let lhs as Tuple, let rhs as Tuple):
+      return unifiable(lhs, rhs, &subs)
+    case (let lhs as TypeApplication, let rhs as TypeApplication):
+      return unifiable(lhs, rhs, &subs)
+    case (_ as TypeParameter, _ as TypeParameter):
+      return false
+    case (let lhs as Union, let rhs as Union):
+      return unifiable(lhs, rhs, &subs)
+    default:
+      assert(kind(of: a) != kind(of: b))
+      return false
+    }
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: Arrow, _ rhs: Arrow, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    (lhs.effect == rhs.effect) && (lhs.isByName == rhs.isByName)
+      && lhs.labels.elementsEqual(rhs.labels)
+      && unifiable(lhs.environment, rhs.environment, &subs)
+      && unifiable(lhs.inputs, rhs.inputs, &subs, by: unifiable(_:_:subs:))
+      && unifiable(lhs.output, rhs.output, &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: AssociatedType, _ rhs: AssociatedType, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs.qualification, rhs.qualification, &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: Implication, _ rhs: Implication, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs.context, rhs.context, &subs) && unifiable(lhs.head, rhs.head, &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: Metatype, _ rhs: Metatype, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs.inhabitant, rhs.inhabitant, &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: RemoteType, _ rhs: RemoteType, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    (lhs.access == rhs.access) && unifiable(lhs.projectee, rhs.projectee, &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: Tuple, _ rhs: Tuple, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs.elements, rhs.elements, &subs, by: unifiable(_:_:subs:))
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: Parameter, _ rhs: Parameter, subs: inout SubstitutionTable
+  ) -> Bool {
+    (lhs.label == rhs.label) && unifiable(lhs.type, rhs.type, &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: TypeApplication, _ rhs: TypeApplication, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs.abstraction, rhs.abstraction, &subs)
+      && unifiable(lhs.arguments, rhs.arguments, &subs, by: unifiable(_:_:_:))
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: Union, _ rhs: Union, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs.elements, rhs.elements, &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: Tuple.Element, _ rhs: Tuple.Element, subs: inout SubstitutionTable
+  ) -> Bool {
+    (lhs.label == rhs.label) && unifiable(lhs.type, rhs.type, &subs)
+  }
+
+  /// Returns `true` iff the the pairwise elements of `lhs` and `rhs` are unifiable by `unify`,
+  /// recording substitutions in `subs`.
+  private func unifiable<T: Sequence>(
+    _ lhs: T, _ rhs: T, _ subs: inout SubstitutionTable,
+    by unify: (T.Element, T.Element, inout SubstitutionTable) -> Bool
+  ) -> Bool {
+    var i = lhs.makeIterator()
+    var j = rhs.makeIterator()
+    while let a = i.next() {
+      guard let b = j.next(), unify(a, b, &subs) else { return false }
+    }
+    return j.next() == nil
+  }
+
+  /// Returns `true` iff the the pairwise elements of `lhs` and `rhs` are unifiable, recording
+  /// substitutions in `subs`.
+  private func unifiable<T: Sequence<AnyTypeIdentity>>(
+    _ lhs: T, _ rhs: T, _ subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs, rhs, &subs, by: unifiable(_:_:_:))
   }
 
 }

@@ -23,6 +23,9 @@ public struct Typer {
   /// A predicate to determine whether inference steps should be logged.
   private let isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)?
 
+  /// The maximum depth of a derivation during implicit search.
+  private let maxImplicitDepth = 100
+
   /// Creates an instance assigning types to syntax trees in `m`, which is a module in `p`.
   public init(
     typing m: Program.ModuleIdentity, in p: consuming Program,
@@ -72,7 +75,7 @@ public struct Typer {
     var scopeToTraits: [ScopeIdentity: [TraitDeclaration.ID]]
 
     /// The cache of `Typer.summon(_:in:)`.
-    var scopeToSummoned: [ScopeIdentity: [AnyTypeIdentity: [WitnessExpression]]]
+    var scopeToSummoned: [ScopeIdentity: [AnyTypeIdentity: [SummonResult]]]
 
     /// The cache of `Typer.typeOfSelf(in:)`.
     var scopeToTypeOfSelf: [ScopeIdentity: AnyTypeIdentity?]
@@ -386,10 +389,9 @@ public struct Typer {
   private mutating func declaredType(of d: AssociatedTypeDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    var t = typeOfSelf(in: program.parent(containing: d))!
-    t = demand(AssociatedType(declaration: d, qualification: t)).erased
-    t = demand(Metatype(inhabitant: t)).erased
-    program[module].setType(t, for: d)
+    let t = typeOfSelf(in: program.parent(containing: d))!
+    let u = metatype(of: AssociatedType(declaration: d, qualification: t)).erased
+    program[module].setType(u, for: d)
     return t
   }
 
@@ -423,19 +425,25 @@ public struct Typer {
   private mutating func declaredType(of d: ConformanceDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    let witness = declaredConformanceType(program[d].extendee, program[d].concept)
-    let context = program[d].contextParameters.implicit.map { (p) in
-      declaredType(of: p)
+    var result = declaredConformanceType(program[d].extendee, program[d].concept)
+
+    let cs = program[d].contextParameters.implicit.map({ (p) in declaredType(of: p) })
+    if !cs.isEmpty {
+      result = demand(Implication(context: cs, head: result)).erased
     }
 
-    if context.isEmpty {
-      program[module].setType(witness, for: d)
-      return witness
-    } else {
-      let u = demand(Implication(context: context, head: witness)).erased
-      program[module].setType(u, for: d)
-      return u
+    let ps = program[d].contextParameters.explicit.compactMap { (p) in
+      let t = declaredType(of: p)
+      return program.types
+        .select(\Metatype.inhabitant, on: t)
+        .flatMap({ (m) in program.types.cast(m, to: TypeParameter.self) })
     }
+    if !ps.isEmpty {
+      result = demand(UniversalType(parameters: ps, body: result)).erased
+    }
+
+    program[module].setType(result, for: d)
+    return result
   }
 
   /// Returns the declared type of `d` without checking.
@@ -480,7 +488,7 @@ public struct Typer {
   private mutating func declaredType(of d: GenericParameterDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    let t = demand(TypeParameter(declaration: d)).erased
+    let t = metatype(of: TypeParameter(declaration: d)).erased
     program[module].setType(t, for: d)
     return t
   }
@@ -546,20 +554,18 @@ public struct Typer {
   private mutating func declaredType(of d: StructDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    let t = demand(Struct(declaration: d)).erased
-    let u = demand(Metatype(inhabitant: t)).erased
-    program[module].setType(u, for: d)
-    return u
+    let t = metatype(of: Struct(declaration: d)).erased
+    program[module].setType(t, for: d)
+    return t
   }
 
   /// Returns the declared type of `d` without checking.
   private mutating func declaredType(of d: TraitDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    let t = demand(Trait(declaration: d)).erased
-    let u = demand(Metatype(inhabitant: t)).erased
-    program[module].setType(u, for: d)
-    return u
+    let t = metatype(of: Trait(declaration: d)).erased
+    program[module].setType(t, for: d)
+    return t
   }
 
   /// Returns the declared type of `d` without checking.
@@ -575,10 +581,9 @@ public struct Typer {
         program[module].setType(.error, for: d)
         return .error
       case let aliasee:
-        let t = demand(TypeAlias(declaration: d, aliasee: aliasee)).erased
-        let u = demand(Metatype(inhabitant: t)).erased
-        program[module].setType(u, for: d)
-        return u
+        let t = metatype(of: TypeAlias(declaration: d, aliasee: aliasee)).erased
+        program[module].setType(t, for: d)
+        return t
       }
     }
 
@@ -877,10 +882,9 @@ public struct Typer {
   private mutating func inferredType(
     of e: RemoteTypeExpression.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    var t = evaluateTypeAscription(program[e].projectee)
-    t = demand(RemoteType(projectee: t, access: program[e].access.value)).erased
-    t = demand(Metatype(inhabitant: t)).erased
-    return assume(e, hasType: t, in: &context.obligations)
+    let t = evaluateTypeAscription(program[e].projectee)
+    let u = metatype(of: RemoteType(projectee: t, access: program[e].access.value)).erased
+    return assume(e, hasType: u, in: &context.obligations)
   }
 
   /// Returns the inferred type of `e`.
@@ -923,9 +927,8 @@ public struct Typer {
       Tuple.Element(label: e.label?.value, type: evaluateTypeAscription(e.value))
     }
 
-    let t = demand(Tuple(elements: es)).erased
-    let u = demand(Metatype(inhabitant: t)).erased
-    return assume(e, hasType: u, in: &context.obligations)
+    let t = metatype(of: Tuple(elements: es)).erased
+    return assume(e, hasType: t, in: &context.obligations)
   }
 
   /// Returns the inferred type of `p`, which occurs in `context`.
@@ -1066,7 +1069,9 @@ public struct Typer {
     switch w.value {
     case .reference(let r):
       return evaluate(r)
-    case .application(let f, _):
+    case .termApplication(let f, _):
+      return evaluate(f)
+    case .typeApplication(let f, _):
       return evaluate(f)
     }
   }
@@ -1191,26 +1196,46 @@ public struct Typer {
     case fail
 
     /// Resolution succeeded.
-    case done(WitnessExpression)
+    case done(SummonResult)
 
     /// Resolution requires a recursive lookup.
     case next(Continuation)
 
   }
 
+  internal struct SummonResult {
+
+    let witness: WitnessExpression
+
+    let environment: SubstitutionTable
+
+  }
+
   /// Returns witnesses of values of type `t` derivable from the implicit store in `scopeOfUse`.
   internal mutating func summon(
     _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity
-  ) -> [WitnessExpression] {
-    summon(t, in: scopeOfUse, withoutSummoning: [t], continuation: { (_, ws) in ws })
+  ) -> [SummonResult] {
+    summon(
+      t, in: scopeOfUse, where: .init(), without: [t], withMaxDepth: maxImplicitDepth,
+      then: { (_, ws) in ws })
   }
 
   /// Returns the result of `continuation` called with witnesses of values of type `t` derivable
-  /// from the implicit store in `scopeOfUse` without summoning any of the types in `usings`.
+  /// from the implicit store in `scopeOfUse`.
+  ///
+  /// - Parameters:
+  ///   - t: The type whose instance is summoned.
+  ///   - scopeOfUse: The scope in which the witnesses are resolve.
+  ///   - subs: A table mapping type variables in `t` and `usings` to their values.
+  ///   - usings: The types whose instances can't be summoned to resolve witneses.
+  ///   - maxDepth: The maximum depth of the derivations resolve witnesses.
+  ///   - continuation: A closure called with the resolve witnesses.
   private mutating func summon<T>(
     _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
-    withoutSummoning usings: Set<AnyTypeIdentity>,
-    continuation: (inout Self, [WitnessExpression]) -> T
+    where subs: SubstitutionTable,
+    without usings: Set<AnyTypeIdentity>,
+    withMaxDepth maxDepth: Int,
+    then continuation: (inout Self, [SummonResult]) -> T
   ) -> T {
     // Did we already compute the result?
     if let table = cache.scopeToSummoned[scopeOfUse], let result = table[t] {
@@ -1233,11 +1258,13 @@ public struct Typer {
       ds.append(contentsOf: program.declarations(of: ConformanceDeclaration.self, lexicallyIn: p))
     }
 
-    var done: [WitnessExpression] = []
+    var done: [SummonResult] = []
     var work: [ImplicitDeduction.Continuation] = ds.map { (d) in
       let u = declaredType(of: d)
       let w = WitnessExpression(value: .reference(.direct(.init(d))), type: u)
-      return { (me) in me.match(w, t, in: scopeOfUse, withoutSummoning: usings) }
+      return { (me) in
+        me.match(w, t, in: scopeOfUse, where: subs, without: usings, withMaxDepth: maxDepth)
+      }
     }
 
     while done.isEmpty && !work.isEmpty {
@@ -1260,17 +1287,43 @@ public struct Typer {
     return continuation(&self, done)
   }
 
-  /// Returns the result of a derivation step in the matching of `w` with `t` in `scopeOfUse`
-  /// without summoning any of the types in `usings`.
+  /// Returns the result of a derivation step in the matching of `witness` with `queried`.
   private mutating func match(
-    _ w: WitnessExpression, _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
-    withoutSummoning usings: Set<AnyTypeIdentity>
+    _ witness: WitnessExpression, _ queried: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
+    where subs: SubstitutionTable,
+    without usings: Set<AnyTypeIdentity>,
+    withMaxDepth maxDepth: Int
   ) -> [ImplicitDeduction] {
+    // Weak-head normal forms.
+    let a = subs.reify(witness.type, withVariables: .kept)
+    let b = subs.reify(queried, withVariables: .kept)
+
     // The witness has the desired type?
-    if equal(w.type, t) { return [.done(w)] }
+    if let s = program.types.unifiable(a, b) {
+      return [.done(.init(witness: witness, environment: subs.union(s)))]
+    }
+
+    // The witness is a universal type?
+    else if let u = program.types[a] as? UniversalType {
+      var vs: [AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
+      var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
+      for p in u.parameters {
+        let v = fresh().erased
+        vs.append(v)
+        ss[p.erased] = v
+      }
+
+      let w = WitnessExpression(
+        value: .typeApplication(witness, vs),
+        type: program.types.substitute(ss, in: u.body))
+      let r = ImplicitDeduction.next { (me) in
+        me.match(w, b, in: scopeOfUse, where: subs, without: usings, withMaxDepth: maxDepth)
+      }
+      return [r]
+    }
 
     // The witness is an implication?
-    else if let i = program.types[w.type] as? Implication {
+    else if let i = program.types[a] as? Implication, maxDepth > 0 {
       // Assume that the implication has a non-empty context.
       let (x, xs) = i.context.headAndTail!
 
@@ -1279,11 +1332,16 @@ public struct Typer {
 
       let v = xs.isEmpty ? i.head : demand(Implication(context: .init(xs), head: i.head)).erased
       let r = ImplicitDeduction.next { (me) in
-        me.summon(x, in: scopeOfUse, withoutSummoning: us) { (me, arguments) in
+        me.summon(
+          x, in: scopeOfUse, where: subs, without: us, withMaxDepth: maxDepth - 1
+        ) { (me, arguments) in
           var rs: [ImplicitDeduction] = []
           for a in arguments {
-            let x = WitnessExpression(value: .application(w, a), type: v)
-            rs.append(contentsOf: me.match(x, t, in: scopeOfUse, withoutSummoning: usings))
+            let w = WitnessExpression(value: .termApplication(witness, a.witness), type: v)
+            let s = subs.union(a.environment)
+            let m = me.match(
+              w, b, in: scopeOfUse, where: s, without: usings, withMaxDepth: maxDepth)
+            rs.append(contentsOf: m)
           }
           return rs
         }
@@ -1514,15 +1572,16 @@ public struct Typer {
       let p = demand(Trait(declaration: concept)).erased
       let a = Value.type(qualification.type)
       let t = demand(TypeApplication(abstraction: p, arguments: [a])).erased
-      let witnesses = summon(t, in: scopeOfUse)
+      let summonings = summon(t, in: scopeOfUse)
 
       // TODO: report ambiguous resolution results
 
-      for w in witnesses {
-        guard let m = evaluate(w).cast(as: Model.self) else { continue }
+      for s in summonings {
+        guard let m = evaluate(s.witness).cast(as: Model.self) else { continue }
         for d in ds {
           let u = typeOfImplementation(satisfying: d, in: m)
-          let c = NameResolutionCandidate(reference: .inherited(witness: w, member: d), type: u)
+          let c = NameResolutionCandidate(
+            reference: .inherited(witness: s.witness, member: d), type: u)
           candidates.append(c)
         }
       }
@@ -1822,6 +1881,12 @@ public struct Typer {
   /// Returns the unique identity of a tree that is equal to `t`.
   private mutating func demand<T: TypeTree>(_ t: T) -> T.ID {
     program.types.demand(t)
+  }
+
+  /// Returns the unique identity of a type tree representing the metatype of `t`.
+  private mutating func metatype<T: TypeTree>(of t: T) -> Metatype.ID {
+    let n = demand(t).erased
+    return demand(Metatype(inhabitant: n))
   }
 
   /// Returns the identity of a fresh type variable.
