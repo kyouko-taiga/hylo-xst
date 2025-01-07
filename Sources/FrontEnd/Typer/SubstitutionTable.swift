@@ -1,17 +1,6 @@
 /// A substitution table mapping type and term variables to their values.
 public struct SubstitutionTable {
 
-  /// A policy for substituting variables during reification.
-  internal enum SubstitutionPolicy {
-
-    /// Free variables are substituted by errors.
-    case substitutedByError
-
-    /// Free variables are kept.
-    case kept
-
-  }
-
   /// A map from type variable to its assignment.
   private var types: [TypeVariable.ID: AnyTypeIdentity]
 
@@ -53,23 +42,6 @@ public struct SubstitutionTable {
       walked = .init(uncheckedFrom: a)
     }
     types[walked] = substitution
-  }
-
-  /// Returns a copy of `t`, where each variable is substituted by either its corresponding value
-  /// in `self` or the application of `substitutionPolicy` is no such substitution exists.
-  ///
-  /// The default substitution policy is `substituteByError` because we typically use `reify` on
-  /// fully formed solutions, thus not expecting any open variables.
-  internal func reify(
-    _ t: AnyTypeIdentity,
-    withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
-  ) -> AnyTypeIdentity {
-    let u = self[t]
-    if !u.isVariable || (substitutionPolicy == .kept) {
-      return u
-    } else {
-      return .error
-    }
   }
 
   /// Returns a copy of `self` with its internal representation optimized.

@@ -82,7 +82,7 @@ internal struct CallConstraint: Constraint {
   }
 
   /// The type of an entity being applied.
-  internal let callee: AnyTypeIdentity
+  internal private(set) var callee: AnyTypeIdentity
 
   /// The labels and types of the arguments.
   internal private(set) var arguments: [Argument]
@@ -103,6 +103,7 @@ internal struct CallConstraint: Constraint {
 
   /// Applies `transform` on constituent types of `self`.
   internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    callee = transform(callee)
     for i in 0 ..< arguments.count {
       arguments[i].type = transform(arguments[i].type)
     }
@@ -171,6 +172,36 @@ internal struct Summonable: Constraint {
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
     program.format("\u{22A9} %T", [type])
+  }
+
+}
+
+/// A constraint stating that a a name expression refers to a declaration in an overload set.
+internal struct OverloadConstraint: Constraint {
+
+  /// The overloaded expression.
+  internal let name: NameExpression.ID
+
+  /// The type of the overloaded expression.
+  internal private(set) var type: AnyTypeIdentity
+
+  /// The set containing the declaration referred to by `name`.
+  internal let candidates: [Typer.NameResolutionCandidate]
+
+  /// The site from which the constraint originates.
+  internal let site: SourceSpan
+
+  /// Applies `transform` on constituent types of `self`.
+  internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    type = transform(type)
+  }
+
+  /// Returns a textual representation of `self`, reading contents from `program`.
+  internal func show(using program: Program) -> String {
+    let cs = candidates.lazy.map { (c) in
+      "(\(program.show(c.reference)) : \(program.show(c.type)))"
+    }
+    return "(\(program.show(name)) : \(program.show(type))) \u{21A6} {\(list: cs)}"
   }
 
 }

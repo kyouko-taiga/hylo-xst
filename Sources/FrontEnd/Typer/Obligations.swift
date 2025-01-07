@@ -33,14 +33,24 @@ internal struct Obligations {
     if !k.isTrivial { constraints.append(k) }
   }
 
-  /// Assumes that `n` has type `t`.
-  internal mutating func assume(_ n: AnySyntaxIdentity, instanceOf t: AnyTypeIdentity) {
-    syntaxToType[n] = t
+  /// Assumes that `n` refers to `r`.
+  internal mutating func assume(_ n: NameExpression.ID, boundTo r: DeclarationReference) {
+    bindings[n] = r
   }
 
-  /// Assumes that `n` refers to `r`.
-  internal mutating func assume(_ n: NameExpression.ID, isBoundTo r: DeclarationReference) {
-    bindings[n] = r
+  /// Assumes that `n` `n` has type `t` and returns `t`.
+  @discardableResult
+  internal mutating func assume<T: SyntaxIdentity>(
+    _ n: T, hasType t: AnyTypeIdentity, at site: SourceSpan
+  ) -> AnyTypeIdentity {
+    if let u = syntaxToType[n.erased] {
+      assume(TypeEquality(lhs: t, rhs: u, site: site))
+    } else {
+      syntaxToType[.init(n)] = t
+    }
+
+    if t[.hasError] { setUnsatisfiable() }
+    return t
   }
 
 }

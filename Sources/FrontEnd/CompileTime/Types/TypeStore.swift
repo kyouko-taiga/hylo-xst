@@ -7,6 +7,17 @@ public struct TypeStore {
   /// The index of a type in a store.
   public typealias Index = Int
 
+  /// A policy for substituting variables during reification.
+  public enum SubstitutionPolicy {
+
+    /// Free variables are substituted by errors.
+    case substitutedByError
+
+    /// Free variables are kept.
+    case kept
+
+  }
+
   /// The types contained in this store.
   private var types: StableSet<AnyTypeTree>
 
@@ -178,11 +189,21 @@ public struct TypeStore {
     return demand(any: t)
   }
 
-  public mutating func substitute(
-    in n: AnyTypeIdentity,
-    _ substitution: (TypeStore, AnyTypeIdentity) -> AnyTypeIdentity
+  /// Returns `n` with each open variable substituted by either its corresponding value in `subs`
+  /// or the application of `substitutionPolicy` if no such substitution exists.
+  public mutating func reify(
+    _ n: AnyTypeIdentity,
+    applying subs: SubstitutionTable,
+    withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
   ) -> AnyTypeIdentity {
-    self.map(n, { (s, t) in .stepInto(substitution(s, t)) })
+    self.map(n) { (s, t) in
+      let u = subs[t]
+      if !u.isVariable || substitutionPolicy == .kept {
+        return u[.hasVariable] ? .stepInto(u) : .stepOver(u)
+      } else {
+        return .stepOver(.error)
+      }
+    }
   }
 
   /// Returns `n` with all occurrences of `old` substituted for `new`.

@@ -317,7 +317,7 @@ public struct Typer {
     var c = InferenceContext(expectedType: r)
     let t = inferredType(of: e, in: &c)
     let s = discharge(c.obligations, relatedTo: e)
-    return s.substitutions.reify(t)
+    return program.types.reify(t, applying: s.substitutions)
   }
 
   /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
@@ -430,7 +430,7 @@ public struct Typer {
       var c = InferenceContext()
       let p = inferredType(of: d, in: &c)
       let s = discharge(c.obligations, relatedTo: d)
-      let u = s.substitutions.reify(p)
+      let u = program.types.reify(p, applying: s.substitutions)
 
       ascribe(u, to: program[d].pattern)
       program[module].setType(u, for: d)
@@ -825,7 +825,10 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let f = inferredType(calleeOf: e, in: &context)
 
-    if f.isVariable || (program.types[f] is any Callable) {
+    // Bail out if the callee has an error type.
+    if f == .error {
+      return context.obligations.assume(e, hasType: .error, at: program[e].site)
+    } else {
       var i: [CallConstraint.Argument] = []
       for a in program[e].arguments {
         let t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
@@ -840,18 +843,7 @@ public struct Typer {
         callee: f, arguments: i, output: o, origin: e, site: program[e].site)
 
       context.obligations.assume(k)
-      return assume(e, hasType: o, in: &context.obligations)
-    }
-
-    // Was the error already reported?
-    else if f == .error {
-      return assume(e, hasType: .error, in: &context.obligations)
-    }
-
-    // The callee cannot be applied.
-    else {
-      report(program.cannotCall(f, program[e].style, at: program[program[e].callee].site))
-      return assume(e, hasType: .error, in: &context.obligations)
+      return context.obligations.assume(e, hasType: o, at: program[e].site)
     }
   }
 
@@ -864,35 +856,21 @@ public struct Typer {
       inferredType(of: program[e].callee, in: &ctx)
     }
 
-    func adapt(_ f: AnyTypeIdentity) -> AnyTypeIdentity {
-      // Is the callee expecting contextual parameters?
-      if let i = program.types[f] as? Implication {
-        let p = program.parent(containing: e)
-        let s = program[program[e].callee].site
-        for t in i.context {
-          context.obligations.assume(Summonable(type: t, scope: p, site: s))
-        }
-        return adapt(i.head)
-      }
-
-      // Is the callee bound to a type?
-      else if program.types[f] is Metatype {
-        let c = program[e].callee
-        let n = program[module].insert(
-          NameExpression(
-            qualification: .explicit(c),
-            name: .init(.init(identifier: "new"), at: program[c].site),
-            site: program[c].site),
-          in: program.parent(containing: e))
-        program[module].replace(.init(e), for: program[e].replacing(callee: .init(n)))
-        return inferredType(calleeOf: e, in: &context)
-      }
-
-      // Otherwise, returns the inferred type as-is.
-      else { return f }
+    // Is the callee bound to a type?
+    if program.types[f] is Metatype {
+      let c = program[e].callee
+      let n = program[module].insert(
+        NameExpression(
+          qualification: .explicit(c),
+          name: .init(.init(identifier: "new"), at: program[c].site),
+          site: program[c].site),
+        in: program.parent(containing: e))
+      program[module].replace(.init(e), for: program[e].replacing(callee: .init(n)))
+      return inferredType(calleeOf: e, in: &context)
     }
 
-    return adapt(f)
+    // Otherwise, returns the inferred type as-is.
+    else { return f }
   }
 
   /// Returns the inferred type of `e`.
@@ -908,7 +886,7 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let t = evaluateTypeAscription(program[e].projectee)
     let u = metatype(of: RemoteType(projectee: t, access: program[e].access.value)).erased
-    return assume(e, hasType: u, in: &context.obligations)
+    return context.obligations.assume(e, hasType: u, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.
@@ -939,8 +917,8 @@ public struct Typer {
       for e in es { ts.append(type(of: e, expecting: nil)) }
     }
 
-    let r = demand(Tuple(elements: ts))
-    return assume(e, hasType: r.erased, in: &context.obligations)
+    let r = demand(Tuple(elements: ts)).erased
+    return context.obligations.assume(e, hasType: r, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.
@@ -952,7 +930,7 @@ public struct Typer {
     }
 
     let t = metatype(of: Tuple(elements: es)).erased
-    return assume(e, hasType: t, in: &context.obligations)
+    return context.obligations.assume(e, hasType: t, at: program[e].site)
   }
 
   /// Returns the inferred type of `p`, which occurs in `context`.
@@ -980,7 +958,7 @@ public struct Typer {
     guard let a = program[program[d].pattern].ascription else {
       let i = program[d].initializer ?? unreachable("ill-formed binding declaration")
       let t = inferredType(of: i, in: &context)
-      return assume(d, hasType: t, in: &context.obligations)
+      return context.obligations.assume(d, hasType: t, at: program[d].site)
     }
 
     // Slow path: infer a type from the ascription and the initializer (if any).
@@ -994,7 +972,7 @@ public struct Typer {
       }
     }
 
-    return assume(d, hasType: p, in: &context.obligations)
+    return context.obligations.assume(d, hasType: p, at: program[d].site)
   }
 
   /// Returns the inferred type of `d`, which occurs in `context`.
@@ -1002,42 +980,29 @@ public struct Typer {
     of d: VariableDeclaration.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     let t = fresh().erased
-    return assume(d, hasType: t, in: &context.obligations)
+    return context.obligations.assume(d, hasType: t, at: program[d].site)
   }
 
   /// Constrains the name component in `r` to be a reference to one of `r`'s resolution candidates
   /// in `o`, and returns the inferred type of `r`.
   private mutating func assume(
-    _ n: NameExpression.ID, isBoundTo cs: [NameResolutionCandidate], in o: inout Obligations
+    _ n: NameExpression.ID, boundTo cs: [NameResolutionCandidate], in o: inout Obligations
   ) -> AnyTypeIdentity {
     // If there's only one candidate, we're done.
     if let pick = cs.uniqueElement {
       // TODO: Instantiate
 
-      o.assume(n, isBoundTo: pick.reference)
-      if let t = program.types[pick.type] as? RemoteType {
-        return assume(n, hasType: t.projectee, in: &o)
-      } else {
-        return assume(n, hasType: pick.type, in: &o)
-      }
+      o.assume(n, boundTo: pick.reference)
+      return o.assume(n, hasType: pick.type, at: program[n].site)
     }
 
-    fatalError("TODO")
-  }
-
-  /// Constrains `n` to have type `t` in `o` and returns `t`.
-  @discardableResult
-  private mutating func assume<T: SyntaxIdentity>(
-    _ n: T, hasType t: AnyTypeIdentity, in o: inout Obligations
-  ) -> AnyTypeIdentity {
-    if let u = o.syntaxToType[n.erased] {
-      o.assume(TypeEquality(lhs: t, rhs: u, site: program[n].site))
-    } else {
-      o.assume(.init(n), instanceOf: t)
+    // Otherwise, create an overload set.
+    else {
+      assert(!cs.isEmpty)
+      let t = fresh().erased
+      o.assume(OverloadConstraint(name: n, type: t, candidates: cs, site: program[n].site))
+      return o.assume(n, hasType: t, at: program[n].site)
     }
-
-    if t[.hasError] { o.setUnsatisfiable() }
-    return t
   }
 
   /// Proves the obligations `o`, which relate to the well-typedness of `n`, returning the best
@@ -1091,6 +1056,68 @@ public struct Typer {
     }
   }
 
+  /// Returns the type of a name expression bound to `d`.
+  private mutating func typeOfName(boundTo d: DeclarationIdentity) -> AnyTypeIdentity {
+    let t = declaredType(of: d)
+    return (program.types[t] as? RemoteType)?.projectee ?? t
+  }
+
+  /// Returns the value of `Self` evaluated in `s`, or `nil` if `s` isn't notionally in the scope
+  /// of a type declaration.
+  private mutating func typeOfSelf(in s: ScopeIdentity) -> AnyTypeIdentity? {
+    if let memoized = cache.scopeToTypeOfSelf[s] { return memoized }
+
+    guard let n = s.node else { return nil }
+    let result: AnyTypeIdentity?
+
+    switch program.kind(of: n) {
+    case ConformanceDeclaration.self:
+      fatalError()
+    case ExtensionDeclaration.self:
+      result = extendeeType(program.castUnchecked(n, to: ExtensionDeclaration.self))
+    case StructDeclaration.self:
+      result = typeOfSelf(in: program.castUnchecked(n, to: StructDeclaration.self))
+    case TraitDeclaration.self:
+      result = typeOfSelf(in: program.castUnchecked(n, to: TraitDeclaration.self))
+    default:
+      result = typeOfSelf(in: program.parent(containing: n))
+    }
+
+    cache.scopeToTypeOfSelf[s] = .some(result)
+    return result
+  }
+
+  /// Returns the value of `Self` evaluated in the lexical scope of `d`.
+  private mutating func typeOfSelf(in d: StructDeclaration.ID) -> AnyTypeIdentity {
+    let t = declaredType(of: .init(d))
+    return (program.types[t] as? Metatype)?.inhabitant ?? .error
+  }
+
+  /// Returns the value of `Self` evaluated in the lexical scope of `d`.
+  private mutating func typeOfSelf(in d: TraitDeclaration.ID) -> AnyTypeIdentity {
+    declaredType(of: program[d].conformer)
+  }
+
+  /// Returns the type of the implementation satisfying `requirement` in `model`.
+  ///
+  /// - Parameters:
+  ///   - requirement: The declaration of a concept requirement.
+  ///   - witness: The witness of a type's conformance to the concept defining `requirement`.
+  private mutating func typeOfImplementation(
+    satisfying requirement: DeclarationIdentity, in witness: Model
+  ) -> AnyTypeIdentity {
+    switch witness {
+    case .concrete(_, let implementations):
+      return implementations[requirement]!.type
+
+    case .abstract(_):
+      let (concept, conformer) = program.types.castToTraitApplication(witness.type)!
+      let s = typeOfSelf(in: program.types[concept].declaration)
+      let t = declaredType(of: requirement)
+      return program.types.substitute(s, for: conformer, in: t)
+    }
+  }
+
   // MARK: Compile-time evaluation
 
   /// Returns the value of `e` evaluated as a type ascription.
@@ -1098,7 +1125,7 @@ public struct Typer {
     var c = InferenceContext()
     let t = inferredType(of: e, in: &c)
     let s = discharge(c.obligations, relatedTo: e)
-    let u = s.substitutions.reify(t)
+    let u = program.types.reify(t, applying: s.substitutions)
 
     if let m = program.types[u] as? Metatype {
       return m.inhabitant
@@ -1345,8 +1372,8 @@ public struct Typer {
     withMaxDepth maxDepth: Int
   ) -> [ImplicitDeduction] {
     // Weak-head normal forms.
-    let a = subs.reify(witness.type, withVariables: .kept)
-    let b = subs.reify(queried, withVariables: .kept)
+    let a = program.types.reify(witness.type, applying: subs, withVariables: .kept)
+    let b = program.types.reify(queried, applying: subs, withVariables: .kept)
 
     // The witness has the desired type?
     if let s = program.types.unifiable(a, b) {
@@ -1403,72 +1430,16 @@ public struct Typer {
     else { return [.fail] }
   }
 
-  /// Returns the value of `Self` evaluated in `s`, or `nil` if `s` isn't notionally in the scope
-  /// of a type declaration.
-  private mutating func typeOfSelf(in s: ScopeIdentity) -> AnyTypeIdentity? {
-    if let memoized = cache.scopeToTypeOfSelf[s] { return memoized }
-
-    guard let n = s.node else { return nil }
-    let result: AnyTypeIdentity?
-
-    switch program.kind(of: n) {
-    case ConformanceDeclaration.self:
-      fatalError()
-    case ExtensionDeclaration.self:
-      result = extendeeType(program.castUnchecked(n, to: ExtensionDeclaration.self))
-    case StructDeclaration.self:
-      result = typeOfSelf(in: program.castUnchecked(n, to: StructDeclaration.self))
-    case TraitDeclaration.self:
-      result = typeOfSelf(in: program.castUnchecked(n, to: TraitDeclaration.self))
-    default:
-      result = typeOfSelf(in: program.parent(containing: n))
-    }
-
-    cache.scopeToTypeOfSelf[s] = .some(result)
-    return result
-  }
-
-  /// Returns the value of `Self` evaluated in the lexical scope of `d`.
-  private mutating func typeOfSelf(in d: StructDeclaration.ID) -> AnyTypeIdentity {
-    let t = declaredType(of: .init(d))
-    return (program.types[t] as? Metatype)?.inhabitant ?? .error
-  }
-
-  /// Returns the value of `Self` evaluated in the lexical scope of `d`.
-  private mutating func typeOfSelf(in d: TraitDeclaration.ID) -> AnyTypeIdentity {
-    declaredType(of: program[d].conformer)
-  }
-
-  /// Returns the type of the implementation satisfying `requirement` in `model`.
-  ///
-  /// - Parameters:
-  ///   - requirement: The declaration of a concept requirement.
-  ///   - witness: The witness of a type's conformance to the concept defining `requirement`.
-  private mutating func typeOfImplementation(
-    satisfying requirement: DeclarationIdentity, in witness: Model
-  ) -> AnyTypeIdentity {
-    switch witness {
-    case .concrete(_, let implementations):
-      return implementations[requirement]!.type
-
-    case .abstract(_):
-      let (concept, conformer) = program.types.castToTraitApplication(witness.type)!
-      let s = typeOfSelf(in: program.types[concept].declaration)
-      let t = declaredType(of: requirement)
-      return program.types.substitute(s, for: conformer, in: t)
-    }
-  }
-
   // MARK: Name resolution
 
   /// A candidate for resolving a name component.
-  private struct NameResolutionCandidate {
+  internal struct NameResolutionCandidate {
 
     /// The way in which the resolved entity is referred to.
-    let reference: DeclarationReference
+    internal let reference: DeclarationReference
 
     /// The type of the expression referring to the resolved entity.
-    let type: AnyTypeIdentity
+    internal let type: AnyTypeIdentity
 
   }
 
@@ -1530,7 +1501,7 @@ public struct Typer {
 
       // TODO: Filter out inaccessible candidates
 
-      let t = assume(component, isBoundTo: candidates, in: &context.obligations)
+      let t = assume(component, boundTo: candidates, in: &context.obligations)
       switch program.types[t] {
       case is TypeVariable:
         // We need inference to continue.
@@ -1562,7 +1533,7 @@ public struct Typer {
 
     var candidates: [NameResolutionCandidate] = []
     for d in ds {
-      candidates.append(.init(reference: .direct(d), type: declaredType(of: d)))
+      candidates.append(.init(reference: .direct(d), type: typeOfName(boundTo: d)))
     }
 
     // Predefined names are resolved iff no other candidate has been found.
@@ -1610,7 +1581,7 @@ public struct Typer {
 
     var candidates: [NameResolutionCandidate] = []
     for d in ds {
-      candidates.append(.init(reference: .direct(d), type: declaredType(of: d)))
+      candidates.append(.init(reference: .direct(d), type: typeOfName(boundTo: d)))
     }
 
     // Native members and members declared in extensions shadow members inherited by conformance.

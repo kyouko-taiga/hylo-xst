@@ -7,16 +7,16 @@ internal typealias BindingTable = OrderedDictionary<NameExpression.ID, Declarati
 internal struct Solution {
 
   /// The type and term substitutions made by the solver.
-  internal private(set) var substitutions: SubstitutionTable
+  internal let substitutions: SubstitutionTable
 
   /// The name binding assumptions made by the solver.
-  internal private(set) var bindings: BindingTable
+  internal let bindings: BindingTable
 
   /// A table from call expression to its arguments after elaboration.
-  internal private(set) var elaborations: [(Call.ID, ParameterBindings)] = []
+  internal let elaborations: [(Call.ID, ParameterBindings)]
 
   /// The diagnostics associated with the solution.
-  internal let diagnostics: DiagnosticSet
+  internal private(set) var diagnostics: DiagnosticSet
 
   /// Creates an instance with the given properties.
   internal init(
@@ -29,6 +29,11 @@ internal struct Solution {
     self.bindings = bindings
     self.elaborations = elaborations
     self.diagnostics = diagnostics
+  }
+
+  /// Adds `d` to the solution's diagnostics.
+  internal mutating func add(_ d: Diagnostic) {
+    diagnostics.insert(d)
   }
 
 }

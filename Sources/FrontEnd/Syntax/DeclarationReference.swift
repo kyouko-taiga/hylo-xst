@@ -23,3 +23,19 @@ public indirect enum DeclarationReference: Hashable {
     member: DeclarationIdentity)
 
 }
+
+extension Program {
+
+  /// Returns a source-like representation of `r`.
+  public func show(_ r: DeclarationReference) -> String {
+    switch r {
+    case .predefined:
+      return "predefined"
+    case .direct(let d):
+      return name(of: d)?.description ?? "$<\(kind(of: d))>"
+    case .inherited(_, let m):
+      return name(of: m)?.description ?? "$<\(kind(of: m))>"
+    }
+  }
+
+}

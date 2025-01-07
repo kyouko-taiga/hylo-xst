@@ -1,0 +1,9 @@
+struct A {}
+struct B {}
+
+fun f(x: A) {}
+fun f(x: B) {}
+
+fun g() {
+  f(x: ())
+}

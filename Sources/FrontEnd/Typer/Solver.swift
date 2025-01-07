@@ -56,56 +56,68 @@ internal struct Solver {
     insert(fresh: obligations.constraints)
   }
 
+  /// Returns a copy of `base` with its `typer` set to `nil`.
+  private init (forking base: Self) {
+    self = base
+    self.typer = nil
+  }
+
   /// Returns a solution discharging the goals in `self` using `typer` for querying type relations
   /// and resolve names.
   internal mutating func solution(using typer: inout Typer) -> Solution {
-    solution(betterThanOrEqualTo: .worst, using: &typer)!
+    log("steps:")
+    return solution(betterThanOrEqualTo: .worst, using: &typer)!
   }
 
   /// Returns a solution discharging the goals in `self` with a score better than or equal to
   /// `best` using `typer` for querying type relations and resolve names.
-  internal mutating func solution(
+  private mutating func solution(
     betterThanOrEqualTo best: SolutionScore, using typer: inout Typer
   ) -> Solution? {
     self.typer = consume typer
     defer { typer = self.typer.sink() }
 
-    log("steps:")
     while let g = fresh.popLast() {
       if current > best {
         log("- abort")
         return nil
       } else {
-        goals[g].update({ (t) in substitutions.reify(t, withVariables: .kept) })
+        goals[g].update { (t) in
+          self.typer.program.types.reify(t, applying: substitutions, withVariables: .kept)
+        }
         log("- solve: " + self.typer.program.show(goals[g]))
-        indenting { (me) in
+
+        let s = indenting { (me) -> Solution? in
           assert(me.outcomes[g].isPending, "goal already discharged")
-          let o = me.solve(g)
+
+          let o: GoalOutcome
+          switch me.goals[g] {
+          case is TypeEquality:
+            o = me.solve(equality: g)
+          case is CallConstraint:
+            o = me.solve(call: g)
+          case is ArgumentConstraint:
+            o = me.solve(argument: g)
+          case is Summonable:
+            o = me.solve(summonable: g)
+          case is OverloadConstraint:
+            return me.solve(overload: g)
+          default:
+            unreachable()
+          }
+
           me.log(outcome: o)
           me.outcomes[g] = o
-          if g < me.rootCount && me.outcomes.failed(g) { me.current.errors += 1 }
+          if me.outcomes.failed(g) { me.current.errors += 1 }
+          return nil
         }
+
+        if let result = s { return result }
       }
     }
 
     assert(goals.indices.allSatisfy({ (g) in !outcomes[g].isPending }))
     return formSolution()
-  }
-
-  /// Discharges `g` and stores assumptions about its open variables in `self`.
-  private mutating func solve(_ g: GoalIdentity) -> GoalOutcome {
-    switch goals[g] {
-    case is TypeEquality:
-      return solve(equality: g)
-    case is CallConstraint:
-      return solve(call: g)
-    case is ArgumentConstraint:
-      return solve(argument: g)
-    case is Summonable:
-      return solve(summonable: g)
-    default:
-      unreachable()
-    }
   }
 
   /// Discharges `g`, which is a type equality constraint.
@@ -115,8 +127,8 @@ internal struct Solver {
       return .success
     } else {
       return .failure { (s, o, p, d) in
-        let t = s.reify(k.lhs)
-        let u = s.reify(k.rhs)
+        let t = p.types.reify(k.lhs, applying: s)
+        let u = p.types.reify(k.rhs, applying: s)
         let m = p.format("type '%T' is not compatible with '%T'", [t, u])
         d.insert(.init(.error, m, at: k.site))
       }
@@ -128,20 +140,25 @@ internal struct Solver {
     let k = goals[g] as! CallConstraint
 
     // Can't do anything before we've inferred the type of the callee.
-    if k.callee.isVariable {
+    var callee = typer.program.types.head(k.callee)
+    if callee.isVariable {
       return postpone(g)
     }
 
+    // Check that the callee has the right shape.
     switch typer.program[k.origin].style {
-    case .parenthesized where !typer.program.types.isArrowLike(k.callee):
+    case .parenthesized where !typer.program.types.isArrowLike(callee):
       return invalidCallee(k)
-    case .bracketed where !typer.program.types.isSubscriptLike(k.callee):
+    case .bracketed where !typer.program.types.isSubscriptLike(callee):
       return invalidCallee(k)
     default:
       break
     }
 
-    let f = typer.program.types[k.callee] as! any Callable
+    // If we got to this point, we know that callee has a callable type.
+    let f = typer.program.types[callee] as! any Callable
+
+    // Check that the argument list has the right shape.
     guard let (bs, cs) = matches(k, inputsOf: f) else {
       return .failure { (_, _, p, d) in
         d.insert(p.incompatibleLabels(found: k.labels, expected: f.labels, at: k.site))
@@ -151,7 +168,16 @@ internal struct Solver {
       elaborations.append((k.origin, bs))
     }
 
-    var subgoals = cs.map({ (c) in schedule(c) })
+    // Resolve compile-time implicits.
+    let scopeOfUse = typer.program.parent(containing: k.origin)
+    let calleeSite = typer.program[typer.program[k.origin].callee].site
+    var subgoals: [GoalIdentity] = []
+    adaptCalleeType(
+      k.callee, in: scopeOfUse, at: calleeSite,
+      addingSubgoalsInto: &subgoals)
+
+    // Simplify the constraint.
+    for c in cs { subgoals.append(schedule(c)) }
     let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
     let o = f.output(calleeIsMutating: m)
     subgoals.append(schedule(TypeEquality(lhs: o, rhs: k.output, site: k.site)))
@@ -159,10 +185,26 @@ internal struct Solver {
     return delegate(subgoals)
   }
 
+  /// Adds constraints to resolve the arguments to the compile-time context parameters of a callee
+  /// of type `t` in `scopeOfUse` at `site` at the end of `subgoals`.
+  private mutating func adaptCalleeType(
+    _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity, at site: SourceSpan,
+    addingSubgoalsInto subgoals: inout [GoalIdentity]
+  ) {
+    // Is the callee expecting contextual parameters?
+    if let i = typer.program.types[t] as? Implication {
+      for t in i.context {
+        subgoals.append(schedule(Summonable(type: t, scope: scopeOfUse, site: site)))
+      }
+      adaptCalleeType(i.head, in: scopeOfUse, at: site, addingSubgoalsInto: &subgoals)
+    }
+  }
+
   /// Returns a failure to solve a `k` due to an invalid callee type.
   private func invalidCallee(_ k: CallConstraint) -> GoalOutcome {
     .failure { (s, o, p, d) in
-      d.insert(p.cannotCall(s.reify(k.callee), p[k.origin].style, at: p[k.origin].site))
+      let t = p.types.reify(k.callee, applying: s)
+      d.insert(p.cannotCall(t, p[k.origin].style, at: p[k.origin].site))
     }
   }
 
@@ -225,13 +267,6 @@ internal struct Solver {
     return i == k.arguments.count ? (bs, cs) : nil
   }
 
-  /// Extends the term substution table to map `tau` to `substitute`.
-  private mutating func assume(_ t: TypeVariable.ID, equals u: AnyTypeIdentity) {
-    log("- assume: " + typer.program.format("%T = %T", [t.erased, u]))
-    substitutions.assign(u, to: t)
-//    refresh()
-  }
-
   /// Discharges `g`, which is an argument constraint.
   private mutating func solve(argument g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! ArgumentConstraint
@@ -243,15 +278,15 @@ internal struct Solver {
     case let p as RemoteType:
       let s = schedule(TypeEquality(lhs: k.lhs, rhs: p.projectee, site: k.site))
       return .split([s]) { (s, _, p, d) in
-        let t = s.reify(k.lhs)
-        let u = s.reify(k.rhs)
+        let t = p.types.reify(k.lhs, applying: s)
+        let u = p.types.reify(k.rhs, applying: s)
         let m = p.format("cannot pass value of type '%T' to parameter '%T' ", [t, u])
         d.insert(.init(.error, m, at: k.site))
       }
 
     default:
       return .failure { (s, _, p, d) in
-        let t = s.reify(k.rhs)
+        let t = p.types.reify(k.rhs, applying: s)
         let m = p.format("invalid parameter type '%T' ", [t])
         d.insert(.init(.error, m, at: k.site))
       }
@@ -274,22 +309,66 @@ internal struct Solver {
 
     case 0:
       return .failure { (s, o, p, d) in
-        let t = s.reify(k.type)
+        let t = p.types.reify(k.type, applying: s)
         let m = p.format("no given instance of '%T' in this scope", [t])
         d.insert(.init(.error, m, at: k.site))
       }
 
     default:
       return .failure { (s, o, p, d) in
-        let t = s.reify(k.type)
+        let t = p.types.reify(k.type, applying: s)
         let m = p.format("ambiguous given instance of '%T'", [t])
         d.insert(.init(.error, m, at: k.site))
       }
     }
   }
 
+  /// Discharges `g`, which is an overload constraint.
+  private mutating func solve(overload g: GoalIdentity) -> Solution {
+    let k = goals[g] as! OverloadConstraint
+
+    var solutions: [Solution] = []
+    for choice in k.candidates {
+      let equality = TypeEquality(lhs: k.type, rhs: choice.type, site: k.site)
+      log("- pick: \(typer.program.show(equality))")
+
+      let s = indenting { (me) in
+        var fork = Self(forking: me)
+        let s = fork.insert(fresh: equality)
+        fork.outcomes[g] = fork.delegate([s])
+        fork.bindings[k.name] = choice.reference
+        return fork.solution(betterThanOrEqualTo: me.best, using: &me.typer)
+      }
+
+      if let newSolution = s {
+        let newScore = SolutionScore(
+          errors: newSolution.diagnostics.elements.count, penalties: current.penalties)
+
+        if newScore < best {
+          best = newScore
+          solutions = [newSolution]
+        } else {
+          solutions.append(newSolution)
+        }
+      }
+    }
+
+    if let s = solutions.uniqueElement {
+      return s
+    } else {
+      // There must be at least one solution.
+      var s = solutions[0]
+      let d = Diagnostic(
+        .error, "ambiguous use of '\(typer.program[k.name].name.value)'", at: k.site)
+      s.add(d)
+      return s
+    }
+  }
+
   /// Creates a solution with the current state.
-  private mutating func formSolution() -> Solution {
+  private mutating func formSolution() -> Solution? {
+    if current > best { return nil }
+
     let ss = substitutions.optimized()
     var ds = DiagnosticSet()
 
@@ -302,6 +381,42 @@ internal struct Solver {
     return Solution(
       substitutions: ss, bindings: bindings, elaborations: elaborations,
       diagnostics: ds)
+  }
+
+  /// Assumes that `n` refers to `r`.
+  private mutating func assume(_ n: NameExpression.ID, boundTo r: DeclarationReference) {
+    bindings[n] = r
+  }
+
+  /// Assumes that `t` is assigned to `u`.
+  private mutating func assume(_ t: TypeVariable.ID, equals u: AnyTypeIdentity) {
+    log("- assume: " + typer.program.format("%T = %T", [t.erased, u]))
+    substitutions.assign(u, to: t)
+    refresh()
+  }
+
+  /// Refresh constraints containing type variables that have been assigned.
+  private mutating func refresh() {
+    // Nothing to do if the stale set is empty.
+    if stale.isEmpty { return }
+
+    var end = stale.count
+    for i in (0 ..< stale.count).reversed() {
+      var changed = false
+      goals[stale[i]].update { (t) in
+        let u = typer.program.types.reify(t, applying: substitutions, withVariables: .kept)
+        if t != u { changed = true }
+        return u
+      }
+
+      if changed {
+        log("- refresh: " + typer.program.show(goals[stale[i]]))
+        fresh.append(stale[i])
+        stale.swapAt(i, end - 1)
+        end -= 1
+      }
+    }
+    stale.removeSubrange(end...)
   }
 
   /// Inserts `gs` into the fresh set and return their identities.
@@ -441,7 +556,7 @@ extension [GoalOutcome] {
 }
 
 /// A value measuring the correctness of a solution.
-internal struct SolutionScore {
+private struct SolutionScore {
 
   /// The raw value of the score.
   private var rawValue: UInt64
@@ -452,28 +567,28 @@ internal struct SolutionScore {
   }
 
   /// Creates an instance with the given properties.
-  internal init(errors: Int, penalties: Int) {
+  fileprivate init(errors: Int, penalties: Int) {
     assert(errors < UInt32.max && penalties < UInt32.max)
     self.rawValue = UInt64(errors) << 32 | UInt64(penalties)
   }
 
   /// The number of unsatisfiable root goals.
-  internal var errors: Int {
+  fileprivate var errors: Int {
     get { Int(truncatingIfNeeded: rawValue >> 32) }
     set { self.rawValue = UInt64(newValue) << 32 | UInt64(penalties) }
   }
 
   /// The number of penalties associated with the solution.
-  internal var penalties: Int {
+  fileprivate var penalties: Int {
     get { Int(truncatingIfNeeded: rawValue & ((1 << 32) - 1)) }
     set { self.rawValue = UInt64(errors) << 32 | UInt64(newValue) }
   }
 
   /// The best possible score.
-  internal static var zero: SolutionScore { .init(rawValue: 0) }
+  fileprivate static var zero: SolutionScore { .init(rawValue: 0) }
 
   /// The worst possible score.
-  internal static var worst: SolutionScore { .init(rawValue: .max) }
+  fileprivate static var worst: SolutionScore { .init(rawValue: .max) }
 
 }
 
