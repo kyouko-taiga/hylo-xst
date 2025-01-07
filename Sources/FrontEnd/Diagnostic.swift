@@ -89,6 +89,16 @@ extension Program {
     }
   }
 
+  /// Returns an error diagnosing a duplicate declaration.
+  internal func duplicateDeclaration(
+    at site: SourceSpan, previousDeclarations: [SourceSpan] = []
+  ) -> Diagnostic {
+    let notes = previousDeclarations.map { (s) in
+      Diagnostic(.note, "previous declaration here", at: s)
+    }
+    return .init(.error, "duplicate declaration", at: site, notes: notes)
+  }
+
   /// Returns an error diagnosing incompatible labels in a function or subscript application.
   internal func incompatibleLabels<S1: Sequence<String?>, S2: Sequence<String?>>(
     found: S1, expected: S2, at site: SourceSpan

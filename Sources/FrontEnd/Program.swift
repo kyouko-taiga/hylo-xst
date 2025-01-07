@@ -598,6 +598,8 @@ public struct Program {
       return self[castUnchecked(n, to: FunctionDeclaration.self)].identifier.site
     case ImportDeclaration.self:
       return self[castUnchecked(n, to: ImportDeclaration.self)].identifier.site
+    case ParameterDeclaration.self:
+      return self[castUnchecked(n, to: ParameterDeclaration.self)].identifier.site
     case StructDeclaration.self:
       return self[castUnchecked(n, to: StructDeclaration.self)].identifier.site
     case TraitDeclaration.self:

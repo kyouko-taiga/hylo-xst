@@ -162,7 +162,7 @@ public struct Typer {
     let p = program.parent(containing: d)
     program.forEachVariable(introducedBy: d) { (v, _) in
       if v.erased != lookup(program[v].identifier.value, lexicallyIn: p).uniqueElement?.erased {
-        report(.init(.error, "duplicate declaration", at: program[v].site))
+        report(program.duplicateDeclaration(at: program[v].site))
       }
     }
   }
@@ -266,7 +266,22 @@ public struct Typer {
 
   /// Type checks `ps`.
   private mutating func check(_ ps: [ParameterDeclaration.ID]) {
-    for p in ps { check(p) }
+    var siblings: [String: ParameterDeclaration.ID] = .init(minimumCapacity: ps.count)
+    for p in ps {
+      check(p)
+
+      // Check for duplicate parameters.
+      modify(&siblings[program[p].identifier.value]) { (q) in
+        if let previous = q {
+          let m = program.duplicateDeclaration(
+            at: program.spanForDiagnostic(about: p),
+            previousDeclarations: [program.spanForDiagnostic(about: previous)])
+          report(m)
+        } else {
+          q = p
+        }
+      }
+    }
   }
 
   /// Type checks `ps`.
@@ -1235,11 +1250,14 @@ public struct Typer {
 
   }
 
+  /// A witness resolved by implicit resolution.
   internal struct SummonResult {
 
-    let witness: WitnessExpression
+    /// The expression of the witness.
+    internal let witness: WitnessExpression
 
-    let environment: SubstitutionTable
+    /// A table assigning the open variables of the witness's type.
+    internal let environment: SubstitutionTable
 
   }
 
