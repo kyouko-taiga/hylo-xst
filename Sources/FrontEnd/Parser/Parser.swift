@@ -372,12 +372,14 @@ public struct Parser {
     }
 
     let ascription = try parseOptionalParameterTypeAscription(in: &module)
+    let defaultValue = try parseOptionalInitializer(in: &module)
 
     return module.insert(
       ParameterDeclaration(
         label: label,
         identifier: identifier,
         ascription: ascription,
+        default: defaultValue,
         site: span(from: start)),
       in: file)
   }

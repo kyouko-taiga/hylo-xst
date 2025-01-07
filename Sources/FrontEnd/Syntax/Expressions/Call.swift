@@ -26,7 +26,13 @@ public struct Call: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  public func clone(callee: ExpressionIdentity) -> Call {
+  /// Returns a copy of `self` with the callee replaced.
+  public func replacing(callee: ExpressionIdentity) -> Call {
+    .init(callee: callee, arguments: arguments, style: style, site: site)
+  }
+
+  /// Returns a copy of `self` with the arguments replaced.
+  public func replacing(arguments: [LabeledExpression]) -> Call {
     .init(callee: callee, arguments: arguments, style: style, site: site)
   }
 

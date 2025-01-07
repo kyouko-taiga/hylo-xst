@@ -42,7 +42,7 @@ internal struct Solver {
   private var bindings: BindingTable
 
   /// A table from call expression to its arguments after elaboration.
-  private var elaborations: [(Call.ID, [ParameterBinding])] = []
+  private var elaborations: [(Call.ID, ParameterBindings)] = []
 
   /// The current identation level for logging message, or `-1` if logging is disabled.
   private var indentation: Int
@@ -147,7 +147,9 @@ internal struct Solver {
         d.insert(p.incompatibleLabels(found: k.labels, expected: f.labels, at: k.site))
       }
     }
-    elaborations.append((k.origin, bs))
+    if bs.hasDefaulted {
+      elaborations.append((k.origin, bs))
+    }
 
     var subgoals = cs.map({ (c) in schedule(c) })
     let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
@@ -192,8 +194,8 @@ internal struct Solver {
   /// Returns how the types of the arguments in `k` match the parameters of `f`.
   private mutating func matches(
     _ k: CallConstraint, inputsOf f: any Callable
-  ) -> ([ParameterBinding], [ArgumentConstraint])? {
-    var bs: [ParameterBinding] = []
+  ) -> (ParameterBindings, [ArgumentConstraint])? {
+    var bs = ParameterBindings()
     var cs: [ArgumentConstraint] = []
 
     var i = 0
@@ -207,14 +209,19 @@ internal struct Solver {
         i += 1
       }
 
-      // else if f.inputs[i].isImplicit { ... }
-      // else if f.inputs[i].hasDefault { ... }
+      // The parameter has a default value?
+      else if let d = p.declaration, typer.program[d].default != nil {
+        bs.append(.defaulted(d))
+        continue
+      }
+
+      // TODO: Implicits
 
       // Arguments do not match.
       else { return nil }
     }
 
-    assert(bs.count == f.inputs.count)
+    assert(bs.elements.count == f.inputs.count)
     return i == k.arguments.count ? (bs, cs) : nil
   }
 
@@ -292,7 +299,9 @@ internal struct Solver {
       }
     }
 
-    return Solution(substitutions: ss, bindings: bindings, diagnostics: ds)
+    return Solution(
+      substitutions: ss, bindings: bindings, elaborations: elaborations,
+      diagnostics: ds)
   }
 
   /// Inserts `gs` into the fresh set and return their identities.

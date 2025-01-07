@@ -1,0 +1,7 @@
+fun f(x: Void = (), y: Void) {}
+
+fun main() {
+  f(x: (), y: ())
+  f(y: ())
+  f()
+}

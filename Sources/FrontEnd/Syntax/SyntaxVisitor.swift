@@ -80,6 +80,8 @@ extension Program {
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
     case RemoteTypeExpression.self:
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
+    case SynthethicExpression.self:
+      break
     case TupleLiteral.self:
       traverse(castUnchecked(n, to: TupleLiteral.self), calling: &v)
     case TupleTypeExpression.self:
@@ -113,12 +115,6 @@ extension Program {
     for n in ns {
       visit(n.erased, calling: &v)
     }
-  }
-
-  /// If `n` is present, visits `n` and its children in pre-order, calling back `v` when a node is
-  /// entered or left.
-  public func visit<T: SyntaxVisitor>(_ n: AnySyntaxIdentity?, calling v: inout T) {
-    if let m = n { visit(m, calling: &v) }
   }
 
   /// Visits `ps` and their children in pre-order, calling back `v` when a node is entered or left.
@@ -175,7 +171,8 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ParameterDeclaration.ID, calling v: inout T) {
-    visit(self[n].ascription.map(AnySyntaxIdentity.init(_:)), calling: &v)
+    visit(self[n].ascription, calling: &v)
+    visit(self[n].default, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

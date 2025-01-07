@@ -233,8 +233,17 @@ public struct Typer {
 
   /// Type checks `d`.
   private mutating func check(_ d: ParameterDeclaration.ID) {
-    _ = declaredType(of: d)
-    // TODO
+    let ascription = declaredType(of: d)
+
+    // Bail out if the ascription has an error.
+    guard let a = program.types[ascription] as? RemoteType else {
+      assert(ascription[.hasError])
+      return
+    }
+
+    if let v = program[d].default {
+      check(v, expecting: a.projectee)
+    }
   }
 
   /// Type checks `d`.
@@ -517,8 +526,8 @@ public struct Typer {
           let u = demand(RemoteType(projectee: t, access: .sink)).erased
           inputs.append(
             Parameter(
+              declaration: nil,
               label: program[v].identifier.value, type: u,
-              hasDefault: false,
               isImplicit: false))
         }
       }
@@ -612,9 +621,9 @@ public struct Typer {
     for p in ps {
       result.append(
         Parameter(
+          declaration: p,
           label: program[p].label?.value,
           type: declaredType(of: p),
-          hasDefault: false,
           isImplicit: false))
     }
     return result
@@ -860,7 +869,7 @@ public struct Typer {
             name: .init(.init(identifier: "new"), at: program[c].site),
             site: program[c].site),
           in: program.parent(containing: e))
-        program[module].replace(.init(e), for: program[e].clone(callee: .init(n)))
+        program[module].replace(.init(e), for: program[e].replacing(callee: .init(n)))
         return inferredType(calleeOf: e, in: &context)
       }
 
@@ -1023,7 +1032,7 @@ public struct Typer {
     _ o: Obligations, relatedTo n: T
   ) -> Solution {
     if o.constraints.isEmpty {
-      let s = Solution(substitutions: .init(), bindings: o.bindings, diagnostics: .init())
+      let s = Solution(bindings: o.bindings)
       commit(s, to: o)
       return s
     } else {
@@ -1041,6 +1050,29 @@ public struct Typer {
     }
     for (n, r) in s.bindings {
       program[module].bind(n, to: r)
+    }
+    for (n, e) in s.elaborations {
+      let arguments = e.elements.map({ (b) in elaborate(b, in: n) })
+      program[module].replace(.init(n), for: program[n].replacing(arguments: arguments))
+    }
+  }
+
+  /// Returns the elaboration of `b` which describes an argument in `n`.
+  private mutating func elaborate(_ b: ParameterBinding, in n: Call.ID) -> LabeledExpression {
+    switch b {
+    case .explicit(let i):
+      return program[n].arguments[i]
+
+    case .implicit:
+      fatalError("TODO")
+
+    case .defaulted(let d):
+      let t = program[module].type(assignedTo: program[d].default!) ?? .error
+      let n = program[module].insert(
+        SynthethicExpression(value: .defaultArgument(d), site: program[n].site),
+        in: program.parent(containing: n))
+      program[module].setType(t, for: n)
+      return .init(label: program[d].label, value: .init(n))
     }
   }
 

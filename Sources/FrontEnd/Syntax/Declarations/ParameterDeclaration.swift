@@ -9,8 +9,11 @@ public struct ParameterDeclaration: Declaration {
   /// The identifier of the parameter.
   public let identifier: Parsed<String>
 
-  /// The type ascription of the parameter.
+  /// The type ascription of the parameter, if any.
   public let ascription: RemoteTypeExpression.ID?
+
+  /// The default value of the parameter, if any.
+  public let `default`: ExpressionIdentity?
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
@@ -34,6 +37,11 @@ public struct ParameterDeclaration: Declaration {
       result.append(": \(program.show(a))")
     }
 
+    // Default value.
+    if let v = `default` {
+      result.append(" = \(program.show(v))")
+    }
+
     return result
   }
 
@@ -46,6 +54,7 @@ extension ParameterDeclaration: Archivable {
     self.identifier = try archive.read(Parsed<String>.self, in: &context)
     self.site = try archive.read(SourceSpan.self, in: &context)
     self.ascription = try archive.read(RemoteTypeExpression.ID?.self, in: &context)
+    self.default = try archive.read(ExpressionIdentity?.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
@@ -53,6 +62,7 @@ extension ParameterDeclaration: Archivable {
     try archive.write(identifier, in: &context)
     try archive.write(site, in: &context)
     try archive.write(ascription, in: &context)
+    try archive.write(`default`, in: &context)
   }
 
 }

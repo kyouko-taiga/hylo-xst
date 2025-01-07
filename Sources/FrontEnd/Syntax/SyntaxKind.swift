@@ -42,7 +42,9 @@ public struct SyntaxKind {
     Call.self,
     NameExpression.self,
     RemoteTypeExpression.self,
+    SynthethicExpression.self,
     TupleLiteral.self,
+    TupleTypeExpression.self,
 
     // Patterns
     BindingPattern.self,
