@@ -69,15 +69,15 @@ public struct TypeStore {
     return false
   }
 
-  /// Returns `t` sans context parameters.
-  public func head(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
-    switch self[t] {
+  /// Returns `n` sans context parameters.
+  public func head(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
+    switch self[n] {
     case let i as Implication:
       return head(i.head)
     case let u as UniversalType:
       return head(u.body)
     default:
-      return t
+      return n
     }
   }
 

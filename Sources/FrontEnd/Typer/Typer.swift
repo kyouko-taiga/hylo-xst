@@ -449,25 +449,10 @@ public struct Typer {
   private mutating func declaredType(of d: ConformanceDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[module].type(assignedTo: d) { return memoized }
 
-    var result = declaredConformanceType(program[d].extendee, program[d].concept)
-
-    let cs = program[d].contextParameters.implicit.map({ (p) in declaredType(of: p) })
-    if !cs.isEmpty {
-      result = demand(Implication(context: cs, head: result)).erased
-    }
-
-    let ps = program[d].contextParameters.explicit.compactMap { (p) in
-      let t = declaredType(of: p)
-      return program.types
-        .select(\Metatype.inhabitant, on: t)
-        .flatMap({ (m) in program.types.cast(m, to: TypeParameter.self) })
-    }
-    if !ps.isEmpty {
-      result = demand(UniversalType(parameters: ps, body: result)).erased
-    }
-
-    program[module].setType(result, for: d)
-    return result
+    let t = declaredConformanceType(program[d].extendee, program[d].concept)
+    let u = introduce(program[d].contextParameters, into: t)
+    program[module].setType(u, for: d)
+    return u
   }
 
   /// Returns the declared type of `d` without checking.
@@ -488,24 +473,10 @@ public struct Typer {
       environment = .void
     }
 
-    let a = Arrow(
-      environment: environment,
-      inputs: inputs,
-      output: output ?? .void)
-    let head = demand(a).erased
-
-    let context = program[d].contextParameters.implicit.map { (p) in
-      declaredType(of: p)
-    }
-
-    if context.isEmpty {
-      program[module].setType(head, for: d)
-      return head
-    } else {
-      let u = demand(Implication(context: context, head: head)).erased
-      program[module].setType(u, for: d)
-      return u
-    }
+    let t = demand(Arrow(environment: environment, inputs: inputs, output: output ?? .void)).erased
+    let u = introduce(program[d].contextParameters, into: t)
+    program[module].setType(u, for: d)
+    return u
   }
 
   /// Returns the declared type of `d` without checking.
@@ -680,6 +651,34 @@ public struct Typer {
       program[module].setType(t, for: d)
       return t
     }
+  }
+
+  /// Returns `t` as the head of a universal type and/or implication introducing `parameters`.
+  private mutating func introduce(
+    _ parameters: StaticParameters, into t: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    if parameters.isEmpty { return t }
+
+    var result = t
+
+    // Add implicit parameters quantifier.
+    let xs = parameters.implicit.map({ (p) in declaredType(of: p) })
+    if !xs.isEmpty {
+      result = demand(Implication(context: xs, head: result)).erased
+    }
+
+    // Add the universal quantifier.
+    let ys = parameters.explicit.compactMap { (p) in
+      let t = declaredType(of: p)
+      return program.types
+        .select(\Metatype.inhabitant, on: t)
+        .flatMap({ (m) in program.types.cast(m, to: TypeParameter.self) })
+    }
+    if !ys.isEmpty {
+      result = demand(UniversalType(parameters: ys, body: result)).erased
+    }
+
+    return result
   }
 
   /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
@@ -1443,88 +1442,152 @@ public struct Typer {
 
   }
 
-  private struct NameResolutionContext {
+  /// The context in which name resolution takes place.
+  private struct TypedQualification {
 
-    let qualification: DeclarationReference.Qualification
+    /// The expression of the qualification.
+    let value: DeclarationReference.Qualification
 
+    /// The type of the qualification.
     let type: AnyTypeIdentity
 
   }
 
+  /// Resolves the declaration to which `e` refers and returns the type of `e`.
   private mutating func resolve(
     _ e: NameExpression.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    var (unresolved, prefix) = program.components(of: e)
+    let scopeOfUse = program.parent(containing: e)
 
-    var qualification: NameResolutionContext?
-    switch prefix {
+    // Is the name qualified?
+    if let q = resolveQualification(of: e, in: &context) {
+      if q.type == .error {
+        return .error
+      } else if q.type.isVariable {
+        fatalError()
+      }
+
+      let candidates = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
+      if candidates.isEmpty {
+        let t = (program.types[q.type] as? Metatype)?.inhabitant ?? q.type
+        let n = program[e].name
+        let m = program.format("type '%T' has no member '\(n)'", [t])
+        report(.init(.error, m, at: n.site))
+        return .error
+      } else {
+        return assume(e, boundTo: candidates, in: &context.obligations)
+      }
+    }
+
+    // Unqualified case.
+    else {
+      let candidates = resolve(program[e].name.value, unqualifiedIn: scopeOfUse)
+      if candidates.isEmpty {
+        report(program.undefinedSymbol(program[e].name))
+        return .error
+      } else {
+        return assume(e, boundTo: candidates, in: &context.obligations)
+      }
+    }
+  }
+
+  /// Resolves and returns the qualification of `e`, which occurs in `context`.
+  private mutating func resolveQualification(
+    of e: NameExpression.ID, in context: inout InferenceContext
+  ) -> TypedQualification? {
+    switch program[e].qualification {
     case .none:
-      // All components are nominal.
-      qualification = nil
+      return nil
 
     case .implicit:
-      // First component is implicit; use the expected type.
       if let h = context.expectedType {
-        qualification = .init(qualification: .implicit, type: h)
+        return .init(value: .implicit, type: h)
       } else {
         report(.init(.error, "no context to resolve '\(program[e].name)'", at: program[e].site))
-        return .error
+        return .init(value: .implicit, type: .error)
       }
 
     case .explicit(let p):
-      // First component is an arbitrary expression; use inference.
       let t = inferredType(of: p, in: &context)
-      qualification = .init(qualification: .explicit(p), type: t)
-    }
-
-    let scopeOfUse = program.parent(containing: e)
-    while let component = unresolved.popLast() {
-      // Gather the declarations to which `c` may refer.
-      let candidates: [NameResolutionCandidate]
-      if let q = qualification {
-        candidates = resolve(program[component].name.value, memberOf: q, visibleFrom: scopeOfUse)
-      } else {
-        candidates = resolve(program[component].name.value, unqualifiedIn: scopeOfUse)
-      }
-
-      // Fail if there is no candidate.
-      if candidates.isEmpty {
-        let n = program[component].name
-        if let q = qualification {
-          let m = program.format("type '%T' has no member '\(n)'", [q.type])
-          report(.init(.error, m, at: n.site))
-        } else {
-          report(program.undefinedSymbol(n.value, at: n.site))
-        }
-        return .error
-      }
-
-      // TODO: Filter out inaccessible candidates
-
-      let t = assume(component, boundTo: candidates, in: &context.obligations)
-      switch program.types[t] {
-      case is TypeVariable:
-        // We need inference to continue.
-        break
-
-      case let t as Metatype:
-        // Name resolution proceeds in the the inhabitant of the metatype rather than the metatype
-        // itself so that expressions of the form `T.m` can denote entities introduced as members
-        // of `T` (instead of `Metatype<T>`).
-        qualification = .init(qualification: .explicit(.init(component)), type: t.inhabitant)
-
-      default:
-        // Next component should be member of `t`.
-        qualification = .init(qualification: .explicit(.init(component)), type: t)
-      }
-    }
-
-    if unresolved.isEmpty {
-      return context.obligations.syntaxToType[e.erased]!
-    } else {
-      fatalError("TODO")
+      let u = (program.types[t] as? RemoteType)?.projectee ?? t
+      return .init(value: .explicit(p), type: u)
     }
   }
+
+//  private mutating func resolve2(
+//    _ e: NameExpression.ID, in context: inout InferenceContext
+//  ) -> AnyTypeIdentity {
+//    var (unresolved, prefix) = program.components(of: e)
+//
+//    var qualification: TypedQualification?
+//    switch prefix {
+//    case .none:
+//      // All components are nominal.
+//      qualification = nil
+//
+//    case .implicit:
+//      // First component is implicit; use the expected type.
+//      if let h = context.expectedType {
+//        qualification = .init(value: .implicit, type: h)
+//      } else {
+//        report(.init(.error, "no context to resolve '\(program[e].name)'", at: program[e].site))
+//        return .error
+//      }
+//
+//    case .explicit(let p):
+//      // First component is an arbitrary expression; use inference.
+//      let t = inferredType(of: p, in: &context)
+//      qualification = .init(value: .explicit(p), type: t)
+//    }
+//
+//    let scopeOfUse = program.parent(containing: e)
+//    while let component = unresolved.popLast() {
+//      // Gather the declarations to which `c` may refer.
+//      let candidates: [NameResolutionCandidate]
+//      if let q = qualification {
+//        candidates = resolve(program[component].name.value, memberOf: q, visibleFrom: scopeOfUse)
+//      } else {
+//        candidates = resolve(program[component].name.value, unqualifiedIn: scopeOfUse)
+//      }
+//
+//      // Fail if there is no candidate.
+//      if candidates.isEmpty {
+//        let n = program[component].name
+//        if let q = qualification {
+//          let m = program.format("type '%T' has no member '\(n)'", [q.type])
+//          report(.init(.error, m, at: n.site))
+//        } else {
+//          report(program.undefinedSymbol(n.value, at: n.site))
+//        }
+//        return .error
+//      }
+//
+//      // TODO: Filter out inaccessible candidates
+//
+//      let t = assume(component, boundTo: candidates, in: &context.obligations)
+//      switch program.types[t] {
+//      case is TypeVariable:
+//        // We need inference to continue.
+//        break
+//
+//      case let t as Metatype:
+//        // Name resolution proceeds in the the inhabitant of the metatype rather than the metatype
+//        // itself so that expressions of the form `T.m` can denote entities introduced as members
+//        // of `T` (instead of `Metatype<T>`).
+//        qualification = .init(value: .explicit(.init(component)), type: t.inhabitant)
+//
+//      default:
+//        // Next component should be member of `t`.
+//        qualification = .init(value: .explicit(.init(component)), type: t)
+//      }
+//    }
+//
+//    if unresolved.isEmpty {
+//      return context.obligations.syntaxToType[e.erased]!
+//    } else {
+//      fatalError("TODO")
+//    }
+//  }
 
   private mutating func resolve(
     _ n: Name, unqualifiedIn scopeOfUse: ScopeIdentity
@@ -1573,14 +1636,24 @@ public struct Typer {
     }
   }
 
+  /// Returns candidates for resolving `name` as a member of `qualification` in `scopeOfUse.`
   private mutating func resolve(
-    _ n: Name, memberOf qualification: NameResolutionContext,
+    _ n: Name, memberOf qualification: TypedQualification,
     visibleFrom scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
-    let ds = lookup(n.identifier, memberOf: qualification.type, visibleFrom: scopeOfUse)
+    let receiver: AnyTypeIdentity
+    if let t = program.types[qualification.type] as? Metatype {
+      // Name resolution proceeds in the the inhabitant of the metatype rather than the metatype
+      // itself so that expressions of the form `T.m` can denote entities introduced as members
+      // of `T` (instead of `Metatype<T>`).
+      receiver = t.inhabitant
+    } else {
+      assert(!qualification.type.isVariable, "cannot resolve members of a type variable")
+      receiver = qualification.type
+    }
 
     var candidates: [NameResolutionCandidate] = []
-    for d in ds {
+    for d in lookup(n.identifier, memberOf: receiver, visibleFrom: scopeOfUse) {
       candidates.append(.init(reference: .direct(d), type: typeOfName(boundTo: d)))
     }
 
@@ -1591,7 +1664,7 @@ public struct Typer {
 
     for (concept, ds) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
       let p = demand(Trait(declaration: concept)).erased
-      let a = Value.type(qualification.type)
+      let a = Value.type(receiver)
       let t = demand(TypeApplication(abstraction: p, arguments: [a])).erased
       let summonings = summon(t, in: scopeOfUse)
 

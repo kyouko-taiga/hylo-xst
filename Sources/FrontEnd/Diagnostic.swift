@@ -110,9 +110,14 @@ extension Program {
     return .init(.error, m, at: site)
   }
 
-  /// Returns an error diagnosing name.
+  /// Returns an error diagnosing an undefined symbol.
   internal func undefinedSymbol(_ n: Name, at site: SourceSpan) -> Diagnostic {
     .init(.error, "undefined symbol '\(n)'", at: site)
+  }
+
+  /// Returns an error diagnosing an undefined symbol.
+  internal func undefinedSymbol(_ n: Parsed<Name>) -> Diagnostic {
+    undefinedSymbol(n.value, at: n.site)
   }
 
 }
