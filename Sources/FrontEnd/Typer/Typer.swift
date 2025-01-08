@@ -17,9 +17,6 @@ public struct Typer {
   /// The set of declarations whose type is being computed.
   private var declarationsOnStack: Set<DeclarationIdentity>
 
-  /// The identifier of the next fresh variable.
-  private var nextFreshIdentifier: Int = 0
-
   /// A predicate to determine whether inference steps should be logged.
   private let isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)?
 
@@ -1318,10 +1315,12 @@ public struct Typer {
       return continuation(&self, result)
     }
 
-    var ds = program.declarations(of: ConformanceDeclaration.self, lexicallyIn: scopeOfUse)
+    // Collect givens defined in `scopeOfUse`.
+    var gs: [ConformanceDeclaration.ID] = []
+    appendGivens(in: program.declarations(lexicallyIn: scopeOfUse), to: &gs)
 
-    // If there aren't any givens in `s`, just summon in the parent scope.
-    if ds.isEmpty {
+    // If there aren't any givens in `scopeOfUse`, just summon in the parent scope.
+    if gs.isEmpty && !scopeOfUse.isFile {
       let result = program.parent(containing: scopeOfUse).map({ (p) in summon(t, in: p) }) ?? []
       cache.scopeToSummoned[scopeOfUse, default: [:]][t] = result
       return continuation(&self, result)
@@ -1331,11 +1330,17 @@ public struct Typer {
     // of a new given may change the result of implicit resolution. Instead, we must consider all
     // visible givens at once.
     for p in program.scopes(from: scopeOfUse).dropFirst() {
-      ds.append(contentsOf: program.declarations(of: ConformanceDeclaration.self, lexicallyIn: p))
+      appendGivens(in: program.declarations(lexicallyIn: p), to: &gs)
+    }
+    for f in program[scopeOfUse.module].sourceFileIdentities where f != scopeOfUse.file {
+      appendGivens(in: program.declarations(lexicallyIn: .init(file: f)), to: &gs)
+    }
+    for i in imports(of: scopeOfUse.file) {
+      appendGivens(in: program[i].topLevelDeclarations, to: &gs)
     }
 
     var done: [SummonResult] = []
-    var work: [ImplicitDeduction.Continuation] = ds.map { (d) in
+    var work: [ImplicitDeduction.Continuation] = gs.map { (d) in
       let u = declaredType(of: d)
       let w = WitnessExpression(value: .reference(.direct(.init(d))), type: u)
       return { (me) in
@@ -1427,6 +1432,15 @@ public struct Typer {
 
     // Resolution failed.
     else { return [.fail] }
+  }
+
+  /// Appends the declarations of givens in `ds` to `gs`.
+  private func appendGivens<S: Sequence<DeclarationIdentity>>(
+    in ds: S, to gs: inout [ConformanceDeclaration.ID]
+  ) {
+    for d in ds {
+      if let g = program.cast(d, to: ConformanceDeclaration.self) { gs.append(g) }
+    }
   }
 
   // MARK: Name resolution
@@ -1972,6 +1986,11 @@ public struct Typer {
     program[module].addDiagnostics(ds)
   }
 
+  /// Returns the identity of a fresh type variable.
+  private mutating func fresh() -> TypeVariable.ID {
+    program.types.fresh()
+  }
+
   /// Returns the unique identity of a tree that is equal to `t`.
   private mutating func demand<T: TypeTree>(_ t: T) -> T.ID {
     program.types.demand(t)
@@ -1981,12 +2000,6 @@ public struct Typer {
   private mutating func metatype<T: TypeTree>(of t: T) -> Metatype.ID {
     let n = demand(t).erased
     return demand(Metatype(inhabitant: n))
-  }
-
-  /// Returns the identity of a fresh type variable.
-  public mutating func fresh() -> TypeVariable.ID {
-    defer { nextFreshIdentifier += 1 }
-    return .init(uncheckedFrom: AnyTypeIdentity(variable: nextFreshIdentifier))
   }
 
   /// Returns `n` assuming it identifies a node of type `U`.

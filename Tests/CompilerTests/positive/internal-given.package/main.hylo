@@ -1,0 +1,7 @@
+trait P {}
+
+fun f<T where T: P>(x: T) {}
+
+fun main() {
+  f(x: ())
+}

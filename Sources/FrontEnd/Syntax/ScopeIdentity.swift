@@ -19,18 +19,24 @@ public struct ScopeIdentity: Hashable {
     self.representation = node
   }
 
+  /// The module containing this scope.
+  public var module: Program.ModuleIdentity {
+    representation.module
+  }
+
   /// The source file containing this scope.
   public var file: Program.SourceFileIdentity {
     representation.file
   }
 
+  /// `true` iff `self` represents a file.
+  public var isFile: Bool {
+    representation.offset == UInt32.max
+  }
+
   /// The syntax tree that `self` represents, or `nil` if `self` represents a file.
   public var node: AnySyntaxIdentity? {
-    if representation.offset != UInt32.max {
-      return .init(uncheckedFrom: representation)
-    } else {
-      return nil
-    }
+    isFile ? nil : .init(uncheckedFrom: representation)
   }
 
 }

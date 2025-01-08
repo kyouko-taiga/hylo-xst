@@ -101,6 +101,8 @@ final class CompilerTests: XCTestCase {
   private func assertSansError(_ program: Program) {
     if !program.containsError { return }
 
+    print(Array(program.diagnostics))
+
     XCTFail("program contains one or more errors")
     let root = URL(filePath: #filePath).deletingLastPathComponent()
     let observations: [FileName: [Diagnostic]] = .init(

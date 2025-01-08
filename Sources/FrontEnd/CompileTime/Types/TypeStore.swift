@@ -21,9 +21,19 @@ public struct TypeStore {
   /// The types contained in this store.
   private var types: StableSet<AnyTypeTree>
 
+  /// The identifier of the next fresh variable.
+  private var nextFreshIdentifier: Int
+
   /// Creates an empty instance.
   public init() {
     self.types = []
+    self.nextFreshIdentifier = 0
+  }
+
+  /// Returns the identity of a fresh type variable.
+  public mutating func fresh() -> TypeVariable.ID {
+    defer { nextFreshIdentifier += 1 }
+    return .init(uncheckedFrom: AnyTypeIdentity(variable: nextFreshIdentifier))
   }
 
   /// Inserts `t` in `self` it isn't already present and returns the identity of an equal tree.
@@ -79,21 +89,6 @@ public struct TypeStore {
     default:
       return n
     }
-  }
-
-  /// Returns the curried form of `n`.
-  public mutating func curried(_ n: Implication.ID) -> AnyTypeIdentity {
-    let i = self[n]
-
-    // Nothing to do if the implication has a singlement element on the LHS.
-    if i.context.count == 1 { return n.erased }
-
-    // Otherwise, build a sequence of implications.
-    var result = i.head
-    for c in i.context.reversed() {
-      result = demand(Implication(context: [c], head: result)).erased
-    }
-    return result
   }
 
   /// Returns `n` if it identifies a tree of type `U`; otherwise, returns `nil`.

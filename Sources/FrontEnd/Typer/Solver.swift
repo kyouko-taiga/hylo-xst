@@ -140,7 +140,7 @@ internal struct Solver {
     let k = goals[g] as! CallConstraint
 
     // Can't do anything before we've inferred the type of the callee.
-    var callee = typer.program.types.head(k.callee)
+    let callee = typer.program.types.head(k.callee)
     if callee.isVariable {
       return postpone(g)
     }
@@ -155,49 +155,91 @@ internal struct Solver {
       break
     }
 
-    // If we got to this point, we know that callee has a callable type.
-    let f = typer.program.types[callee] as! any Callable
+    // Insert compile-time implicits.
+    let scopeOfUse = typer.program.parent(containing: k.origin)
+    let calleeSite = typer.program[typer.program[k.origin].callee].site
+    var subgoals: [any Constraint] = []
+    let adaptedCallee = adaptCalleeType(
+      k.callee, in: scopeOfUse, at: calleeSite, addingSubgoalsInto: &subgoals)
 
     // Check that the argument list has the right shape.
-    guard let (bs, cs) = matches(k, inputsOf: f) else {
+    guard let bs = matches(k, inputsOf: adaptedCallee, addingSubgoalsInto: &subgoals) else {
       return .failure { (_, _, p, d) in
-        d.insert(p.incompatibleLabels(found: k.labels, expected: f.labels, at: k.site))
+        d.insert(p.incompatibleLabels(found: k.labels, expected: adaptedCallee.labels, at: k.site))
       }
     }
     if bs.hasDefaulted {
       elaborations.append((k.origin, bs))
     }
 
-    // Resolve compile-time implicits.
-    let scopeOfUse = typer.program.parent(containing: k.origin)
-    let calleeSite = typer.program[typer.program[k.origin].callee].site
-    var subgoals: [GoalIdentity] = []
-    adaptCalleeType(
-      k.callee, in: scopeOfUse, at: calleeSite,
-      addingSubgoalsInto: &subgoals)
+    // Constrain the return type.
+    let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
+    let o = adaptedCallee.output(calleeIsMutating: m)
+    subgoals.append(TypeEquality(lhs: o, rhs: k.output, site: k.site))
 
     // Simplify the constraint.
-    for c in cs { subgoals.append(schedule(c)) }
-    let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
-    let o = f.output(calleeIsMutating: m)
-    subgoals.append(schedule(TypeEquality(lhs: o, rhs: k.output, site: k.site)))
-
-    return delegate(subgoals)
+    let cs = subgoals.map({ (s) in schedule(s) })
+    return delegate(cs)
   }
 
   /// Adds constraints to resolve the arguments to the compile-time context parameters of a callee
   /// of type `t` in `scopeOfUse` at `site` at the end of `subgoals`.
   private mutating func adaptCalleeType(
     _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity, at site: SourceSpan,
-    addingSubgoalsInto subgoals: inout [GoalIdentity]
-  ) {
-    // Is the callee expecting contextual parameters?
-    if let i = typer.program.types[t] as? Implication {
-      for t in i.context {
-        subgoals.append(schedule(Summonable(type: t, scope: scopeOfUse, site: site)))
+    addingSubgoalsInto subgoals: inout [any Constraint]
+  ) -> any Callable {
+    switch typer.program.types[t] {
+    case let u as UniversalType:
+      let subs = Dictionary(
+        uniqueKeysWithValues: u.parameters.map({ (p) in
+          (p.erased, typer.program.types.fresh().erased)
+        }))
+      let open = typer.program.types.substitute(subs, in: u.body)
+      return adaptCalleeType(open, in: scopeOfUse, at: site, addingSubgoalsInto: &subgoals)
+
+    case let u as Implication:
+      for t in u.context {
+        subgoals.append(Summonable(type: t, scope: scopeOfUse, site: site))
       }
-      adaptCalleeType(i.head, in: scopeOfUse, at: site, addingSubgoalsInto: &subgoals)
+      return adaptCalleeType(u.head, in: scopeOfUse, at: site, addingSubgoalsInto: &subgoals)
+
+    case let u:
+      return u as! any Callable
     }
+  }
+
+  /// Returns how the types of the arguments in `k` match the parameters of `f`.
+  private mutating func matches(
+    _ k: CallConstraint, inputsOf f: any Callable,
+    addingSubgoalsInto subgoals: inout [any Constraint]
+  ) -> ParameterBindings? {
+    var bindings = ParameterBindings()
+
+    var i = 0
+    for p in f.inputs {
+      // Is there's an explicit argument with the right label?
+      if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
+        let s = typer.program[typer.program[k.origin].arguments[i].value].site
+        let a = k.arguments[i]
+        bindings.append(.explicit(i))
+        subgoals.append(ArgumentConstraint(lhs: a.type, rhs: p.type, site: s))
+        i += 1
+      }
+
+      // The parameter has a default value?
+      else if let d = p.declaration, typer.program[d].default != nil {
+        bindings.append(.defaulted(d))
+        continue
+      }
+
+      // TODO: Run-time implicits
+
+      // Arguments do not match.
+      else { return nil }
+    }
+
+    assert(bindings.elements.count == f.inputs.count)
+    return i == k.arguments.count ? bindings : nil
   }
 
   /// Returns a failure to solve a `k` due to an invalid callee type.
@@ -231,40 +273,6 @@ internal struct Solver {
     default:
       return false
     }
-  }
-
-  /// Returns how the types of the arguments in `k` match the parameters of `f`.
-  private mutating func matches(
-    _ k: CallConstraint, inputsOf f: any Callable
-  ) -> (ParameterBindings, [ArgumentConstraint])? {
-    var bs = ParameterBindings()
-    var cs: [ArgumentConstraint] = []
-
-    var i = 0
-    for p in f.inputs {
-      // Is there's an explicit argument with the right label?
-      if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
-        let s = typer.program[typer.program[k.origin].arguments[i].value].site
-        let a = k.arguments[i]
-        bs.append(.explicit(i))
-        cs.append(ArgumentConstraint(lhs: a.type, rhs: p.type, site: s))
-        i += 1
-      }
-
-      // The parameter has a default value?
-      else if let d = p.declaration, typer.program[d].default != nil {
-        bs.append(.defaulted(d))
-        continue
-      }
-
-      // TODO: Implicits
-
-      // Arguments do not match.
-      else { return nil }
-    }
-
-    assert(bs.elements.count == f.inputs.count)
-    return i == k.arguments.count ? (bs, cs) : nil
   }
 
   /// Discharges `g`, which is an argument constraint.

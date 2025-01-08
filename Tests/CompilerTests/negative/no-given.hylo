@@ -16,3 +16,7 @@ fun h() {
   given <T where T: P> T: Q {}
   f()
 }
+
+fun i<T where T: P>(x: T) {
+  i(x: ())
+}
