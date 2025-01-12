@@ -6,7 +6,7 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   /// The introducer of this declaration, unless it is part of a context clause.
   public let introducer: Token?
 
-  /// The parameters of the conformance.
+  /// The compile-time parameters of the conformance.
   public let contextParameters: StaticParameters
 
   /// The type for which the conformance is declared.

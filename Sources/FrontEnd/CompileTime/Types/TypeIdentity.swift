@@ -100,7 +100,6 @@ public struct AnyTypeIdentity: Hashable {
 
 }
 
-/// A type denoting the identity of type tree.
 extension AnyTypeIdentity: TypeIdentity {
 
   /// The type-erased value of this identity.

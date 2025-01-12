@@ -1,4 +1,4 @@
-/// The type of a value projected from another context.
+/// The type of a projected value.
 public struct RemoteType: TypeTree {
 
   /// The type of the projected value.

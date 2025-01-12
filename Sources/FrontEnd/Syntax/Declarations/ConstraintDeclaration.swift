@@ -1,40 +1,5 @@
 import Archivist
 
-///// The declaration of a conformance constraint in a context clause.
-//public struct ConformanceConstraint: Declaration {
-//
-//  /// The type for which the conformance is declared.
-//  public let extendee: ExpressionIdentity
-//
-//  /// The trait to which the conformance is declared.
-//  public let concept: ExpressionIdentity
-//
-//  /// The site from which `self` was parsed.
-//  public let site: SourceSpan
-//
-//  /// Returns a parsable representation of `self`, which is a node of `program`.
-//  public func show(readingChildrenFrom program: Program) -> String {
-//    "\(program.show(extendee)): \(program.show(concept))"
-//  }
-//
-//}
-//
-//extension ConformanceConstraint: Archivable {
-//
-//  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-//    self.extendee = try archive.read(ExpressionIdentity.self, in: &context)
-//    self.concept = try archive.read(ExpressionIdentity.self, in: &context)
-//    self.site = try archive.read(SourceSpan.self, in: &context)
-//  }
-//
-//  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-//    try archive.write(extendee, in: &context)
-//    try archive.write(concept, in: &context)
-//    try archive.write(site, in: &context)
-//  }
-//
-//}
-
 /// The declaration of a constraint in a context clause.
 public enum ConstraintDeclaration: Equatable {
 

@@ -79,7 +79,7 @@ public struct TypeStore {
     return false
   }
 
-  /// Returns `n` sans context parameters.
+  /// Returns `n` sans context clause.
   public func head(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
     switch self[n] {
     case let i as Implication:
@@ -89,6 +89,44 @@ public struct TypeStore {
     default:
       return n
     }
+  }
+
+  /// Returns the head and context clause of `n`.
+  public func bodyAndContext(
+    _ n: AnyTypeIdentity
+  ) -> (body: AnyTypeIdentity, context: ContextClause) {
+    let p: [TypeParameter.ID]
+    let b: AnyTypeIdentity
+
+    if let u = self[n] as? UniversalType {
+      p = u.parameters
+      b = u.body
+    } else {
+      p = []
+      b = n
+    }
+
+    if let i = self[b] as? Implication {
+      return (i.head, .init(parameters: p, usings: i.context))
+    } else {
+      return (b, .init(parameters: p, usings: []))
+    }
+  }
+
+  /// Returns `t` as the head of a universal type and/or implication introducing `c`.
+  public mutating func introduce(_ c: ContextClause, into n: AnyTypeIdentity) -> AnyTypeIdentity {
+    // Fast path: the clause is empty.
+    if c.isEmpty { return n }
+
+    // Slow path: introduce parameters.
+    var result = n
+    if !c.usings.isEmpty {
+      result = demand(Implication(context: c.usings, head: result)).erased
+    }
+    if !c.parameters.isEmpty {
+      result = demand(UniversalType(parameters: c.parameters, body: result)).erased
+    }
+    return result
   }
 
   /// Returns `n` if it identifies a tree of type `U`; otherwise, returns `nil`.
@@ -216,7 +254,7 @@ public struct TypeStore {
     self.map(n) { (s, t) in .stepInto(substitutions[t] ?? t) }
   }
 
-  /// Returns `true` if `t` and `u` can be unified, , recording substitutions in `subs`.
+  /// Returns `true` if `t` and `u` can be unified, recording substitutions in `subs`.
   public func unifiable(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> SubstitutionTable? {
     var s = SubstitutionTable()
     if unifiable(t, u, &s) { return s } else { return nil }

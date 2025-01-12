@@ -21,6 +21,11 @@ public struct SyntaxKind {
     l.value == r
   }
 
+  /// Returns `true` iff `l` and `r` denote the same node type.
+  public static func == (l: Self, r: (any Syntax.Type)?) -> Bool {
+    l.value == r
+  }
+
   static let allValues: [any Syntax.Type] = [
     // Declarations
     AssociatedTypeDeclaration.self,

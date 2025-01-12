@@ -1,0 +1,6 @@
+trait P { fun f() }
+
+given Void: P {
+  fun f() {}
+  fun f() {}
+}

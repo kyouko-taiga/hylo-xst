@@ -186,7 +186,7 @@ internal struct OverloadConstraint: Constraint {
   internal private(set) var type: AnyTypeIdentity
 
   /// The set containing the declaration referred to by `name`.
-  internal let candidates: [Typer.NameResolutionCandidate]
+  internal let candidates: [NameResolutionCandidate]
 
   /// The site from which the constraint originates.
   internal let site: SourceSpan

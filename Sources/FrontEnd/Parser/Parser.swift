@@ -151,7 +151,7 @@ public struct Parser {
     in module: inout Module
   ) throws -> ConformanceDeclaration.ID {
     let introducer = try take(.given) ?? expected("'given'")
-    let contextParameters = try parseCompileTimeParameters(in: &module)
+    let staticParameters = try parseOptionalCompileTimeParameters(in: &module)
     let extendee = try parseExpression(in: &module)
     _ = try take(.colon) ?? expected("':'")
     let concept = try parseExpression(in: &module)
@@ -160,7 +160,7 @@ public struct Parser {
     return module.insert(
       ConformanceDeclaration(
         introducer: introducer,
-        contextParameters: contextParameters,
+        contextParameters: staticParameters,
         extendee: extendee,
         concept: concept,
         members: members,
@@ -177,12 +177,14 @@ public struct Parser {
     in module: inout Module
   ) throws -> ExtensionDeclaration.ID {
     let introducer = try take(.extension) ?? expected("'extension'")
+    let staticParameters = try parseOptionalCompileTimeParameters(in: &module)
     let extendee = try parseExpression(in: &module)
     let members = try parseTypeBody(in: &module)
 
     return module.insert(
       ExtensionDeclaration(
         introducer: introducer,
+        contextParameters: staticParameters,
         extendee: extendee,
         members: members,
         site: span(from: introducer)),
@@ -201,7 +203,7 @@ public struct Parser {
   ) throws -> FunctionDeclaration.ID {
     let introducer = try take(.fun) ?? expected("'fun'")
     let identifier = try parseFunctionIdentifier()
-    let contextParameters = try parseCompileTimeParameters(in: &module)
+    let staticParameters = try parseOptionalCompileTimeParameters(in: &module)
     let runtimeParameters = try parseParenthesizedParameterList(in: &module)
     let effect = parseOptionalAccessEffect() ?? Parsed(.let, at: .empty(at: position))
     let output = try parseOptionalReturnTypeAscription(in: &module)
@@ -211,7 +213,7 @@ public struct Parser {
       FunctionDeclaration(
         introducer: introducer,
         identifier: identifier,
-        contextParameters: contextParameters,
+        contextParameters: staticParameters,
         parameters: runtimeParameters,
         effect: effect,
         output: output,
@@ -226,7 +228,7 @@ public struct Parser {
   ///     compile-time-parameters ::=
   ///       '<' generic-parameters where-clause? '>'
   ///
-  private mutating func parseCompileTimeParameters(
+  private mutating func parseOptionalCompileTimeParameters(
     in module: inout Module
   ) throws -> StaticParameters {
     guard let start = peek(), start.kind == .leftAngle else {

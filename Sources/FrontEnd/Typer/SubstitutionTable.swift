@@ -1,8 +1,10 @@
+import Utilities
+
 /// A substitution table mapping type and term variables to their values.
 public struct SubstitutionTable {
 
   /// A map from type variable to its assignment.
-  private var types: [TypeVariable.ID: AnyTypeIdentity]
+  internal private(set) var types: [TypeVariable.ID: AnyTypeIdentity]
 
   /// Creates an empty table.
   internal init() {
@@ -58,6 +60,19 @@ public struct SubstitutionTable {
     var w = v
     while let a = types[w], a.isVariable { w = .init(uncheckedFrom: a) }
     return w
+  }
+
+}
+
+extension Program {
+
+  /// Returns a debug representation of `t`.
+  public func show(_ t: SubstitutionTable) -> String {
+    let ss = t.optimized()
+    let ts = ss.types.sorted(by: \.key.erased.bits).map { (k, v) in
+      format("%T: %T", [k.erased, v])
+    }
+    return "SubstitutionTable(types: [\(list: ts)])"
   }
 
 }

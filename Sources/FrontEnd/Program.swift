@@ -202,7 +202,16 @@ public struct Program {
     kind(of: n).value is any Scope.Type
   }
 
+  /// Returns `true` iff `n` occurs at the top-level of a source file.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func isTopLevel<T: SyntaxIdentity>(_ n: T) -> Bool {
+    parent(containing: n).node == nil
+  }
+
   /// Returns `true` iff `n` is a trait requirement.
+  ///
+  /// - Rquires: The module containing `n` is scoped.
   public func isRequirement<T: SyntaxIdentity>(_ n: T) -> Bool {
     switch kind(of: n) {
     case AssociatedTypeDeclaration.self:
@@ -216,14 +225,21 @@ public struct Program {
     }
   }
 
-  /// Returns `true` iff `n` occurs at the top-level of a source file.
+  /// Returns `true` iff `n` declares a member in an type extension.
   ///
-  /// - Requires: The module containing `s` is scoped.
-  public func isTopLevel<T: SyntaxIdentity>(_ n: T) -> Bool {
-    parent(containing: n).node == nil
+  /// - Rquires: The module containing `n` is scoped.
+  public func isExtensionMember<T: SyntaxIdentity>(_ n: T) -> Bool {
+    switch kind(of: n) {
+    case FunctionDeclaration.self:
+      return parent(containing: n, as: ExtensionDeclaration.self) != nil
+    case InitializerDeclaration.self:
+      return parent(containing: n, as: ExtensionDeclaration.self) != nil
+    default:
+      return false
+    }
   }
 
-  /// Returns `true` iff `n` declares non-static a member entity.
+  /// Returns `true` iff `n` declares a member entity.
   ///
   /// - Requires: The module containing `s` is scoped.
   public func isMember(_ n: FunctionDeclaration.ID) -> Bool {
@@ -358,6 +374,52 @@ public struct Program {
     }
   }
 
+  /// Retutns whether `m` or `n` is lexically closer to `s`.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func compareLexicalDistance<T: SyntaxIdentity, U: SyntaxIdentity>(
+    _ m: T, _ n: U, relativeTo s: ScopeIdentity
+  ) -> StrictOrdering {
+    // Is `m` in the same module as `s`?
+    if m.module == s.module {
+      // `m` is closer if it has more ancestors or `n` is in another module.
+      if n.module == s.module {
+        return compareAncestors(m, n)
+      } else {
+        return .ascending
+      }
+    }
+
+    // Is `n` in the same module as `s`?
+    else if n.module == s.module {
+      return .descending
+    }
+
+    // Otherwise, they have the same distance.
+    else { return .equal }
+  }
+
+  /// Returns the result of the three-way comparison of the number of ancestors of `m` and `n`.
+  ///
+  /// - Requires: `m` and `n` are in the same module, which is scoped.
+  public func compareAncestors<T: SyntaxIdentity, U: SyntaxIdentity>(
+    _ m: T, _ n: U
+  ) -> StrictOrdering {
+    assert(m.module == n.module)
+
+    var p = parent(containing: m)
+    var q = parent(containing: n)
+    while let a = p.node {
+      if let b = q.node {
+        p = parent(containing: a)
+        q = parent(containing: b)
+      } else {
+        return .descending
+      }
+    }
+    return q.node == nil ? .equal : .ascending
+  }
+
   /// Returns the declarations directly contained in `s`.
   ///
   /// - Requires: The module containing `s` is scoped.
@@ -441,6 +503,8 @@ public struct Program {
       return name(of: castUnchecked(d, to: StructDeclaration.self))
     case TypeAliasDeclaration.self:
       return name(of: castUnchecked(d, to: TypeAliasDeclaration.self))
+    case VariableDeclaration.self:
+      return name(of: castUnchecked(d, to: VariableDeclaration.self))
     default:
       return nil
     }
@@ -480,6 +544,11 @@ public struct Program {
 
   /// Returns the name of `d`.
   public func name(of d: ParameterDeclaration.ID) -> Name {
+    Name(identifier: self[d].identifier.value)
+  }
+
+  /// Returns the name of `d`.
+  public func name(of d: VariableDeclaration.ID) -> Name {
     Name(identifier: self[d].identifier.value)
   }
 

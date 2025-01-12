@@ -28,19 +28,19 @@ extension Model {
   /// The implementation of a concept requirement.
   public enum Implementation: Hashable {
 
-    /// An explicit implementation, written in sources.
-    case explicit(DeclarationReference, AnyTypeIdentity)
-
     /// A synthesized implementation.
     case synthetic
+
+    /// An explicit implementation, written in sources.
+    case explicit(DeclarationReference, AnyTypeIdentity)
 
     /// The type of the implementation.
     public var type: AnyTypeIdentity {
       switch self {
-      case .explicit(_, let t):
-        return t
       case .synthetic:
         return .error
+      case .explicit(_, let t):
+        return t
       }
     }
 

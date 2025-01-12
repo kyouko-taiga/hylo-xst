@@ -21,4 +21,26 @@ public struct WitnessExpression: Hashable {
   /// The type of the witness.
   public let type: AnyTypeIdentity
 
+  /// A measure of the size of the deduction tree used to produce the witness.
+  public var elaborationCost: Int {
+    switch value {
+    case .reference:
+      return 0
+    case .termApplication(let w, let a):
+      return 1 + w.elaborationCost + a.elaborationCost
+    case .typeApplication(let w, _):
+      return w.elaborationCost
+    }
+  }
+
+  /// The reference to the declaration of the witness evaluated by this expression.
+  public var declaration: DeclarationReference {
+    switch value {
+    case .reference(let d):
+      return d
+    case .termApplication(let w, _), .typeApplication(let w, _):
+      return w.declaration
+    }
+  }
+
 }

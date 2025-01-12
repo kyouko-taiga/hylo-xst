@@ -151,6 +151,7 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ExtensionDeclaration.ID, calling v: inout T) {
+    visit(self[n].contextParameters, calling: &v)
     visit(self[n].extendee, calling: &v)
     visit(self[n].members, calling: &v)
   }

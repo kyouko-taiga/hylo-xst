@@ -335,7 +335,7 @@ internal struct Solver {
   private mutating func solve(overload g: GoalIdentity) -> Solution {
     let k = goals[g] as! OverloadConstraint
 
-    var solutions: [Solution] = []
+    var viable: [(choice: NameResolutionCandidate, solution: Solution)] = []
     for choice in k.candidates {
       let equality = TypeEquality(lhs: k.type, rhs: choice.type, site: k.site)
       log("- pick: \(typer.program.show(equality))")
@@ -354,18 +354,23 @@ internal struct Solver {
 
         if newScore < best {
           best = newScore
-          solutions = [newSolution]
+          viable = [(choice, newSolution)]
         } else {
-          solutions.append(newSolution)
+          viable.append((choice, newSolution))
         }
       }
     }
 
-    if let s = solutions.uniqueElement {
+    let scopeOfUse = typer.program.parent(containing: k.name)
+    let least = viable.least { (a, b) in
+      typer.program.isPreferred(a.choice, other: b.choice, in: scopeOfUse)
+    }
+
+    if let (_, s) = least {
       return s
     } else {
       // There must be at least one solution.
-      var s = solutions[0]
+      var s = viable[0].solution
       let d = Diagnostic(
         .error, "ambiguous use of '\(typer.program[k.name].name.value)'", at: k.site)
       s.add(d)

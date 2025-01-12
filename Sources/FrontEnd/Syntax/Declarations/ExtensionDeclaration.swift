@@ -6,6 +6,9 @@ public struct ExtensionDeclaration: TypeExtendingDeclaration {
   /// The introducer of this declaration.
   public let introducer: Token
 
+  /// The compile-time parameters of the extension.
+  public let contextParameters: StaticParameters
+
   /// The type being extended.
   public let extendee: ExpressionIdentity
 
@@ -18,13 +21,14 @@ public struct ExtensionDeclaration: TypeExtendingDeclaration {
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     let e = program.show(extendee)
-    let ms = members.map(program.show(_:)).lazy
+    let w = contextParameters.isEmpty ? "" : " \(program.show(contextParameters))"
+    let m = members.map(program.show(_:)).lazy
       .map(\.indented)
       .joined(separator: "\n")
 
     return """
-    extension \(e) {
-    \(ms)
+    extension\(w) \(e) {
+    \(m)
     }
     """
   }
