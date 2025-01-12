@@ -25,7 +25,7 @@ public struct AssociatedType: TypeTree {
     let concept = program.parent(containing: declaration, as: TraitDeclaration.self)!
     let l = program[concept].identifier.value
     let n = program[declaration].identifier.value
-    return program.format("%T::\(l)::\(n)", [qualification])
+    return program.format("(%T::\(l)).\(n)", [qualification])
   }
 
 }

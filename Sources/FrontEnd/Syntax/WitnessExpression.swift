@@ -21,6 +21,19 @@ public struct WitnessExpression: Hashable {
   /// The type of the witness.
   public let type: AnyTypeIdentity
 
+  /// `true` iff this expression mentions open variable.
+  public var hasVariable: Bool {
+    if type[.hasVariable] { return true }
+    switch value {
+    case .reference(let r):
+      return r.hasVariable
+    case .termApplication(let w, let a):
+      return w.hasVariable || a.hasVariable
+    case .typeApplication(let w, let a):
+      return w.hasVariable || a.contains(where: { (t) in t[.hasVariable] })
+    }
+  }
+
   /// A measure of the size of the deduction tree used to produce the witness.
   public var elaborationCost: Int {
     switch value {

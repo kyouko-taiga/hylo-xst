@@ -1,0 +1,26 @@
+trait P {
+  type X
+  fun f() -> X
+}
+
+extension <T> {a: T} {
+  fun f() { () }
+}
+
+given {a: Void}: P {
+  typealias X = {a: Void}
+  fun f() -> X { (a: ()) }
+}
+
+fun use(_ x: Void) {}
+
+fun main() {
+  let a = (a: ())
+
+  // `x: Void` because members inherited by extension have priority.
+  let x = a.f()
+  use(x)
+
+  // Members inherited by conformance can be selected with an expected type.
+  let y: {a: {}} = a.f()
+}

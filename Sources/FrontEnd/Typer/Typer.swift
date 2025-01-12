@@ -74,6 +74,9 @@ public struct Typer {
     /// The cache of `Typer.typeOfSelf(in:)`.
     var scopeToTypeOfSelf: [ScopeIdentity: AnyTypeIdentity?]
 
+    /// The cache of `Typer.aliasesInConformance(seenThrough:)`.
+    var witnessToAliases: [WitnessExpression: [AnyTypeIdentity: AnyTypeIdentity]]
+
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
       self.moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
@@ -83,28 +86,20 @@ public struct Typer {
       self.scopeToTraits = [:]
       self.scopeToSummoned = [:]
       self.scopeToTypeOfSelf = [:]
+      self.witnessToAliases = [:]
     }
 
   }
 
   // MARK: Type relations
 
-  /// Returns `t` without any type alias.
-  public mutating func dealiased(_ t: AnyTypeIdentity) -> AnyTypeIdentity {
-    program.types.map(t) { (s, u) in
-      if let a = s[u] as? TypeAlias {
-        return .stepInto(a.aliasee)
-      } else if u[.hasAliases] {
-        return .stepInto(u)
-      } else {
-        return .stepOver(u)
-      }
-    }
-  }
-
   /// Returns `true` iff `t` and `u` are equal.
-  public func equal(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> Bool {
-    (t == u)
+  public mutating func equal(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> Bool {
+    // Fast path: both types are trivially equal.
+    if t == u { return true }
+
+    // Slow path: remove aliases.
+    return program.types.dealiased(t) == program.types.dealiased(u)
   }
 
   /// Returns `true` iff `t` and `u` are equal modulo α-conversion.
@@ -183,15 +178,16 @@ public struct Typer {
 
     let concept = program.types[c].declaration
     let requirements = program[concept].members
-    var substitutions = [
-      typeOfSelf(in: concept): conformer
-    ]
+    var substitutions = [typeOfSelf(in: concept): conformer]
 
     // Find the implementations of associated types.
     for r in program.collect(AssociatedTypeDeclaration.self, in: requirements) {
-      let v = implementation(of: r, in: d).map({ (i) in declaredType(of: i) }) ?? .error
-      if program.types.kind(of: v) == Metatype.self {
-        substitutions[declaredType(of: r)] = v
+      let value = implementation(of: r, in: d).map({ (i) in declaredType(of: i) }) ?? .error
+
+      if let m = program.types[value] as? Metatype {
+        let k0 = declaredType(of: r)
+        let k1 = program.types[k0] as! Metatype
+        substitutions[k1.inhabitant] = m.inhabitant
       } else {
         return reportMissingImplementation(of: r)
       }
@@ -290,7 +286,7 @@ public struct Typer {
   /// Type checks `d`.
   private mutating func check(_ d: TraitDeclaration.ID) {
     _ = declaredType(of: d)
-    // TODO
+    for m in program[d].members { check(m) }
   }
 
   /// Type checks `d`.
@@ -348,8 +344,7 @@ public struct Typer {
   private mutating func implementation(
     of requirement: AssociatedTypeDeclaration.ID, in d: ConformanceDeclaration.ID
   ) -> DeclarationIdentity? {
-    let ds = lookup(program[requirement].identifier.value, lexicallyIn: .init(node: d))
-    return ds.uniqueElement
+    lookup(program[requirement].identifier.value, lexicallyIn: .init(node: d)).uniqueElement
   }
 
   /// Returns the declarations implementing `requirement` in `d`, if any.
@@ -442,7 +437,7 @@ public struct Typer {
   /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
   private mutating func check(_ e: ExpressionIdentity, expecting r: AnyTypeIdentity) {
     let u = check(e, inContextExpecting: r)
-    if (u != r) && !equal(u, .never) && !u[.hasError] {
+    if !equal(u, r) && !equal(u, .never) && !u[.hasError] {
       let m = program.format("expected '%T', found '%T'", [r, u])
       report(.init(.error, m, at: program[e].site))
     }
@@ -536,7 +531,7 @@ public struct Typer {
     let t = typeOfSelf(in: program.parent(containing: d))!
     let u = metatype(of: AssociatedType(declaration: d, qualification: t)).erased
     program[module].setType(u, for: d)
-    return t
+    return u
   }
 
   /// Returns the declared type of `d`, using inference if necessary.
@@ -741,9 +736,7 @@ public struct Typer {
     for p in ps {
       result.append(
         Parameter(
-          declaration: p,
-          label: program[p].label?.value,
-          type: declaredType(of: p),
+          declaration: p, label: program[p].label?.value, type: declaredType(of: p),
           isImplicit: false))
     }
     return result
@@ -779,11 +772,37 @@ public struct Typer {
   private mutating func declaredType(
     of requirement: DeclarationIdentity, seenThrough witness: WitnessExpression
   ) -> AnyTypeIdentity {
-    let (concept, conformer) = program.types.castToTraitApplication(witness.type)!
-    let s = typeOfSelf(in: program.types[concept].declaration)
-    let t = declaredType(of: requirement)
-    let (sansContext, _) = program.types.bodyAndContext(t)
-    return program.types.substitute(s, for: conformer, in: sansContext)
+    let subs = aliasesInConformance(seenThrough: witness)
+    let member = declaredType(of: requirement)
+    let (memberSansContext, _) = program.types.bodyAndContext(member)
+    return program.types.substitute(subs, in: memberSansContext)
+  }
+
+  /// Returns a table mapping the abstract types to their implementations in the conformance
+  /// witnessed by `witness`.
+  private mutating func aliasesInConformance(
+    seenThrough witness: WitnessExpression
+  ) -> [AnyTypeIdentity: AnyTypeIdentity] {
+    if let memoized = cache.witnessToAliases[witness] { return memoized }
+
+    let (c, conformer) = program.types.castToTraitApplication(witness.type)!
+    let concept = program.types[c].declaration
+    var subs = [typeOfSelf(in: concept): conformer]
+
+    for r in program[concept].members {
+      if let a = program.cast(r, to: AssociatedTypeDeclaration.self) {
+        let i = typeOfImplementation(satisfying: a, in: witness)
+        if let m = program.types[i] as? Metatype {
+          let k0 = declaredType(of: r)
+          let k1 = program.types[k0] as! Metatype
+          subs[k1.inhabitant] = m.inhabitant
+        }
+      }
+    }
+
+    assert(!witness.hasVariable)
+    cache.witnessToAliases[witness] = subs
+    return subs
   }
 
   /// Returns the type that `d` extends.
@@ -1157,7 +1176,8 @@ public struct Typer {
   private mutating func commit(_ s: Solution, to o: Obligations) {
     report(s.diagnostics.elements)
     for (n, t) in o.syntaxToType {
-      program[module].setType(t, for: n)
+      let u = program.types.reify(t, applying: s.substitutions)
+      program[module].setType(u, for: n)
     }
     for (n, r) in s.bindings {
       program[module].bind(n, to: r)
@@ -1251,17 +1271,6 @@ public struct Typer {
     return demand(TypeApplication(abstraction: p, arguments: [a])).erased
   }
 
-  /// Returns the type of the implementation satisfying `requirement` for `conformer` using the
-  /// given `associatedTypes`.
-  private mutating func typeOfImplementation(
-    satisfying requirement: DeclarationIdentity,
-    for conformer: AnyTypeIdentity, withAssociatedTypes associatedTypes: [Int: Any]
-  ) -> AnyTypeIdentity {
-    let s = typeOfSelf(in: program.parent(containing: requirement))!
-    let t = declaredType(of: requirement)
-    return program.types.substitute(s, for: conformer, in: t)
-  }
-
   /// Returns the type of the implementation satisfying `requirement` in the result of `witness`.
   ///
   /// - Parameters:
@@ -1285,7 +1294,8 @@ public struct Typer {
 
     // If the declaration is abstract, just susbtitute `Self`.
     if program[d].isAbstract {
-      return declaredType(of: .init(requirement), seenThrough: witness)
+      let (_, q) = program.types.castToTraitApplication(witness.type)!
+      return metatype(of: AssociatedType(declaration: requirement, qualification: q)).erased
     }
 
     // Otherwise, read the associated type definition.
@@ -1744,10 +1754,9 @@ public struct Typer {
 
       for a in summonings {
         for m in ms {
-          let u = typeOfImplementation(satisfying: m, in: a.witness)
-          let c = NameResolutionCandidate(
-            reference: .inherited(a.witness, m), type: u)
-          candidates.append(c)
+          let w = program.types.reify(a.witness, applying: a.environment)
+          let u = typeOfImplementation(satisfying: m, in: w)
+          candidates.append(.init(reference: .inherited(w, m), type: u))
         }
       }
     }
@@ -1778,20 +1787,22 @@ public struct Typer {
       return result
     }
 
-    /// For each declaration in `es` that applies to `q`, adds to `result` the members named `n`.
+    /// For each declaration in `es` that applies to `q`, adds to `result` the members of that
+    /// declaration that are named `n`.
     func appendMatchingMembers(
-      in es: [ExtensionDeclaration.ID], to result: inout [NameResolutionCandidate]
+      in es: [ExtensionDeclaration.ID],
+      to result: inout [NameResolutionCandidate]
     ) {
       for e in es where !declarationsOnStack.contains(.init(e)) {
-        if let w = applies(e, to: q, in: scopeOfUse) {
+        if let a = applies(e, to: q, in: scopeOfUse) {
           let s = typeOfSelf(in: .init(node: e))!
-          let r = program.types.reify(w.witness.type, applying: w.environment)
+          let w = program.types.reify(a.witness, applying: a.environment)
 
           for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
             let member = declaredType(of: m)
             let (memberSansContext, _) = program.types.bodyAndContext(member)
-            let memberAdapted = program.types.substitute(s, for: r, in: memberSansContext)
-            result.append(.init(reference: .inherited(w.witness, m), type: memberAdapted))
+            let memberAdapted = program.types.substitute(s, for: w.type, in: memberSansContext)
+            result.append(.init(reference: .inherited(w, m), type: memberAdapted))
           }
         }
       }

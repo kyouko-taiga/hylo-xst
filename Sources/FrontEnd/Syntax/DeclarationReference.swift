@@ -27,6 +27,16 @@ public indirect enum DeclarationReference: Hashable {
   /// A reference to a member inherited by conformance or extension.
   case inherited(WitnessExpression, DeclarationIdentity)
 
+  /// `true` iff this referennce mentions open variable.
+  public var hasVariable: Bool {
+    switch self {
+    case .predefined, .direct, .member:
+      return false
+    case .inherited(let w, _):
+      return w.hasVariable
+    }
+  }
+
   /// The referred declaration, unless it is predefined.
   public var target: DeclarationIdentity? {
     switch self {

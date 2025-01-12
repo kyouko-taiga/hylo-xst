@@ -222,6 +222,19 @@ public struct TypeStore {
     return demand(any: t)
   }
 
+  /// Returns `n` without any type alias.
+  public mutating func dealiased(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
+    self.map(n) { (s, t) in
+      if let a = s[t] as? TypeAlias {
+        return .stepInto(a.aliasee)
+      } else if t[.hasAliases] {
+        return .stepInto(t)
+      } else {
+        return .stepOver(t)
+      }
+    }
+  }
+
   /// Returns `n` with each open variable substituted by either its corresponding value in `subs`
   /// or the application of `substitutionPolicy` if no such substitution exists.
   public mutating func reify(
@@ -236,6 +249,45 @@ public struct TypeStore {
       } else {
         return .stepOver(.error)
       }
+    }
+  }
+
+  /// Returns `r` with its open variables reified by `subs` and `substitutionPolicy`.
+  public mutating func reify(
+    _ r: DeclarationReference,
+    applying subs: SubstitutionTable,
+    withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
+  ) -> DeclarationReference {
+    switch r {
+    case .predefined, .direct, .member:
+      return r
+    case .inherited(let w, let d):
+      return .inherited(w, d)
+    }
+  }
+
+  /// Returns `w` with its open variables reified by `subs` and `substitutionPolicy`.
+  public mutating func reify(
+    _ w: WitnessExpression,
+    applying subs: SubstitutionTable,
+    withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
+  ) -> WitnessExpression {
+    let t = reify(w.type, applying: subs)
+
+    switch w.value {
+    case .reference(let r):
+      let u = reify(r, applying: subs, withVariables: substitutionPolicy)
+      return .init(value: .reference(u), type: t)
+
+    case .termApplication(let a, let b):
+      let u = reify(a, applying: subs, withVariables: substitutionPolicy)
+      let v = reify(b, applying: subs, withVariables: substitutionPolicy)
+      return .init(value: .termApplication(u, v), type: t)
+
+    case .typeApplication(let a, let b):
+      let u = reify(a, applying: subs, withVariables: substitutionPolicy)
+      let v = b.map({ (n) in reify(n, applying: subs, withVariables: substitutionPolicy) })
+      return .init(value: .typeApplication(u, v), type: t)
     }
   }
 
@@ -293,7 +345,7 @@ public struct TypeStore {
     /// There are aliases?
     else if let lhs = self[a] as? TypeAlias {
       return unifiable(lhs.aliasee, b, &subs)
-    } else if let rhs = self[a] as? TypeAlias {
+    } else if let rhs = self[b] as? TypeAlias {
       return unifiable(a, rhs.aliasee, &subs)
     }
 

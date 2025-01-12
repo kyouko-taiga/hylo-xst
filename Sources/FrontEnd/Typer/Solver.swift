@@ -265,7 +265,7 @@ internal struct Solver {
 
     // Contains aliases?
     if t[.hasAliases] || u[.hasAliases] {
-      return matches(typer.dealiased(t), typer.dealiased(u))
+      return matches(typer.program.types.dealiased(t), typer.program.types.dealiased(u))
     }
 
     // Otherwise, compare types side by side.
