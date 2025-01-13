@@ -98,6 +98,8 @@ internal struct Solver {
             o = me.solve(call: g)
           case is ArgumentConstraint:
             o = me.solve(argument: g)
+          case is StaticCallConstraint:
+            o = me.solve(staticCall: g)
           case is Summonable:
             o = me.solve(summonable: g)
           case is OverloadConstraint:
@@ -114,6 +116,10 @@ internal struct Solver {
 
         if let result = s { return result }
       }
+    }
+
+    for g in stale {
+      outcomes[g] = .failure({ (_, _, _, _) in () })
     }
 
     assert(goals.indices.allSatisfy({ (g) in !outcomes[g].isPending }))
@@ -298,6 +304,54 @@ internal struct Solver {
         let m = p.format("invalid parameter type '%T' ", [t])
         d.insert(.init(.error, m, at: k.site))
       }
+    }
+  }
+
+  /// Discharges `g`, which is a static call constraint.
+  private mutating func solve(staticCall g: GoalIdentity) -> GoalOutcome {
+    let k = goals[g] as! StaticCallConstraint
+
+    // Can't do anything before we've inferred the type of the callee.
+    if k.callee.isVariable {
+      return postpone(g)
+    }
+
+    // Is the callee applicable?
+    guard let f = typer.program.types[k.callee] as? UniversalType else {
+      return invalidArgumentCount(k, expected: 0)
+    }
+    if f.parameters.count != k.arguments.count {
+      return invalidArgumentCount(k, expected: f.parameters.count)
+    }
+
+    var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: f.parameters.count)
+    for (p, a) in zip(f.parameters, k.arguments) {
+      ss[p.erased] = (typer.program.types[a] as? Metatype)?.inhabitant ?? .error
+    }
+
+    let body = typer.program.types.substitute(ss, in: f.body)
+    let subgoal = schedule(TypeEquality(lhs: k.output, rhs: body, site: k.site))
+    return delegate([subgoal])
+  }
+
+  /// Returns a failure to solve a `k` due to an invalid number of arguments.
+  private func invalidArgumentCount(
+    _ k: StaticCallConstraint, expected: Int
+  ) -> GoalOutcome {
+    .failure { (s, _, p, d) in
+      let f = if let n = p.cast(p[k.origin].callee, to: NameExpression.self) {
+        "'\(p[n].name)'"
+      } else {
+        p.format("value of type '%T'", [p.types.reify(k.callee, applying: s)])
+      }
+
+      let m = if expected == 0 {
+        "\(f) takes no compile-time arguments"
+      } else {
+        "\(f) takes \(expected) compile-time argument(s); found \(k.arguments.count)"
+      }
+
+      d.insert(.init(.error, m, at: p.spanForDiagnostic(about: p[k.origin].callee)))
     }
   }
 

@@ -953,6 +953,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case RemoteTypeExpression.self:
       return inferredType(of: castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
+    case StaticCall.self:
+      return inferredType(of: castUnchecked(e, to: StaticCall.self), in: &context)
     case TupleLiteral.self:
       return inferredType(of: castUnchecked(e, to: TupleLiteral.self), in: &context)
     case TupleTypeExpression.self:
@@ -973,28 +975,25 @@ public struct Typer {
   private mutating func inferredType(
     of e: Call.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    let f = inferredType(calleeOf: e, in: &context)
-
-    // Bail out if the callee has an error type.
-    if f == .error {
+    guard let f = inferredType(calleeOf: e, in: &context).unlessError else {
       return context.obligations.assume(e, hasType: .error, at: program[e].site)
-    } else {
-      var i: [CallConstraint.Argument] = []
-      for a in program[e].arguments {
-        let t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
-        i.append(.init(label: a.label?.value, type: t))
-      }
-
-      let m = program.isMarkedMutating(program[e].callee)
-      let o = (program.types[f] as? any Callable)?.output(calleeIsMutating: m)
-        ?? context.expectedType
-        ?? fresh().erased
-      let k = CallConstraint(
-        callee: f, arguments: i, output: o, origin: e, site: program[e].site)
-
-      context.obligations.assume(k)
-      return context.obligations.assume(e, hasType: o, at: program[e].site)
     }
+
+    var i: [CallConstraint.Argument] = []
+    for a in program[e].arguments {
+      let t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
+      i.append(.init(label: a.label?.value, type: t))
+    }
+
+    let m = program.isMarkedMutating(program[e].callee)
+    let o = (program.types[f] as? any Callable)?.output(calleeIsMutating: m)
+      ?? context.expectedType
+      ?? fresh().erased
+    let k = CallConstraint(
+      callee: f, arguments: i, output: o, origin: e, site: program[e].site)
+
+    context.obligations.assume(k)
+    return context.obligations.assume(e, hasType: o, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`'s callee.
@@ -1037,6 +1036,26 @@ public struct Typer {
     let t = evaluateTypeAscription(program[e].projectee)
     let u = metatype(of: RemoteType(projectee: t, access: program[e].access.value)).erased
     return context.obligations.assume(e, hasType: u, at: program[e].site)
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: StaticCall.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    // Abstraction is inferred in the same inference context.
+    guard let f = inferredType(of: program[e].callee, in: &context).unlessError else {
+      return context.obligations.assume(e, hasType: .error, at: program[e].site)
+    }
+
+    let i = program[e].arguments.map { (a) in
+      context.withSubcontext { (ctx) in inferredType(of: a, in: &ctx) }
+    }
+    let o = context.expectedType ?? fresh().erased
+    let k = StaticCallConstraint(
+      callee: f, arguments: i, output: o, origin: e, site: program[e].site)
+
+    context.obligations.assume(k)
+    return context.obligations.assume(e, hasType: o, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.

@@ -47,6 +47,7 @@ public struct SyntaxKind {
     Call.self,
     NameExpression.self,
     RemoteTypeExpression.self,
+    StaticCall.self,
     SynthethicExpression.self,
     TupleLiteral.self,
     TupleTypeExpression.self,

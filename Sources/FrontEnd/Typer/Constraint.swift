@@ -152,6 +152,50 @@ internal struct ArgumentConstraint: Constraint {
 
 }
 
+/// A constraint stating that a value of type `F` can be applied to values of types `A1, ..., An`
+/// at compile-time for producing a value of type `R`.
+internal struct StaticCallConstraint: Constraint {
+
+  /// The type of an entity being applied.
+  internal private(set) var callee: AnyTypeIdentity
+
+  /// The types of the arguments.
+  internal private(set) var arguments: [AnyTypeIdentity]
+
+  /// The expected type of the application.
+  internal private(set) var output: AnyTypeIdentity
+
+  /// The expression of the application from which the constraint originates.
+  internal let origin: StaticCall.ID
+
+  /// The site from which the constraint originates.
+  internal let site: SourceSpan
+
+  /// Applies `transform` on constituent types of `self`.
+  internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    callee = transform(callee)
+    for i in 0 ..< arguments.count {
+      arguments[i] = transform(arguments[i])
+    }
+    output = transform(output)
+  }
+
+  /// Returns a textual representation of `self`, reading contents from `program`.
+  internal func show(using program: Program) -> String {
+    var s = program.show(callee)
+    // if program.kind(of: origin) == SubscriptCall
+    s.write(" applied to <")
+    for i in 0 ..< arguments.count {
+      if i != 0 { s.write(", ") }
+      s.write(program.show(arguments[i]))
+    }
+    s.write("> gives ")
+    s.write(program.show(output))
+    return s
+  }
+
+}
+
 /// A constraint stating that a value of given type can be summoned in a given scope.
 internal struct Summonable: Constraint {
 

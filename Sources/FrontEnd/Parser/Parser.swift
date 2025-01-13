@@ -235,7 +235,7 @@ public struct Parser {
       return .empty(at: .empty(at: position))
     }
 
-    return try between((.leftAngle, .rightAngle)) { (me) in
+    return try inAngles { (me) in
       let xs = try me.parseCommaSeparatedGenericParameters(in: &module)
       let ys = try me.parseOptionalWhereClause(in: &module)
       return StaticParameters(explicit: xs, implicit: ys, site: me.span(from: start))
@@ -519,10 +519,11 @@ public struct Parser {
     while true {
       if try appendNominalComponent(to: &head, in: &module) { continue }
 
-      // Exit if there's a newline before the next token.
-      if newlineBeforeNextToken() { break }
+      // Exit if there's a whitespace before the next token.
+      if whitespaceBeforeNextToken() { break }
 
       if try appendParenthesizedArguments(to: &head, in: &module) { continue }
+      if try appendAngledArguments(to: &head, in: &module) { continue }
       break
     }
 
@@ -555,6 +556,24 @@ public struct Parser {
     let s = module[h].site.extended(upTo: position.index)
     let m = module.insert(
       Call(callee: h, arguments: a, style: .parenthesized, site: s), in: file)
+    h = .init(m)
+    return true
+  }
+
+  /// If the next token is a left angle, parses an argument list, assigns `h` to a static call
+  /// expression applying its current value, and returns `true`. Otherwise, returns `false`.
+  private mutating func appendAngledArguments(
+    to h: inout ExpressionIdentity, in module: inout Module
+  ) throws -> Bool {
+    if peek()?.kind != .leftAngle { return false }
+    let (a, _) = try inAngles { (m0) in
+      try m0.commaSeparated(delimitedBy: .rightAngle) { (m1) in
+        try m1.parseExpression(in: &module)
+      }
+    }
+    let s = module[h].site.extended(upTo: position.index)
+    let m = module.insert(
+      StaticCall(callee: h, arguments: a, site: s), in: file)
     h = .init(m)
     return true
   }
@@ -1054,10 +1073,10 @@ public struct Parser {
     tokens.source[position.index].isWhitespace
   }
 
-  /// Returns `true` iff there is a newline before the next token.
-  private mutating func newlineBeforeNextToken() -> Bool {
+  /// Returns `true` iff there is a whitespace before the next token.
+  private mutating func whitespaceBeforeNextToken() -> Bool {
     if let n = peek() {
-      return tokens.source[position.index ..< n.site.start.index].contains(where: \.isNewline)
+      return tokens.source[position.index ..< n.site.start.index].contains(where: \.isWhitespace)
     } else {
       return false
     }
@@ -1185,6 +1204,11 @@ public struct Parser {
       if take(.rightBrace) == nil { report(expected(delimiters.right.errorDescription)) }
       throw e
     }
+  }
+
+  /// Parses an instance of `T` enclosed in angle brackets.
+  private mutating func inAngles<T>(_ parse: (inout Self) throws -> T) throws -> T {
+    try between((.leftAngle, .rightAngle), parse)
   }
 
   /// Parses an instance of `T` enclosed in braces.

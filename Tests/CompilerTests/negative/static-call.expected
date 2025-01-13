@@ -1,0 +1,9 @@
+negative/static-call.hylo:6.3-5: error: 'f0' takes no compile-time arguments
+  f0<Void>(x: ())
+  ~~
+negative/static-call.hylo:9.15-20: error: cannot pass value of type '{Void}' to parameter 'let Void' 
+  f1<Void>(x: ((),))
+              ~~~~~
+negative/static-call.hylo:10.3-5: error: 'f1' takes 1 compile-time argument(s); found 2
+  f1<Void, Void>(x: ())
+  ~~
