@@ -95,7 +95,7 @@ public struct TypeStore {
   public func bodyAndContext(
     _ n: AnyTypeIdentity
   ) -> (body: AnyTypeIdentity, context: ContextClause) {
-    let p: [TypeParameter.ID]
+    let p: [GenericParameter.ID]
     let b: AnyTypeIdentity
 
     if let u = self[n] as? UniversalType {
@@ -359,6 +359,8 @@ public struct TypeStore {
       return false
     case (_ as ErrorType, _ as ErrorType):
       return false
+    case (_ as GenericParameter, _ as GenericParameter):
+      return false
     case (let lhs as Implication, let rhs as Implication):
       return unifiable(lhs, rhs, &subs)
     case (let lhs as Metatype, let rhs as Metatype):
@@ -373,8 +375,6 @@ public struct TypeStore {
       return unifiable(lhs, rhs, &subs)
     case (let lhs as TypeApplication, let rhs as TypeApplication):
       return unifiable(lhs, rhs, &subs)
-    case (_ as TypeParameter, _ as TypeParameter):
-      return false
     case (let lhs as Union, let rhs as Union):
       return unifiable(lhs, rhs, &subs)
     default:

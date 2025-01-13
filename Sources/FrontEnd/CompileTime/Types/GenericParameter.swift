@@ -1,7 +1,7 @@
 import Utilities
 
-/// A generic type parameter.
-public struct TypeParameter: TypeTree {
+/// A generic parameter.
+public struct GenericParameter: TypeTree {
 
   /// The declaration of the parameter.
   public let declaration: GenericParameterDeclaration.ID

@@ -606,7 +606,7 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    let t = metatype(of: TypeParameter(declaration: d)).erased
+    let t = metatype(of: GenericParameter(declaration: d)).erased
     program[module].setType(t, for: d)
     return t
   }
@@ -826,7 +826,7 @@ public struct Typer {
       let t = declaredType(of: p)
       return program.types
         .select(\Metatype.inhabitant, on: t)
-        .flatMap({ (m) in program.types.cast(m, to: TypeParameter.self) })
+        .flatMap({ (m) in program.types.cast(m, to: GenericParameter.self) })
     }
     let us = parameters.implicit.map({ (p) in declaredType(of: p) })
     return program.types.introduce(.init(parameters: ps, usings: us), into: t)
@@ -1359,7 +1359,7 @@ public struct Typer {
 
   /// Returns the context parameters of the type of an instance of `Self` in `s`.
   private mutating func contextOfSelf(in s: TraitDeclaration.ID) -> ContextClause {
-    let t = demand(TypeParameter(declaration: program[s].conformer))
+    let t = demand(GenericParameter(declaration: program[s].conformer))
     let c = demand(Trait(declaration: s)).erased
     let w = demand(TypeApplication(abstraction: c, arguments: [.type(t.erased)])).erased
     return .init(parameters: [t], usings: [w])

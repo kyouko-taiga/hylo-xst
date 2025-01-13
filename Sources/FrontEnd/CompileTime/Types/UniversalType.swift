@@ -2,7 +2,7 @@
 public struct UniversalType: TypeTree {
 
   /// The variables introduced by the quantifier.
-  public let parameters: [TypeParameter.ID]
+  public let parameters: [GenericParameter.ID]
 
   /// The type under the quantifier.
   public let body: AnyTypeIdentity

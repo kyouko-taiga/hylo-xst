@@ -2,7 +2,7 @@
 public struct ContextClause {
 
   /// The variables introduced by the context clause.
-  public let parameters: [TypeParameter.ID]
+  public let parameters: [GenericParameter.ID]
 
   /// The types of the context parameters.
   public let usings: [AnyTypeIdentity]
