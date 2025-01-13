@@ -1,0 +1,9 @@
+struct A {}
+
+fun f<T, U>(x: sink U) -> U { x }
+
+fun check<T>(_ x: T) {}
+
+fun main() {
+  check<Void>(f<A, _>(x: ()))
+}

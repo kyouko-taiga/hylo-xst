@@ -627,6 +627,8 @@ public struct Parser {
       return try .init(parseTupleTypeExpression(in: &module))
     case .leftParenthesis:
       return try parseTupleLiteralOrParenthesizedExpression(in: &module)
+    case .underscore:
+      return try .init(parseWildcardTypeLiteral(in: &module))
     default:
       throw expected("expression")
     }
@@ -639,7 +641,7 @@ public struct Parser {
   ///
   private mutating func parseRemoteTypeExpression(
     in module: inout Module
-  ) throws -> RemoteTypeExpression.ID {
+) throws -> RemoteTypeExpression.ID {
     let k = parseAccessEffect()
     let e = try parseExpression(in: &module)
     return module.insert(
@@ -750,6 +752,18 @@ public struct Parser {
         in: file)
       return .init(t)
     }
+  }
+
+  /// Parses a wildcard type literal into `module`.
+  ///
+  ///     wildcard-type-literal ::=
+  ///       '_'
+  ///
+  private mutating func parseWildcardTypeLiteral(
+    in module: inout Module
+  ) throws -> WildcardTypeLiteral.ID {
+    let u = try take(.underscore) ?? expected("'_'")
+    return module.insert(WildcardTypeLiteral(site: u.site), in: file)
   }
 
   /// Parses a type ascription into `module` iff the next token is a colon.
@@ -1283,7 +1297,7 @@ public struct Parser {
   /// Returns a parse error reporting an unexpected wildcard at `site`.
   func unexpectedWildcard(at site: SourceSpan) -> ParseError {
     let m = """
-    '_' can only appear as a pattern, as a type argument, or on the left-hand side of an \
+    '_' can only appear as a pattern, as a compile-time argument, or on the left-hand side of an \
     assignment
     """
     return .init(m, at:  site)

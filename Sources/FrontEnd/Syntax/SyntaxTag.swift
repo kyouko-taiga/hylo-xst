@@ -51,6 +51,7 @@ public struct SyntaxTag {
     SynthethicExpression.self,
     TupleLiteral.self,
     TupleTypeExpression.self,
+    WildcardTypeLiteral.self,
 
     // Patterns
     BindingPattern.self,

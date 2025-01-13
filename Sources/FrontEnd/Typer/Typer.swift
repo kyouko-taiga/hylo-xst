@@ -959,6 +959,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: TupleLiteral.self), in: &context)
     case TupleTypeExpression.self:
       return inferredType(of: castUnchecked(e, to: TupleTypeExpression.self), in: &context)
+    case WildcardTypeLiteral.self:
+      return inferredType(of: castUnchecked(e, to: WildcardTypeLiteral.self), in: &context)
     default:
       program.unexpected(e)
     }
@@ -1100,6 +1102,19 @@ public struct Typer {
 
     let t = metatype(of: Tuple(elements: es)).erased
     return context.obligations.assume(e, hasType: t, at: program[e].site)
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: WildcardTypeLiteral.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    if let t = context.expectedType, program.types.tag(of: t) == Metatype.self {
+      return context.obligations.assume(e, hasType: t, at: program[e].site)
+    } else {
+      let t = fresh().erased
+      let u = demand(Metatype(inhabitant: t)).erased
+      return context.obligations.assume(e, hasType: u, at: program[e].site)
+    }
   }
 
   /// Returns the inferred type of `p`, which occurs in `context`.
