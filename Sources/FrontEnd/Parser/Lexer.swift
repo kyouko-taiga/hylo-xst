@@ -30,38 +30,38 @@ public struct Lexer: IteratorProtocol, Sequence {
   /// Consumes and returns a keyword or identifier.
   private mutating func takeKeywordOrIdentifier() -> Token {
     let word = take(while: \.isIdentifierTail)
-    let kind: Token.Kind
+    let tag: Token.Tag
     switch word {
-    case "_": kind = .underscore
-    case "extension": kind = .extension
-    case "false": kind = .false
-    case "fun": kind = .fun
-    case "given": kind = .given
-    case "import": kind = .import
-    case "infix": kind = .infix
-    case "init": kind = .`init`
-    case "inout": kind = .inout
-    case "internal": kind = .internal
-    case "let": kind = .let
-    case "postfix": kind = .postfix
-    case "prefix": kind = .prefix
-    case "private": kind = .private
-    case "public": kind = .public
-    case "return": kind = .return
-    case "set": kind = .set
-    case "sink": kind = .sink
-    case "struct": kind = .struct
-    case "subscript": kind = .subscript
-    case "trait": kind = .trait
-    case "true": kind = .true
-    case "type": kind = .type
-    case "typealias": kind = .typealias
-    case "var": kind = .var
-    case "where": kind = .where
-    default: kind = .name
+    case "_": tag = .underscore
+    case "extension": tag = .extension
+    case "false": tag = .false
+    case "fun": tag = .fun
+    case "given": tag = .given
+    case "import": tag = .import
+    case "infix": tag = .infix
+    case "init": tag = .`init`
+    case "inout": tag = .inout
+    case "internal": tag = .internal
+    case "let": tag = .let
+    case "postfix": tag = .postfix
+    case "prefix": tag = .prefix
+    case "private": tag = .private
+    case "public": tag = .public
+    case "return": tag = .return
+    case "set": tag = .set
+    case "sink": tag = .sink
+    case "struct": tag = .struct
+    case "subscript": tag = .subscript
+    case "trait": tag = .trait
+    case "true": tag = .true
+    case "type": tag = .type
+    case "typealias": tag = .typealias
+    case "var": tag = .var
+    case "where": tag = .where
+    default: tag = .name
     }
     assert(!word.isEmpty)
-    return .init(kind: kind, site: span(word.startIndex ..< word.endIndex))
+    return .init(tag: tag, site: span(word.startIndex ..< word.endIndex))
   }
 
   /// Consumes and returns an operator.
@@ -72,38 +72,38 @@ public struct Lexer: IteratorProtocol, Sequence {
     }
 
     let text = take(while: \.isOperator)
-    let kind: Token.Kind
+    let tag: Token.Tag
     switch text {
-    case "&": kind = .ampersand
-    case "=": kind = .assign
-    case "->": kind = .arrow
-    case "==": kind = .equal
-    default: kind = .operator
+    case "&": tag = .ampersand
+    case "=": tag = .assign
+    case "->": tag = .arrow
+    case "==": tag = .equal
+    default: tag = .operator
     }
-    return .init(kind: kind, site: span(text.startIndex ..< text.endIndex))
+    return .init(tag: tag, site: span(text.startIndex ..< text.endIndex))
   }
 
   /// Consumes and returns a punctuation token if the input starts with a punctuation symbol;
   /// otherwise consumes a single character and returns an error token.
   private mutating func takePunctuationOrDelimiter() -> Token {
     let start = position
-    let kind: Token.Kind
+    let tag: Token.Tag
     switch take() {
-    case "<": kind = .leftAngle
-    case ">": kind = .rightAngle
-    case "{": kind = .leftBrace
-    case "}": kind = .rightBrace
-    case "[": kind = .leftBracket
-    case "]": kind = .rightBracket
-    case "(": kind = .leftParenthesis
-    case ")": kind = .rightParenthesis
-    case ",": kind = .comma
-    case ".": kind = .dot
-    case ";": kind = .semicolon
-    case ":": kind = take(":") == nil ? .colon : .doubleColon
-    default: kind = .error
+    case "<": tag = .leftAngle
+    case ">": tag = .rightAngle
+    case "{": tag = .leftBrace
+    case "}": tag = .rightBrace
+    case "[": tag = .leftBracket
+    case "]": tag = .rightBracket
+    case "(": tag = .leftParenthesis
+    case ")": tag = .rightParenthesis
+    case ",": tag = .comma
+    case ".": tag = .dot
+    case ";": tag = .semicolon
+    case ":": tag = take(":") == nil ? .colon : .doubleColon
+    default: tag = .error
     }
-    return .init(kind: kind, site: span(start ..< position))
+    return .init(tag: tag, site: span(start ..< position))
   }
 
   /// Consumes and returns the next character.
@@ -136,7 +136,7 @@ public struct Lexer: IteratorProtocol, Sequence {
           } else if take("*/") != nil {
             openedBlocks -= 1
           } else if position == source.endIndex {
-            return .init(kind: .unterminatedBlockComment, site: span(start ..< position))
+            return .init(tag: .unterminatedBlockComment, site: span(start ..< position))
           } else {
             discard()
           }

@@ -113,7 +113,7 @@ internal struct CallConstraint: Constraint {
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
     var s = program.show(callee)
-    // if program.kind(of: origin) == SubscriptCall
+    // if program.tag(of: origin) == SubscriptCall
     s.write(" applied to (")
     for i in 0 ..< arguments.count {
       if i != 0 { s.write(", ") }
@@ -183,7 +183,6 @@ internal struct StaticCallConstraint: Constraint {
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
     var s = program.show(callee)
-    // if program.kind(of: origin) == SubscriptCall
     s.write(" applied to <")
     for i in 0 ..< arguments.count {
       if i != 0 { s.write(", ") }

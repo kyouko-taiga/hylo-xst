@@ -23,8 +23,8 @@ public struct Module {
     /// The top-level declarations in `self`.
     internal var topLevelDeclarations: [DeclarationIdentity] = []
 
-    /// A table from syntax tree to its kind.
-    internal var syntaxToKind: [SyntaxKind] = []
+    /// A table from syntax tree to its tag.
+    internal var syntaxToTag: [SyntaxTag] = []
 
     /// A table from syntax tree to the scope that contains it.
     ///
@@ -112,7 +112,7 @@ public struct Module {
     return modify(&sources.values[file.offset]) { (f) in
       let d = f.syntax.count
       f.syntax.append(.init(child))
-      f.syntaxToKind.append(.init(T.self))
+      f.syntaxToTag.append(.init(T.self))
       f.syntaxToParent.append(-1)
       return T.ID(uncheckedFrom: .init(file: file, offset: d))
     }
@@ -129,14 +129,14 @@ public struct Module {
 
   /// Replaces the node identified by `n` by `newValue`.
   ///
-  /// The result of `kind(of: n)` denotes `T` after this method returns. No other property of `n`
+  /// The result of `tag(of: n)` denotes `T` after this method returns. No other property of `n`
   /// is changed. The children of the node currently identified by `n` that are not children of
   /// `newValue` are notionally removed from the tree after this method returns. 
   public mutating func replace<T: Expression>(_ n: ExpressionIdentity, for replacement: T) {
     assert(n.module == identity)
     modify(&sources.values[n.file.offset]) { (f) in
       f.syntax[n.offset] = .init(replacement)
-      f.syntaxToKind[n.offset] = .init(T.self)
+      f.syntaxToTag[n.offset] = .init(T.self)
     }
   }
 
@@ -186,10 +186,10 @@ public struct Module {
     return sources.values[n.file.offset].syntax[n.offset].wrapped as! T
   }
 
-  /// Returns the kind of `n`.
-  internal func kind<T: SyntaxIdentity>(of n: T) -> SyntaxKind {
+  /// Returns the tag of `n`.
+  internal func tag<T: SyntaxIdentity>(of n: T) -> SyntaxTag {
     assert(n.module == identity)
-    return self[n.file].syntaxToKind[n.offset]
+    return self[n.file].syntaxToTag[n.offset]
   }
 
   /// Assigns a type to `n`.
@@ -271,7 +271,7 @@ extension Module: Archivable {
         newContext = c as! SerializationContext
         modify(&newContext.sources.values[i]) { (f) in
           f.syntax.append(n)
-          f.syntaxToKind.append(.init(Swift.type(of: n.wrapped)))
+          f.syntaxToTag.append(.init(Swift.type(of: n.wrapped)))
         }
       }
     }

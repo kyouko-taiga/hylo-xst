@@ -40,7 +40,7 @@ public struct Parser {
         try ds.append(parseDeclaration(in: &module))
       } catch let e as ParseError {
         report(e)
-        recover(at: { ($0.kind == .semicolon) || $0.isDeclarationHead })
+        recover(at: { ($0.tag == .semicolon) || $0.isDeclarationHead })
       } catch {
         unreachable()
       }
@@ -64,7 +64,7 @@ public struct Parser {
   ) throws -> DeclarationIdentity {
     guard let head = peek() else { throw expected("declaration") }
 
-    switch head.kind {
+    switch head.tag {
     case .inout, .let, .set, .sink, .var:
       return try .init(parseBindingDeclaration(in: &module))
     case .given:
@@ -231,7 +231,7 @@ public struct Parser {
   private mutating func parseOptionalCompileTimeParameters(
     in module: inout Module
   ) throws -> StaticParameters {
-    guard let start = peek(), start.kind == .leftAngle else {
+    guard let start = peek(), start.tag == .leftAngle else {
       return .empty(at: .empty(at: position))
     }
 
@@ -362,7 +362,7 @@ public struct Parser {
     switch (take(if: \.isArgumentLabel), take(.name)) {
     case (let n, .some(let m)):
       identifier = Parsed(String(m.text), at: m.site)
-      label = n.map({ (t) in t.kind == .underscore ? nil : Parsed(t) }) ?? identifier
+      label = n.map({ (t) in t.tag == .underscore ? nil : Parsed(t) }) ?? identifier
 
     case (.some(let n), nil):
       if n.isKeyword { report(.init("'\(n.text)' is not a valid identifier", at: n.site)) }
@@ -390,7 +390,7 @@ public struct Parser {
   private mutating func parseOptionalCallableBody(
     in module: inout Module
   ) throws -> [StatementIdentity]? {
-    try peek()?.kind == .leftBrace ? parseCallableBody(in: &module) : nil
+    try peek()?.tag == .leftBrace ? parseCallableBody(in: &module) : nil
   }
 
   /// Parses the body of a function, lambda, or subscript into `module`.
@@ -549,7 +549,7 @@ public struct Parser {
   private mutating func appendParenthesizedArguments(
     to h: inout ExpressionIdentity, in module: inout Module
   ) throws -> Bool {
-    if peek()?.kind != .leftParenthesis { return false }
+    if peek()?.tag != .leftParenthesis { return false }
     let (a, _) = try inParentheses { (me) in
       try me.parseLabeledExpressionList(delimitedBy: .rightParenthesis, in: &module)
     }
@@ -565,7 +565,7 @@ public struct Parser {
   private mutating func appendAngledArguments(
     to h: inout ExpressionIdentity, in module: inout Module
   ) throws -> Bool {
-    if peek()?.kind != .leftAngle { return false }
+    if peek()?.tag != .leftAngle { return false }
     let (a, _) = try inAngles { (m0) in
       try m0.commaSeparated(delimitedBy: .rightAngle) { (m1) in
         try m1.parseExpression(in: &module)
@@ -586,7 +586,7 @@ public struct Parser {
   ///       (expression-label ':')? expression
   ///
   private mutating func parseLabeledExpressionList(
-    delimitedBy rightDelimiter: Token.Kind,
+    delimitedBy rightDelimiter: Token.Tag,
     in module: inout Module
   ) throws -> ([LabeledExpression], lastComma: Token?) {
     try labeledSyntaxList(delimitedBy: rightDelimiter) { (me) in
@@ -616,7 +616,7 @@ public struct Parser {
   private mutating func parsePrimaryExpression(
     in module: inout Module
   ) throws -> ExpressionIdentity {
-    switch peek()?.kind {
+    switch peek()?.tag {
     case .true, .false:
       return .init(module.insert(BooleanLiteral(site: take()!.site), in: file))
     case .inout, .let, .set, .sink:
@@ -665,7 +665,7 @@ public struct Parser {
 
   /// Parses an access effect iff the next token denotes one.
   private mutating func parseOptionalAccessEffect() -> Parsed<AccessEffect>? {
-    switch peek()?.kind {
+    switch peek()?.tag {
     case .let:
       return Parsed(.let, at: take()!.site)
     case .inout:
@@ -789,7 +789,7 @@ public struct Parser {
     switch try parseOptionalTypeAscription(in: &module) {
     case nil:
       return nil
-    case .some(let b) where module.kind(of: b) == RemoteTypeExpression.self:
+    case .some(let b) where module.tag(of: b) == RemoteTypeExpression.self:
       return RemoteTypeExpression.ID(uncheckedFrom: b.erased)
     case .some(let b):
       let s = module[b].site
@@ -808,7 +808,7 @@ public struct Parser {
   ///       expression
   ///
   private mutating func parsePattern(in module: inout Module) throws -> PatternIdentity {
-    switch peek()?.kind {
+    switch peek()?.tag {
     case .inout, .let, .set, .sink:
       return try .init(parseBindingPattern(in: &module))
     case .name where isParsingBindingSubpattern:
@@ -846,7 +846,7 @@ public struct Parser {
   ///       'inout'
   ///
   private mutating func parseBindingIntroducer() throws -> Parsed<BindingPattern.Introducer> {
-    switch peek()?.kind {
+    switch peek()?.tag {
     case .let:
       return Parsed(.let, at: take()!.site)
     case .var:
@@ -916,7 +916,7 @@ public struct Parser {
   private mutating func parseStatement(in module: inout Module) throws -> StatementIdentity {
     let head = try peek() ?? expected("statement")
 
-    switch head.kind {
+    switch head.tag {
     case .underscore:
       return try .init(parseDiscardStement(in: &module))
     case .return:
@@ -1009,7 +1009,7 @@ public struct Parser {
   private mutating func parseOperatorIdentifier(
   ) throws -> Parsed<FunctionDeclaration.Identifier> {
     let head = try take(if: \.isOperatorNotation) ?? expected("operator notation")
-    let notation: OperatorNotation = switch head.kind {
+    let notation: OperatorNotation = switch head.tag {
     case .infix: .infix
     case .postfix: .postfix
     case .prefix: .postfix
@@ -1095,9 +1095,9 @@ public struct Parser {
     return next
   }
 
-  /// Consumes and returns the next token iff it has kind `k`; otherwise, returns `nil`.
-  private mutating func take(_ k: Token.Kind) -> Token? {
-    peek()?.kind == k ? take() : nil
+  /// Consumes and returns the next token iff it has tag `k`; otherwise, returns `nil`.
+  private mutating func take(_ k: Token.Tag) -> Token? {
+    peek()?.tag == k ? take() : nil
   }
 
   /// Consumes and returns the next token iff it satisifies `predicate`; otherwise, returns `nil`.
@@ -1111,12 +1111,12 @@ public struct Parser {
 
   /// COnsumes and returns the next token iff it is a contextual keyword withe the given value.
   private mutating func take(contextual s: String) -> Token? {
-    take(if: { (t) in (t.kind == .name) && (t.text == s) })
+    take(if: { (t) in (t.tag == .name) && (t.text == s) })
   }
 
-  /// Consumes and returns the next token iff its kind is in `ks`; otherwise, returns `nil`.
-  private mutating func take<T: Collection<Token.Kind>>(oneOf ks: T) -> Token? {
-    take(if: { (t) in ks.contains(t.kind) })
+  /// Consumes and returns the next token iff its tag is in `ks`; otherwise, returns `nil`.
+  private mutating func take<T: Collection<Token.Tag>>(oneOf ks: T) -> Token? {
+    take(if: { (t) in ks.contains(t.tag) })
   }
 
   /// Discards tokens until `predicate` isn't satisfied or all the input has been consumed.
@@ -1133,7 +1133,7 @@ public struct Parser {
   private mutating func recover(at predicate: (Token) -> Bool) {
     var nesting = 0
     while let t = peek(), !predicate(t) {
-      switch t.kind {
+      switch t.tag {
       case .leftBrace:
         nesting += 1
       case .rightBrace where nesting <= 0:
@@ -1181,7 +1181,7 @@ public struct Parser {
 
   /// Parses a parenthesized list of labeled syntax.
   private mutating func labeledSyntaxList<T: LabeledSyntax>(
-    delimitedBy rightDelimiter: Token.Kind,
+    delimitedBy rightDelimiter: Token.Tag,
     _ parse: (inout Self) throws -> T.Value
   ) throws -> ([T], lastComma: Token?) {
     try commaSeparated(delimitedBy: rightDelimiter) { (me) in
@@ -1191,7 +1191,7 @@ public struct Parser {
 
   /// Parses an instance of `T` enclosed in `delimiters`.
   private mutating func between<T>(
-    _ delimiters: (left: Token.Kind, right: Token.Kind),
+    _ delimiters: (left: Token.Tag, right: Token.Tag),
     _ parse: (inout Self) throws -> T
   ) throws -> T {
     _ = try take(delimiters.left) ?? expected(delimiters.left.errorDescription)
@@ -1233,7 +1233,7 @@ public struct Parser {
         try xs.append(parse(&self))
       } catch let e as ParseError {
         report(e)
-        recover(at: { (t) in isRightDelimiter(t) || t.kind == .comma })
+        recover(at: { (t) in isRightDelimiter(t) || t.tag == .comma })
       }
       if let c = take(.comma) { lastComma = c }
     }
@@ -1242,24 +1242,24 @@ public struct Parser {
 
   /// Parses a list of instances of `T` separated by colons.
   private mutating func commaSeparated<T>(
-    delimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
+    delimitedBy rightDelimiter: Token.Tag?, _ parse: (inout Self) throws -> T
   ) throws -> ([T], lastComma: Token?) {
-    try commaSeparated(delimitedBy: { (t) in t.kind == rightDelimiter }, parse)
+    try commaSeparated(delimitedBy: { (t) in t.tag == rightDelimiter }, parse)
   }
 
   /// Parses a list of instances of `T` separated by semicolons.
   private mutating func semicolonSeparated<T>(
-    delimitedBy rightDelimiter: Token.Kind?, _ parse: (inout Self) throws -> T
+    delimitedBy rightDelimiter: Token.Tag?, _ parse: (inout Self) throws -> T
   ) throws -> [T] {
     var xs: [T] = []
     while let head = peek() {
-      discard(while: { $0.kind == .semicolon })
-      if head.kind == rightDelimiter { break }
+      discard(while: { $0.tag == .semicolon })
+      if head.tag == rightDelimiter { break }
       do {
         try xs.append(parse(&self))
       } catch let e as ParseError {
         report(e)
-        recover(at: { (t) in t.kind == rightDelimiter || t.kind == .semicolon })
+        recover(at: { (t) in t.tag == rightDelimiter || t.tag == .semicolon })
       }
     }
     return xs
@@ -1339,14 +1339,14 @@ extension Parsed<String> {
 
 extension Token {
 
-  /// Returns a predicate that holds for a token iff that token's kind is in `ks`.
-  fileprivate static func oneOf<T: Collection<Token.Kind>>(_ ks: T) -> (Token) -> Bool {
-    { (t) in ks.contains(t.kind) }
+  /// Returns a predicate that holds for a token iff that token's tag is in `ks`.
+  fileprivate static func oneOf<T: Collection<Token.Tag>>(_ ks: T) -> (Token) -> Bool {
+    { (t) in ks.contains(t.tag) }
   }
 
 }
 
-extension Token.Kind {
+extension Token.Tag {
 
   /// Returns a description of `self` for error reporting.
   fileprivate var errorDescription: String {

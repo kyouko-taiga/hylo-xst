@@ -111,7 +111,7 @@ public struct Typer {
 
   /// Type checks `d`.
   private mutating func check(_ d: DeclarationIdentity) {
-    switch program.kind(of: d) {
+    switch program.tag(of: d) {
     case AssociatedTypeDeclaration.self:
       check(castUnchecked(d, to: AssociatedTypeDeclaration.self))
     case BindingDeclaration.self:
@@ -196,7 +196,7 @@ public struct Typer {
     // Check that other requirements may be satisfied. We do not need to store the implementations
     // since witness tables are built on demand.
     for r in requirements {
-      switch program.kind(of: r) {
+      switch program.tag(of: r) {
       case FunctionDeclaration.self:
         _ = implementation(
           of: program.castUnchecked(r, to: FunctionDeclaration.self), in: concept,
@@ -326,7 +326,7 @@ public struct Typer {
   /// A declaration requires a definition unless it is a trait requirement, an FFI, an external
   /// function, or a memberwise initializer.
   private func requiresDefinition(_ d: DeclarationIdentity) -> Bool {
-    switch program.kind(of: d) {
+    switch program.tag(of: d) {
     case FunctionDeclaration.self:
       let f = program.castUnchecked(d, to: FunctionDeclaration.self)
       return !program.isRequirement(f) && !program.isFFI(f) && !program.isExternal(f)
@@ -454,7 +454,7 @@ public struct Typer {
 
   /// Type checks `s`.
   private mutating func check(_ s: StatementIdentity) {
-    switch program.kind(of: s) {
+    switch program.tag(of: s) {
     case Discard.self:
       check(program.castUnchecked(s, to: Discard.self))
     case Return.self:
@@ -495,7 +495,7 @@ public struct Typer {
 
   /// Returns the declared type of `d` without type checking its contents.
   private mutating func declaredType(of d: DeclarationIdentity) -> AnyTypeIdentity {
-    switch program.kind(of: d) {
+    switch program.tag(of: d) {
     case AssociatedTypeDeclaration.self:
       return declaredType(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))
     case BindingDeclaration.self:
@@ -834,7 +834,7 @@ public struct Typer {
 
   /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
   private mutating func ascribe(_ t: AnyTypeIdentity, to p: PatternIdentity) {
-    switch program.kind(of: p) {
+    switch program.tag(of: p) {
     case BindingPattern.self:
       ascribe(t, to: program.castUnchecked(p, to: BindingPattern.self))
     case TuplePattern.self:
@@ -944,7 +944,7 @@ public struct Typer {
   private mutating func inferredType(
     of e: ExpressionIdentity, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    switch program.kind(of: e) {
+    switch program.tag(of: e) {
     case BooleanLiteral.self:
       return inferredType(of: castUnchecked(e, to: BooleanLiteral.self), in: &context)
     case Call.self:
@@ -1106,7 +1106,7 @@ public struct Typer {
   private mutating func inferredType(
     of p: PatternIdentity, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    switch program.kind(of: p) {
+    switch program.tag(of: p) {
     case BindingPattern.self:
       unreachable()
     case VariableDeclaration.self:
@@ -1240,7 +1240,7 @@ public struct Typer {
     guard let n = s.node else { return nil }
     let result: AnyTypeIdentity?
 
-    switch program.kind(of: n) {
+    switch program.tag(of: n) {
     case ConformanceDeclaration.self:
       result = typeOfSelf(in: program.castUnchecked(n, to: ConformanceDeclaration.self))
     case ExtensionDeclaration.self:
@@ -1331,7 +1331,7 @@ public struct Typer {
   private mutating func contextOfSelf(in s: ScopeIdentity) -> ContextClause? {
     guard let n = s.node else { return nil }
 
-    switch program.kind(of: n) {
+    switch program.tag(of: n) {
     case ConformanceDeclaration.self:
       return contextOfSelf(in: program.castUnchecked(n, to: ConformanceDeclaration.self))
     case ExtensionDeclaration.self:
@@ -1403,7 +1403,7 @@ public struct Typer {
 
   /// Returns `true` iff `r` declares a value whose computation is pure.
   private func isStable(_ d: DeclarationIdentity) -> Bool {
-    switch program.kind(of: d) {
+    switch program.tag(of: d) {
     case AssociatedTypeDeclaration.self:
       return true
     case ConformanceDeclaration.self:
@@ -1994,7 +1994,7 @@ public struct Typer {
     guard let n = s.node else { return nil }
 
     // Only types have nominal scopes.
-    switch program.kind(of: n) {
+    switch program.tag(of: n) {
     case StructDeclaration.self:
       return demand(Struct(declaration: castUnchecked(n))).erased
     case TraitDeclaration.self:
@@ -2041,7 +2041,7 @@ public struct Typer {
   private mutating func expectedOutputType(in s: ScopeIdentity) -> AnyTypeIdentity? {
     for t in program.scopes(from: s) {
       guard let n = t.node else { break }
-      switch program.kind(of: n) {
+      switch program.tag(of: n) {
       case FunctionDeclaration.self:
         return expectedOutputType(in: program.castUnchecked(n, to: FunctionDeclaration.self))
       case InitializerDeclaration.self:

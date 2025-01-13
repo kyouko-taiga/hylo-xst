@@ -1,5 +1,5 @@
 /// The type of a node in a type tree.
-public struct TypeKind {
+public struct TypeTag {
 
   /// The underlying value of `self`.
   public let value: any TypeTree.Type
@@ -21,7 +21,7 @@ public struct TypeKind {
 
 }
 
-extension TypeKind: Equatable {
+extension TypeTag: Equatable {
 
   public static func == (l: Self, r: Self) -> Bool {
     l.value == r.value
@@ -29,7 +29,7 @@ extension TypeKind: Equatable {
 
 }
 
-extension TypeKind: Hashable {
+extension TypeTag: Hashable {
 
   public func hash(into hasher: inout Hasher) {
     hasher.combine(ObjectIdentifier(value))
@@ -37,7 +37,7 @@ extension TypeKind: Hashable {
 
 }
 
-extension TypeKind: CustomStringConvertible {
+extension TypeTag: CustomStringConvertible {
 
   public var description: String {
     String(describing: value)

@@ -14,9 +14,9 @@ final class ProgramTests: XCTestCase {
     XCTAssertEqual(p.select(.from("org.hylo.M0")).count, 6)
   }
 
-  func testSelectByKind() throws {
+  func testSelectByTag() throws {
     let p = Program.test
-    XCTAssertEqual(p.select(.kind(AssociatedTypeDeclaration.self)).count, 4)
+    XCTAssertEqual(p.select(.tag(AssociatedTypeDeclaration.self)).count, 4)
   }
 
   func testFormat() throws {

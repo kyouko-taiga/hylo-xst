@@ -59,14 +59,14 @@ public struct TypeStore {
     }
   }
 
-  /// Returns the kind of `n`.
-  public func kind<T: TypeIdentity>(of n: T) -> TypeKind {
+  /// Returns the tag of `n`.
+  public func tag<T: TypeIdentity>(of n: T) -> TypeTag {
     .init(type(of: self[n]))
   }
 
   /// Returns `true` iff `n` identifies the type of an entity callable as a function.
   public func isArrowLike<T: TypeIdentity>(_ n: T) -> Bool {
-    switch kind(of: n) {
+    switch tag(of: n) {
     case Arrow.self:
       return true
     default:
@@ -378,7 +378,7 @@ public struct TypeStore {
     case (let lhs as Union, let rhs as Union):
       return unifiable(lhs, rhs, &subs)
     default:
-      assert(kind(of: a) != kind(of: b))
+      assert(tag(of: a) != tag(of: b))
       return false
     }
   }

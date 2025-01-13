@@ -44,7 +44,7 @@ extension Program {
   /// Visits `n` and its children in pre-order, calling back `v` when a node is entered or left.
   public func visit<T: SyntaxVisitor>(_ n: AnySyntaxIdentity, calling v: inout T) {
     if !v.willEnter(n, in: self) { return }
-    switch kind(of: n) {
+    switch tag(of: n) {
     case AssociatedTypeDeclaration.self:
       traverse(castUnchecked(n, to: AssociatedTypeDeclaration.self), calling: &v)
     case BindingDeclaration.self:

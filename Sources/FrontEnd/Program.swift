@@ -162,9 +162,9 @@ public struct Program {
     self[n].show(readingChildrenFrom: self)
   }
 
-  /// Returns the kind of `n`.
-  public func kind<T: SyntaxIdentity>(of n: T) -> SyntaxKind {
-    modules.values[n.module].kind(of: n)
+  /// Returns the tag of `n`.
+  public func tag<T: SyntaxIdentity>(of n: T) -> SyntaxTag {
+    modules.values[n.module].tag(of: n)
   }
 
   /// `true` iff `f` has gone through scoping.
@@ -174,22 +174,22 @@ public struct Program {
 
   /// Returns `true` iff `n` denotes a declaration.
   public func isDeclaration<T: SyntaxIdentity>(_ n: T) -> Bool {
-    kind(of: n).value is any Declaration.Type
+    tag(of: n).value is any Declaration.Type
   }
 
   /// Returns `true` iff `n` denotes a type declaration.
   public func isTypeDeclaration<T: SyntaxIdentity>(_ n: T) -> Bool {
-    kind(of: n).value is any TypeDeclaration.Type
+    tag(of: n).value is any TypeDeclaration.Type
   }
 
   //// Returns `true` iff `n` denotes an extension or conformance declaration.
   public func isTypeExtendingDeclaration<T: SyntaxIdentity>(_ n: T) -> Bool {
-    kind(of: n).value is any TypeExtendingDeclaration.Type
+    tag(of: n).value is any TypeExtendingDeclaration.Type
   }
 
   /// Returns `true` iff `n` introduces a name that can be overloaded.
   public func isOverloadable<T: SyntaxIdentity>(_ n: T) -> Bool {
-    switch kind(of: n) {
+    switch tag(of: n) {
     case FunctionDeclaration.self:
       return true
     default:
@@ -199,7 +199,7 @@ public struct Program {
 
   /// Returns `true` iff `n` denotes a scope.
   public func isScope<T: SyntaxIdentity>(_ n: T) -> Bool {
-    kind(of: n).value is any Scope.Type
+    tag(of: n).value is any Scope.Type
   }
 
   /// Returns `true` iff `n` occurs at the top-level of a source file.
@@ -213,7 +213,7 @@ public struct Program {
   ///
   /// - Rquires: The module containing `n` is scoped.
   public func isRequirement<T: SyntaxIdentity>(_ n: T) -> Bool {
-    switch kind(of: n) {
+    switch tag(of: n) {
     case AssociatedTypeDeclaration.self:
       return true
     case FunctionDeclaration.self:
@@ -229,7 +229,7 @@ public struct Program {
   ///
   /// - Rquires: The module containing `n` is scoped.
   public func isExtensionMember<T: SyntaxIdentity>(_ n: T) -> Bool {
-    switch kind(of: n) {
+    switch tag(of: n) {
     case FunctionDeclaration.self:
       return parent(containing: n, as: ExtensionDeclaration.self) != nil
     case InitializerDeclaration.self:
@@ -262,12 +262,12 @@ public struct Program {
 
   /// Returns `true` iff `n` denotes an expression.
   public func isExpression<T: SyntaxIdentity>(_ n: T) -> Bool {
-    kind(of: n).value is any Expression.Type
+    tag(of: n).value is any Expression.Type
   }
 
   /// Returns `true` iff `n` is the expression of a value marked for mutation.
   public func isMarkedMutating(_ n: ExpressionIdentity) -> Bool {
-    switch kind(of: n) {
+    switch tag(of: n) {
     default:
       return false
     }
@@ -287,7 +287,7 @@ public struct Program {
 
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
   public func cast<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type) -> U.ID? {
-    if kind(of: n) == .init(U.self) {
+    if tag(of: n) == .init(U.self) {
       return .init(uncheckedFrom: n.erased)
     } else {
       return nil
@@ -296,7 +296,7 @@ public struct Program {
 
   /// Returns `n` assuming it identifies a node of type `U`.
   public func castUnchecked<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type = U.self) -> U.ID {
-    assert(kind(of: n) == .init(U.self))
+    assert(tag(of: n) == .init(U.self))
     return .init(uncheckedFrom: n.erased)
   }
 
@@ -450,7 +450,7 @@ public struct Program {
 
   /// Returns the names introduced by `d`.
   public func names(introducedBy d: DeclarationIdentity) -> [Name] {
-    switch kind(of: d) {
+    switch tag(of: d) {
     case AssociatedTypeDeclaration.self:
       return [name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))]
     case BindingDeclaration.self:
@@ -486,7 +486,7 @@ public struct Program {
   /// Returns the name of the unique entity declared by `d`, or `nil` if `d` declares zero or more
   /// than one named entity.
   public func name(of d: DeclarationIdentity) -> Name? {
-    switch kind(of: d) {
+    switch tag(of: d) {
     case AssociatedTypeDeclaration.self:
       return name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))
     case ParameterDeclaration.self:
@@ -570,7 +570,7 @@ public struct Program {
 
   /// If `n` is a function or subscript call, returns its callee. Otherwise, returns `nil`.
   public func callee(_ n: ExpressionIdentity) -> ExpressionIdentity? {
-    switch kind(of: n) {
+    switch tag(of: n) {
     case Call.self:
       return self[castUnchecked(n, to: Call.self)].callee
     //case SubscriptCall.self:
@@ -614,7 +614,7 @@ public struct Program {
     at path: IndexPath = [],
     do action: (VariableDeclaration.ID, IndexPath) -> Void
   ) {
-    switch kind(of: p) {
+    switch tag(of: p) {
     case BindingPattern.self:
       let q = castUnchecked(p, to: BindingPattern.self)
       forEachVariable(introducedBy: self[q].pattern, at: path, do: action)
@@ -642,7 +642,7 @@ public struct Program {
   public func unexpected<T: SyntaxIdentity>(
     _ n: T, file: StaticString = #file, line: UInt = #line
   ) -> Never {
-    unreachable("unexpected node '\(kind(of: n))' at \(self[n].site)", file: file, line: line)
+    unreachable("unexpected node '\(tag(of: n))' at \(self[n].site)", file: file, line: line)
   }
 
   /// Reports that `t` was not expected in the current executation path and exits the program.
@@ -654,7 +654,7 @@ public struct Program {
 
   /// Returns a source span suitable to emit a disgnostic related to `n` as a whole.
   public func spanForDiagnostic<T: SyntaxIdentity>(about n: T) -> SourceSpan {
-    switch kind(of: n) {
+    switch tag(of: n) {
     case AssociatedTypeDeclaration.self:
       return self[castUnchecked(n, to: AssociatedTypeDeclaration.self)].identifier.site
     case BindingDeclaration.self:
@@ -827,8 +827,8 @@ public indirect enum SyntaxFilter {
   /// Matches any node in the given module.
   case from(Module.Name)
 
-  /// Matches any node with the given kind.
-  case kind(any Syntax.Type)
+  /// Matches any node with the given tag.
+  case tag(any Syntax.Type)
 
   /// Matches top-level declarations.
   case topLevel
@@ -843,8 +843,8 @@ public indirect enum SyntaxFilter {
       return true
     case .from(let m):
       return p.identity(module: m) == n.module
-    case .kind(let k):
-      return p.kind(of: n) == k
+    case .tag(let k):
+      return p.tag(of: n) == k
     case .topLevel:
       return p.isTopLevel(n)
     case .satisfies(let p):

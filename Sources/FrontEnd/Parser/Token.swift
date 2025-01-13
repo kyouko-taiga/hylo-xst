@@ -4,8 +4,8 @@ import Utilities
 /// A terminal symbol of the syntactic grammar.
 public struct Token: Hashable {
 
-  /// The kind of a token.
-  public enum Kind: UInt8 {
+  /// The tag of a token.
+  public enum Tag: UInt8 {
 
     // Identifiers
     case name
@@ -68,15 +68,15 @@ public struct Token: Hashable {
 
   }
 
-  /// The kind of the token.
-  public let kind: Kind
+  /// The tag of the token.
+  public let tag: Tag
 
   /// The site from which `self` was extracted.
   public let site: SourceSpan
 
   /// Creates an instance with the given properties.
-  public init(kind: Kind, site: SourceSpan) {
-    self.kind = kind
+  public init(tag: Tag, site: SourceSpan) {
+    self.tag = tag
     self.site = site
   }
 
@@ -85,12 +85,12 @@ public struct Token: Hashable {
 
   /// `true` iff `self` is a reserved keyword.
   public var isKeyword: Bool {
-    (kind.rawValue >= Kind.false.rawValue) && (kind.rawValue <= Kind.type.rawValue)
+    (tag.rawValue >= Tag.false.rawValue) && (tag.rawValue <= Tag.type.rawValue)
   }
 
   /// `true` iff `self` is a binding introducer.
   public var isBindingIntroducer: Bool {
-    switch kind {
+    switch tag {
     case .inout, .let, .sink, .var:
       return true
     default:
@@ -100,7 +100,7 @@ public struct Token: Hashable {
 
   /// `true` iff `self` may be at the beginning of a declaration.
   public var isDeclarationHead: Bool {
-    switch kind {
+    switch tag {
     case .given, .inout, .let, .sink, .var:
       return true
     case .import, .struct, .trait, .type, .typealias:
@@ -114,7 +114,7 @@ public struct Token: Hashable {
 
   /// `true` iff `self` is a declaration modifier.
   public var isDeclarationModifier: Bool {
-    switch kind {
+    switch tag {
     case .private, .public, .internal:
       return true
     default:
@@ -124,7 +124,7 @@ public struct Token: Hashable {
 
   /// `true` iff `self` is an operator notation.
   public var isOperatorNotation: Bool {
-    switch kind {
+    switch tag {
     case .infix, .postfix, .prefix:
       return true
     default:
@@ -134,7 +134,7 @@ public struct Token: Hashable {
 
   /// `true` iff `self` may be part of an operator.
   public var isOperator: Bool {
-    switch kind {
+    switch tag {
     case .ampersand, .equal, .operator, .leftAngle, .rightAngle:
       return true
     default:
@@ -144,12 +144,12 @@ public struct Token: Hashable {
 
   /// `true` iff `self` is a valid argument label.
   public var isArgumentLabel: Bool {
-    (kind == .name) || (kind == .underscore) || isKeyword
+    (tag == .name) || (tag == .underscore) || isKeyword
   }
 
   /// `true` iff `self` is an access effect.
   public var isAccessEffect: Bool {
-    switch kind {
+    switch tag {
     case .let, .inout, .set, .sink:
       return true
     default:
@@ -162,14 +162,14 @@ public struct Token: Hashable {
 extension Token: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    let k = try archive.read(rawValueOf: Token.Kind.self, in: &context)
+    let k = try archive.read(rawValueOf: Token.Tag.self, in: &context)
       .unwrapOrThrow(ArchiveError.invalidInput)
     let s = try archive.read(SourceSpan.self, in: &context)
-    self.init(kind: k, site: s)
+    self.init(tag: k, site: s)
   }
   
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(rawValueOf: kind, in: &context)
+    try archive.write(rawValueOf: tag, in: &context)
     try archive.write(site, in: &context)
   }
 

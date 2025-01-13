@@ -62,7 +62,7 @@ public struct Scoper {
     mutating func willEnter(_ n: AnySyntaxIdentity, in program: Program) -> Bool {
       syntaxToParent[n.offset] = innermostScope
 
-      switch program.kind(of: n) {
+      switch program.tag(of: n) {
       case BindingDeclaration.self:
         bindingDeclarationsOnStack.append(.init(uncheckedFrom: n))
       case VariableDeclaration.self:
@@ -83,7 +83,7 @@ public struct Scoper {
     }
 
     mutating func willExit(_ n: AnySyntaxIdentity, in program: Program) {
-      if program.kind(of: n) == BindingDeclaration.self {
+      if program.tag(of: n) == BindingDeclaration.self {
         bindingDeclarationsOnStack.removeLast()
       } else if program.isScope(n) {
         innermostScope = syntaxToParent[n.offset]

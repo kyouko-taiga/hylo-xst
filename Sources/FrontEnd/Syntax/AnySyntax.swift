@@ -29,12 +29,12 @@ extension AnySyntax: Equatable {
 extension AnySyntax: Archivable {
 
   internal init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    let k = try archive.read(SyntaxKind.self, in: &context)
+    let k = try archive.read(SyntaxTag.self, in: &context)
     self = .init(try archive.read(k.value, in: &context))
   }
 
   internal func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(SyntaxKind(type(of: wrapped)), in: &context)
+    try archive.write(SyntaxTag(type(of: wrapped)), in: &context)
     try archive.write(wrapped, in: &context)
   }
 

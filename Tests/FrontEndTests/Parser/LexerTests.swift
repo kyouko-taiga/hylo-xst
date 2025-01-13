@@ -122,11 +122,11 @@ final class LexerTests: XCTestCase {
 }
 
 private func assertNext(
-  from scanner: inout Lexer, is expected: Token.Kind, withValue text: String? = nil,
+  from scanner: inout Lexer, is expected: Token.Tag, withValue text: String? = nil,
   file: StaticString = #file, line: UInt = #line
 ) throws {
   let next = try XCTUnwrap(scanner.next())
-  XCTAssertEqual(next.kind, expected, file: file, line: line)
+  XCTAssertEqual(next.tag, expected, file: file, line: line)
   if let s = text {
     XCTAssertEqual(String(next.text), s, file: file, line: line)
   }

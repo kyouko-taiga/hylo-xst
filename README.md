@@ -17,4 +17,8 @@ If `m` denotes a trait requirement, then name resolution should bind it to the e
 ## Ideas for optimizations
 
 - Store the contents of "small" type trees in the inline storage of their identities.
-- Use a separate array to store the kind of each syntax tree rather than calling `kind(of:)`.
+- Use a separate array to store the tag of each syntax tree rather than calling `tag(of:)`.
+
+## Questions
+
+- Is it desirable to write extensions of context functions?

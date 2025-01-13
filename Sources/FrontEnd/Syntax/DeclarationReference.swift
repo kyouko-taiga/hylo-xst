@@ -67,15 +67,15 @@ extension Program {
     case .predefined:
       return "$predefined"
     case .direct(let d):
-      return nameOrKind(of: d)
+      return nameOrTag(of: d)
     case .member(let q, let d):
-      return show(q) + "." + nameOrKind(of: d)
+      return show(q) + "." + nameOrTag(of: d)
     case .inherited(_, let d):
-      return nameOrKind(of: d)
+      return nameOrTag(of: d)
     }
 
-    func nameOrKind(of d: DeclarationIdentity) -> String {
-      name(of: d)?.description ?? "$<\(kind(of: d))>"
+    func nameOrTag(of d: DeclarationIdentity) -> String {
+      name(of: d)?.description ?? "$<\(tag(of: d))>"
     }
   }
 

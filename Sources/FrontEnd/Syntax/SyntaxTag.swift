@@ -1,7 +1,7 @@
 import Archivist
 
 /// The type of a node in an abstract syntax tree.
-public struct SyntaxKind {
+public struct SyntaxTag {
 
   /// The underlying value of `self`.
   public let value: any Syntax.Type
@@ -62,11 +62,11 @@ public struct SyntaxKind {
   ]
 
   static let indices = Dictionary(
-    uniqueKeysWithValues: allValues.enumerated().map({ (i, k) in (SyntaxKind(k), i) }))
+    uniqueKeysWithValues: allValues.enumerated().map({ (i, k) in (SyntaxTag(k), i) }))
 
 }
 
-extension SyntaxKind: Equatable {
+extension SyntaxTag: Equatable {
 
   public static func == (l: Self, r: Self) -> Bool {
     l.value == r.value
@@ -74,7 +74,7 @@ extension SyntaxKind: Equatable {
 
 }
 
-extension SyntaxKind: Hashable {
+extension SyntaxTag: Hashable {
 
   public func hash(into hasher: inout Hasher) {
     hasher.combine(ObjectIdentifier(value))
@@ -82,7 +82,7 @@ extension SyntaxKind: Hashable {
 
 }
 
-extension SyntaxKind: Archivable {
+extension SyntaxTag: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self = try .init(Self.allValues[Int(archive.readUnsignedLEB128())])
@@ -94,7 +94,7 @@ extension SyntaxKind: Archivable {
 
 }
 
-extension SyntaxKind: CustomStringConvertible {
+extension SyntaxTag: CustomStringConvertible {
 
   public var description: String {
     String(describing: value)
