@@ -134,6 +134,8 @@ public struct Typer {
       check(castUnchecked(d, to: TraitDeclaration.self))
     case TypeAliasDeclaration.self:
       check(castUnchecked(d, to: TypeAliasDeclaration.self))
+    case UsingDeclaration.self:
+      check(castUnchecked(d, to: UsingDeclaration.self))
     default:
       program.unexpected(d)
     }
@@ -166,9 +168,6 @@ public struct Typer {
 
     check(program[d].contextParameters)
     for m in program[d].members { check(m) }
-
-    // Nothing else to do if the declaration is abstract.
-    if program[d].isAbstract { return }
 
     let witness = program.types.head(t)
     guard let (c, conformer) = program.types.castToTraitApplication(witness) else {
@@ -293,6 +292,11 @@ public struct Typer {
   private mutating func check(_ d: TypeAliasDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO
+  }
+
+  /// Type checks `d`.
+  private mutating func check(_ d: UsingDeclaration.ID) {
+    _ = declaredType(of: d)
   }
 
   /// Type checks `ps`.
@@ -522,6 +526,8 @@ public struct Typer {
       return declaredType(of: castUnchecked(d, to: TypeAliasDeclaration.self))
     case VariableDeclaration.self:
       return declaredType(of: castUnchecked(d, to: VariableDeclaration.self))
+    case UsingDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: UsingDeclaration.self))
     default:
       program.unexpected(d)
     }
@@ -732,6 +738,22 @@ public struct Typer {
     let b = program.bindingDeclaration(containing: d) ?? unreachable("pattern is not typed")
     _ = declaredType(of: b)
     return program[module].type(assignedTo: d) ?? .error
+  }
+
+  /// Returns the declared type of `d` without checking.
+  private mutating func declaredType(of d: UsingDeclaration.ID) -> AnyTypeIdentity {
+    if let memoized = program[d.module].type(assignedTo: d) { return memoized }
+    assert(d.module == module, "dependency is not typed")
+
+    switch program[d].semantics.value {
+    case .conformance:
+      let t = declaredConformanceType(program[d].lhs, program[d].rhs)
+      program[module].setType(t, for: d)
+      return t
+
+    case .equality:
+      fatalError()
+    }
   }
 
   /// Returns the declared properties of the parameters in `ds` without checking.
@@ -1371,21 +1393,21 @@ public struct Typer {
   private mutating func typeOfImplementation(
     satisfying requirement: AssociatedTypeDeclaration.ID, in witness: WitnessExpression
   ) -> AnyTypeIdentity {
-    let d = program.cast(witness.declaration.target!, to: ConformanceDeclaration.self)!
+    // Is the witness referring to a given declaration?
+    if let d = program.cast(witness.declaration.target!, to: ConformanceDeclaration.self) {
+      // Read the associated type definition.
+      if let i = implementation(of: requirement, in: d) {
+        return declaredType(of: i)
+      } else {
+        return .error
+      }
+    }
 
-    // If the declaration is abstract, just susbtitute `Self`.
-    if program[d].isAbstract {
+    // Otherwise, the value of the witness is opaque.
+    else {
       let (_, q) = program.types.castToTraitApplication(witness.type)!
       return metatype(of: AssociatedType(declaration: requirement, qualification: q)).erased
     }
-
-    // Otherwise, read the associated type definition.
-    else if let i = implementation(of: requirement, in: d) {
-      return declaredType(of: i)
-    }
-
-    // Requirement is not implemented.
-    else { return .error }
   }
 
   /// Returns the context parameters of the type of an instance of `Self` in `s`, or `nil` if `s`
@@ -1680,7 +1702,12 @@ public struct Typer {
     in ds: S, to gs: inout [DeclarationIdentity]
   ) {
     for d in ds {
-      if let g = program.cast(d, to: ConformanceDeclaration.self) { gs.append(.init(g)) }
+      switch program.tag(of: d) {
+      case ConformanceDeclaration.self, UsingDeclaration.self:
+        gs.append(d)
+      default:
+        continue
+      }
     }
   }
 

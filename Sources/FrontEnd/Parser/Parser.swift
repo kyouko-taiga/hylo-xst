@@ -274,22 +274,19 @@ public struct Parser {
     return ps
   }
 
-  /// Parses a context parameter into `module`.
+  /// Parses an implicit compile-time context parameter into `module`.
   private mutating func parseContextParameter(
     in module: inout Module
   ) throws -> DeclarationIdentity {
-    let lhs = try parseExpression(in: &module)
-    _ = try take(.colon) ?? expected("':'")
-    let rhs = try parseExpression(in: &module)
+    let l = try parseExpression(in: &module)
+    let s = try take(.colon) ?? take(.equal) ?? expected("':' or '=='")
+    let r = try parseExpression(in: &module)
 
     let d = module.insert(
-      ConformanceDeclaration(
-        introducer: nil,
-        contextParameters: .empty(at: .empty(at: module[lhs].site.start)),
-        extendee: lhs,
-        concept: rhs,
-        members: [],
-        site: module[lhs].site.extended(toCover: module[rhs].site)),
+      UsingDeclaration(
+        lhs: l, rhs: r,
+        semantics: .init((s.tag == .colon) ? .conformance : .equality, at: s.site),
+        site: module[l].site.extended(toCover: module[r].site)),
       in: file)
     return .init(d)
   }

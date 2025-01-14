@@ -40,6 +40,7 @@ public struct SyntaxTag {
     StructDeclaration.self,
     TraitDeclaration.self,
     TypeAliasDeclaration.self,
+    UsingDeclaration.self,
     VariableDeclaration.self,
 
     // Expressions

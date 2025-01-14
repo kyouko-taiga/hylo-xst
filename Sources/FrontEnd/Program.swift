@@ -686,7 +686,7 @@ public struct Program {
 
   /// Returns a source span suitable to emit a disgnostic related to `n` as a whole.
   public func spanForDiagnostic(about n: ConformanceDeclaration.ID) -> SourceSpan {
-    self[n].introducer?.site ?? .empty(at: self[n].site.start)
+    self[n].introducer.site
   }
 
   /// Returns `message` with placeholders replaced by their corresponding values in `arguments`.

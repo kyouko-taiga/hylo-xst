@@ -69,6 +69,8 @@ extension Program {
       traverse(castUnchecked(n, to: TraitDeclaration.self), calling: &v)
     case TypeAliasDeclaration.self:
       traverse(castUnchecked(n, to: TypeAliasDeclaration.self), calling: &v)
+    case UsingDeclaration.self:
+      traverse(castUnchecked(n, to: UsingDeclaration.self), calling: &v)
     case VariableDeclaration.self:
       break
 
@@ -129,15 +131,6 @@ extension Program {
     visit(ps.implicit, calling: &v)
   }
 
-  /// Visits `p` and its children in pre-order, calling back `v` when a node is entered or left.
-  public func visit<T: SyntaxVisitor>(_ p: ConstraintDeclaration, calling v: inout T) {
-    switch p {
-    case .conformance(let t, let u):
-      visit(t, calling: &v)
-      visit(u, calling: &v)
-    }
-  }
-
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: AssociatedTypeDeclaration.ID, calling v: inout T) {}
 
@@ -196,6 +189,12 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: TypeAliasDeclaration.ID, calling v: inout T) {
     visit(self[n].aliasee, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: UsingDeclaration.ID, calling v: inout T) {
+    visit(self[n].lhs, calling: &v)
+    visit(self[n].rhs, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

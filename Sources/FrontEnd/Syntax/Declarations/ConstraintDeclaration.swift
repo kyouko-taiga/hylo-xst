@@ -1,45 +1,66 @@
 import Archivist
 
 /// The declaration of a constraint in a context clause.
-public enum ConstraintDeclaration: Equatable {
+public struct UsingDeclaration: Declaration {
 
-  /// A parameter accepting a witness `extendee`' conformance to `concept`.
-  case conformance(extendee: ExpressionIdentity, concept: ExpressionIdentity)
+  /// A constraint operator.
+  public enum Operator: UInt8 {
+
+    /// A conformance constraint.
+    case conformance
+
+    /// An equality constraint.
+    case equality
+
+  }
+
+  /// The left-hand side of the constraint.
+  public let lhs: ExpressionIdentity
+
+  /// The right-hand side of the constraint.
+  public let rhs: ExpressionIdentity
+
+  /// The semantics of the constraint, which is `.colon` for conformance or `.equal`. for equality.
+  public let semantics: Parsed<Operator>
+
+  /// The site from which `self` was parsed.
+  public let site: SourceSpan
+
+  /// Returns a parsable representation of `self`, which is a node of `program`.
+  public func show(readingChildrenFrom program: Program) -> String {
+    let s = (semantics.value == .conformance) ? ":" : "=="
+    return "\(program.show(lhs)) \(s) \(program.show(rhs))"
+  }
 
 }
 
-extension ConstraintDeclaration: Archivable {
+extension UsingDeclaration: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    switch try archive.readByte() {
-    case 0:
-      let t = try archive.read(ExpressionIdentity.self, in: &context)
-      let u = try archive.read(ExpressionIdentity.self, in: &context)
-      self = .conformance(extendee: t, concept: u)
-    default:
-      throw ArchiveError.invalidInput
-    }
+    self.lhs = try archive.read(ExpressionIdentity.self, in: &context)
+    self.rhs = try archive.read(ExpressionIdentity.self, in: &context)
+    self.semantics = try archive.read(Parsed<Operator>.self, in: &context)
+    self.site = try archive.read(SourceSpan.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    switch self {
-    case .conformance(let t, let u):
-      archive.write(byte: 0)
-      try archive.write(t, in: &context)
-      try archive.write(u, in: &context)
-    }
+    try archive.write(lhs, in: &context)
+    try archive.write(rhs, in: &context)
+    try archive.write(semantics, in: &context)
+    try archive.write(site, in: &context)
   }
 
 }
 
-extension Program {
+extension UsingDeclaration.Operator: Archivable {
 
-  /// Returns a source-like representation of `d`.
-  public func show(_ d: ConstraintDeclaration) -> String {
-    switch d {
-    case .conformance(let t, let u):
-      return "\(show(t)): \(show(u))"
-    }
+  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
+    self = try archive.read(rawValueOf: Self.self, in: &context)
+      .unwrapOrThrow(ArchiveError.invalidInput)
+  }
+
+  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
+    try archive.write(rawValueOf: self)
   }
 
 }
