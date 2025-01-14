@@ -37,7 +37,7 @@ extension Program {
 }
 
 /// A constraint stating that two types are equal.
-internal struct TypeEquality: Constraint {
+internal struct EqualityConstraint: Constraint {
 
   /// The left operand.
   internal private(set) var lhs: AnyTypeIdentity

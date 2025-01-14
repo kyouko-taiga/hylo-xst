@@ -1199,7 +1199,7 @@ public struct Typer {
     if let i = program[d].initializer {
       let v = context.withSubcontext(expectedType: p, do: { (s) in inferredType(of: i, in: &s) })
       if v != .error {
-        context.obligations.assume(TypeEquality(lhs: p, rhs: v, site: program[i].site))
+        context.obligations.assume(EqualityConstraint(lhs: p, rhs: v, site: program[i].site))
       }
     }
 

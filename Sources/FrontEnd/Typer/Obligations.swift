@@ -44,7 +44,7 @@ internal struct Obligations {
     _ n: T, hasType t: AnyTypeIdentity, at site: SourceSpan
   ) -> AnyTypeIdentity {
     if let u = syntaxToType[n.erased] {
-      assume(TypeEquality(lhs: t, rhs: u, site: site))
+      assume(EqualityConstraint(lhs: t, rhs: u, site: site))
     } else {
       syntaxToType[.init(n)] = t
     }

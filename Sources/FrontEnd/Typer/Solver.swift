@@ -92,7 +92,7 @@ internal struct Solver {
 
           let o: GoalOutcome
           switch me.goals[g] {
-          case is TypeEquality:
+          case is EqualityConstraint:
             o = me.solve(equality: g)
           case is WideningConstraint:
             o = me.solve(widening: g)
@@ -135,7 +135,7 @@ internal struct Solver {
 
   /// Discharges `g`, which is a type equality constraint.
   private mutating func solve(equality g: GoalIdentity) -> GoalOutcome {
-    let k = goals[g] as! TypeEquality
+    let k = goals[g] as! EqualityConstraint
 
     if let s = typer.program.types.unifiable(k.lhs, k.rhs) {
       for (t, u) in s.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
@@ -169,7 +169,7 @@ internal struct Solver {
       }
 
     default:
-      return simplify(k, as: TypeEquality(lhs: k.lhs, rhs: k.rhs, site: k.site))
+      return simplify(k, as: EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site))
     }
   }
 
@@ -225,7 +225,7 @@ internal struct Solver {
     // Constrain the return type.
     let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
     let o = adaptedCallee.output(calleeIsMutating: m)
-    subgoals.append(TypeEquality(lhs: o, rhs: k.output, site: k.site))
+    subgoals.append(EqualityConstraint(lhs: o, rhs: k.output, site: k.site))
 
     // Simplify the constraint.
     let cs = subgoals.map({ (s) in schedule(s) })
@@ -309,7 +309,7 @@ internal struct Solver {
       return postpone(g)
 
     case let p as RemoteType:
-      let s = schedule(TypeEquality(lhs: k.lhs, rhs: p.projectee, site: k.site))
+      let s = schedule(EqualityConstraint(lhs: k.lhs, rhs: p.projectee, site: k.site))
       return .split([s]) { (s, _, p, d) in
         let t = p.types.reify(k.lhs, applying: s)
         let u = p.types.reify(k.rhs, applying: s)
@@ -349,7 +349,7 @@ internal struct Solver {
     }
 
     let body = typer.program.types.substitute(ss, in: f.body)
-    let subgoal = schedule(TypeEquality(lhs: k.output, rhs: body, site: k.site))
+    let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: body, site: k.site))
     return delegate([subgoal])
   }
 
@@ -410,7 +410,7 @@ internal struct Solver {
 
     var viable: [(choice: NameResolutionCandidate, solution: Solution)] = []
     for choice in k.candidates {
-      let equality = TypeEquality(lhs: k.type, rhs: choice.type, site: k.site)
+      let equality = EqualityConstraint(lhs: k.type, rhs: choice.type, site: k.site)
       log("- pick: \(typer.program.show(equality))")
 
       let s = indenting { (me) in
@@ -514,7 +514,8 @@ internal struct Solver {
     var end = stale.count
     for i in (0 ..< stale.count).reversed() {
       if let k = goals[stale[i]] as? WideningConstraint {
-        outcomes[stale[i]] = simplify(k, as: TypeEquality(lhs: k.lhs, rhs: k.rhs, site: k.site))
+        outcomes[stale[i]] = simplify(
+          k, as: EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site))
         stale.swapAt(i, end - 1)
         end -= 1
       }
