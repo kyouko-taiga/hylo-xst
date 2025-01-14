@@ -42,6 +42,7 @@ public struct Token: Hashable {
     case ampersand
     case arrow
     case assign
+    case coercion
     case equal
     case `operator`
 

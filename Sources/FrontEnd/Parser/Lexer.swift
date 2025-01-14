@@ -1,6 +1,9 @@
 /// The tokens of a source file.
 public struct Lexer: IteratorProtocol, Sequence {
 
+  /// A snapshot of a lexer's internal state.
+  public typealias Backup = SourceFile.Index
+
   /// The source file being tokenized.
   public let source: SourceFile
 
@@ -27,9 +30,25 @@ public struct Lexer: IteratorProtocol, Sequence {
     }
   }
 
+  /// Returns a snapshot of `self`'s internal state that can be restored using `restore(_:)`.
+  public func save() -> Backup {
+    position
+  }
+
+  /// Restores the state of `self` from a snapshot.
+  public mutating func restore(_ snapshot: Backup) {
+    position = snapshot
+  }
+
   /// Consumes and returns a keyword or identifier.
   private mutating func takeKeywordOrIdentifier() -> Token {
     let word = take(while: \.isIdentifierTail)
+
+    if word == "as" {
+      _ = take("!") ?? take("*")
+      return .init(tag: .coercion, site: span(word.startIndex ..< position))
+    }
+
     let tag: Token.Tag
     switch word {
     case "_": tag = .underscore

@@ -76,6 +76,8 @@ extension Program {
       break
     case Call.self:
       traverse(castUnchecked(n, to: Call.self), calling: &v)
+    case Coercion.self:
+      traverse(castUnchecked(n, to: Coercion.self), calling: &v)
     case NameExpression.self:
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
     case RemoteTypeExpression.self:
@@ -102,7 +104,7 @@ extension Program {
       traverse(castUnchecked(n, to: Return.self), calling: &v)
 
     default:
-      unreachable()
+      unexpected(n)
     }
     v.willExit(n, in: self)
   }
@@ -207,6 +209,12 @@ extension Program {
     if case .explicit(let e) = self[n].qualification {
       visit(e, calling: &v)
     }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: Coercion.ID, calling v: inout T) {
+    visit(self[n].source, calling: &v)
+    visit(self[n].target, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

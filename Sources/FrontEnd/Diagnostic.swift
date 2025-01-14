@@ -89,6 +89,11 @@ extension Program {
     }
   }
 
+  /// Returns an error diagnosing an invalid type expression.
+  internal func doesNotDenoteType(_ e: ExpressionIdentity) -> Diagnostic {
+    .init(.error, "expression does not denote a type", at: spanForDiagnostic(about: e))
+  }
+
   /// Returns an error diagnosing a duplicate declaration.
   internal func duplicateDeclaration(
     at site: SourceSpan, previousDeclarations: [SourceSpan] = []
@@ -108,6 +113,13 @@ extension Program {
       expected '(\(ArgumentLabels(expected)))'
       """
     return .init(.error, m, at: site)
+  }
+
+  /// Returns an error diagnosing an invalid coercion.
+  internal func noCoercion(
+    from t: AnyTypeIdentity, to u: AnyTypeIdentity, at site: SourceSpan
+  ) -> Diagnostic {
+    .init(.error, format("no coercion from '%T' to '%T'", [t, u]), at: site)
   }
 
   /// Returns an error diagnosing an undefined symbol.

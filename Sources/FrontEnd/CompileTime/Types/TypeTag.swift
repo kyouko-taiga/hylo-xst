@@ -19,6 +19,11 @@ public struct TypeTag {
     l.value == r
   }
 
+  /// Returns `true` iff `l` and `r` denote a different node type.
+  public static func != (l: Self, r: any TypeTree.Type) -> Bool {
+    l.value != r
+  }
+
 }
 
 extension TypeTag: Equatable {

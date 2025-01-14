@@ -195,6 +195,7 @@ public struct Module {
   /// Assigns a type to `n`.
   internal mutating func setType<T: SyntaxIdentity>(_ t: AnyTypeIdentity, for n: T) {
     assert(n.module == identity)
+    assert(!t[.hasVariable])
     let u = sources.values[n.file.offset].syntaxToType[n.offset].wrapIfEmpty(t)
     assert(t == u, "inconsistent property assignment")
   }
@@ -202,6 +203,7 @@ public struct Module {
   /// Sets the declaration to which `n` refers.
   internal mutating func bind(_ n: NameExpression.ID, to r: DeclarationReference) {
     assert(n.module == identity)
+    assert(!r.hasVariable)
     let s = sources.values[n.file.offset].nameToDeclaration[n.offset].wrapIfEmpty(r)
     assert(r == s, "inconsistent property assignment")
   }

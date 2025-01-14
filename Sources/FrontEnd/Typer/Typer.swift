@@ -428,10 +428,14 @@ public struct Typer {
   private mutating func check(
     _ e: ExpressionIdentity, inContextExpecting r: AnyTypeIdentity? = nil
   ) -> AnyTypeIdentity {
-    var c = InferenceContext(expectedType: r)
-    let t = inferredType(of: e, in: &c)
-    let s = discharge(c.obligations, relatedTo: e)
-    return program.types.reify(t, applying: s.substitutions)
+    if let t = program[e.module].type(assignedTo: e) {
+      return t
+    } else {
+      var c = InferenceContext(expectedType: r)
+      let t = inferredType(of: e, in: &c)
+      let s = discharge(c.obligations, relatedTo: e)
+      return program.types.reify(t, applying: s.substitutions)
+    }
   }
 
   /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
@@ -949,6 +953,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: BooleanLiteral.self), in: &context)
     case Call.self:
       return inferredType(of: castUnchecked(e, to: Call.self), in: &context)
+    case Coercion.self:
+      return inferredType(of: castUnchecked(e, to: Coercion.self), in: &context)
     case NameExpression.self:
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case RemoteTypeExpression.self:
@@ -1022,6 +1028,48 @@ public struct Typer {
 
     // Otherwise, returns the inferred type as-is.
     else { return f }
+  }
+
+  /// Returns the inferred type of `e`'s callee.
+  private mutating func inferredType(
+    of e: Coercion.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let h = context.expectedType.map({ (m) in demand(Metatype(inhabitant: m)).erased })
+    let target = context.withSubcontext(expectedType: h) { (ctx) in
+      inferredType(of: program[e].target, in: &ctx)
+    }
+
+    // The right-hand side denotes a type?
+    if let rhs = (program.types[target] as? Metatype)?.inhabitant {
+      // The right-hand side injects an expected type for the left-hand side.
+      let lhs = context.withSubcontext(expectedType: rhs) { (ctx) in
+        inferredType(of: program[e].source, in: &ctx)
+      }
+
+      switch program[e].semantics {
+      case .up:
+        let s = program.spanForDiagnostic(about: program[e].source)
+        context.obligations.assume(WideningConstraint(lhs: lhs, rhs: rhs, site: s))
+      case .down:
+        let s = program.spanForDiagnostic(about: program[e].target)
+        context.obligations.assume(WideningConstraint(lhs: rhs, rhs: lhs, site: s))
+      case .pointer:
+        if program.types.tag(of: rhs) != RemoteType.self {
+          fatalError()
+        }
+      }
+
+      return context.obligations.assume(e, hasType: rhs, at: program[e].site)
+    }
+
+    // Inference failed on the right-hand side.
+    else if target == .error {
+      // Error already reported.
+      return context.obligations.assume(e, hasType: .error, at: program[e].site)
+    } else {
+      report(program.doesNotDenoteType(program[e].target))
+      return context.obligations.assume(e, hasType: .error, at: program[e].site)
+    }
   }
 
   /// Returns the inferred type of `e`.
@@ -1146,13 +1194,12 @@ public struct Typer {
     }
 
     // Slow path: infer a type from the ascription and the initializer (if any).
-    var c = InferenceContext()
     let p = evaluateTypeAscription(a)
 
     if let i = program[d].initializer {
-      let v = c.withSubcontext(expectedType: p, do: { (s) in inferredType(of: i, in: &s) })
+      let v = context.withSubcontext(expectedType: p, do: { (s) in inferredType(of: i, in: &s) })
       if v != .error {
-        c.obligations.assume(TypeEquality(lhs: p, rhs: v, site: program[i].site))
+        context.obligations.assume(TypeEquality(lhs: p, rhs: v, site: program[i].site))
       }
     }
 
@@ -1395,7 +1442,7 @@ public struct Typer {
       // Error already reported.
       return .error
     } else {
-      report(.init(.error, "expression does not denote a type", at: program[e].site))
+      report(program.doesNotDenoteType(e))
       return .error
     }
   }

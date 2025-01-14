@@ -109,6 +109,15 @@ final class LexerTests: XCTestCase {
     XCTAssertNil(scanner.next())
   }
 
+  func testCoercionOperator() throws {
+    var scanner = Lexer(tokenizing: "as as! as* as+")
+    try assertNext(from: &scanner, is: .coercion, withValue: "as")
+    try assertNext(from: &scanner, is: .coercion, withValue: "as!")
+    try assertNext(from: &scanner, is: .coercion, withValue: "as*")
+    try assertNext(from: &scanner, is: .coercion, withValue: "as")
+    try assertNext(from: &scanner, is: .operator)
+  }
+
   func testPunctuation() throws {
     var scanner = Lexer(tokenizing: ",.: :: ;")
     try assertNext(from: &scanner, is: .comma)

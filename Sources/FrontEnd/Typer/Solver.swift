@@ -94,6 +94,8 @@ internal struct Solver {
           switch me.goals[g] {
           case is TypeEquality:
             o = me.solve(equality: g)
+          case is WideningConstraint:
+            o = me.solve(widening: g)
           case is CallConstraint:
             o = me.solve(call: g)
           case is ArgumentConstraint:
@@ -116,10 +118,15 @@ internal struct Solver {
 
         if let result = s { return result }
       }
+
+      if fresh.isEmpty { refreshWideningConstraints() }
     }
 
-    for g in stale {
-      outcomes[g] = .failure({ (_, _, _, _) in () })
+    // Not enough context to solve the remaining stale constraints.
+    while let g = stale.popLast() {
+      outcomes[g] = .failure { (_, _, _, _) in
+        ()  // TODO: Diagnose stale constraints
+      }
     }
 
     assert(goals.indices.allSatisfy({ (g) in !outcomes[g].isPending }))
@@ -129,7 +136,9 @@ internal struct Solver {
   /// Discharges `g`, which is a type equality constraint.
   private mutating func solve(equality g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! TypeEquality
-    if matches(k.lhs, k.rhs) {
+
+    if let s = typer.program.types.unifiable(k.lhs, k.rhs) {
+      for (t, u) in s.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
       return .success
     } else {
       return .failure { (s, o, p, d) in
@@ -138,6 +147,41 @@ internal struct Solver {
         let m = p.format("type '%T' is not compatible with '%T'", [t, u])
         d.insert(.init(.error, m, at: k.site))
       }
+    }
+  }
+
+  /// Discharges `g`, which is a widening constraint.
+  private mutating func solve(widening g: GoalIdentity) -> GoalOutcome {
+    let k = goals[g] as! WideningConstraint
+
+    // Otherwise, check that the left-hand side can be widened to the right-hand side.
+    switch typer.program.types[k.rhs] {
+    case is TypeVariable:
+      return postpone(g)
+
+    case let u as Union:
+      if u.elements.isEmpty {
+        return .success
+      } else if k.lhs.isVariable || u.elements.contains(where: \.isVariable) {
+        return postpone(g)
+      } else {
+        fatalError("TODO")
+      }
+
+    default:
+      return simplify(k, as: TypeEquality(lhs: k.lhs, rhs: k.rhs, site: k.site))
+    }
+  }
+
+  /// Returns the simplification of `old` as `sub`.
+  private mutating func simplify(
+    _ old: WideningConstraint, as sub: any Constraint
+  ) -> GoalOutcome {
+    let s = schedule(sub)
+    return .split([s]) { (s, _, p, d) in
+      let t = p.types.reify(old.lhs, applying: s)
+      let u = p.types.reify(old.rhs, applying: s)
+      d.insert(p.noCoercion(from: t, to: u, at: old.site))
     }
   }
 
@@ -256,31 +300,6 @@ internal struct Solver {
     }
   }
 
-  /// Returns `true` iff `t` and `u` are unifiable.
-  private mutating func matches(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> Bool {
-    // Is it a trivial cases?
-    if t == u {
-      return true
-    } else if t.isVariable {
-      assume(.init(uncheckedFrom: t), equals: u)
-      return true
-    } else if u.isVariable {
-      assume(.init(uncheckedFrom: u), equals: t)
-      return true
-    }
-
-    // Contains aliases?
-    if t[.hasAliases] || u[.hasAliases] {
-      return matches(typer.program.types.dealiased(t), typer.program.types.dealiased(u))
-    }
-
-    // Otherwise, compare types side by side.
-    switch (typer.program.types[t], typer.program.types[u]) {
-    default:
-      return false
-    }
-  }
-
   /// Discharges `g`, which is an argument constraint.
   private mutating func solve(argument g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! ArgumentConstraint
@@ -294,7 +313,7 @@ internal struct Solver {
       return .split([s]) { (s, _, p, d) in
         let t = p.types.reify(k.lhs, applying: s)
         let u = p.types.reify(k.rhs, applying: s)
-        let m = p.format("cannot pass value of type '%T' to parameter '%T' ", [t, u])
+        let m = p.format("cannot pass value of type '%T' to parameter '%T'", [t, u])
         d.insert(.init(.error, m, at: k.site))
       }
 
@@ -486,25 +505,47 @@ internal struct Solver {
     stale.removeSubrange(end...)
   }
 
+  /// Transforms all stale widening constraints into equality constraints, selecting upper/lower
+  /// bounds using to the current type assignments.
+  private mutating func refreshWideningConstraints() {
+    // Nothing to do if the stale set is empty.
+    if stale.isEmpty { return }
+
+    var end = stale.count
+    for i in (0 ..< stale.count).reversed() {
+      if let k = goals[stale[i]] as? WideningConstraint {
+        outcomes[stale[i]] = simplify(k, as: TypeEquality(lhs: k.lhs, rhs: k.rhs, site: k.site))
+        stale.swapAt(i, end - 1)
+        end -= 1
+      }
+    }
+
+    stale.removeSubrange(end...)
+  }
+
   /// Inserts `gs` into the fresh set and return their identities.
   @discardableResult
   private mutating func insert<S: Sequence<any Constraint>>(fresh gs: S) -> [GoalIdentity] {
     gs.map({ (g) in insert(fresh: g) })
   }
 
-  /// Inserts `g` into the fresh set and returns its identity.
-  private mutating func insert(fresh g: any Constraint) -> GoalIdentity {
-    let i = goals.count
-    goals.append(g)
-    outcomes.append(.pending)
-    fresh.append(i)
-    return i
+  /// Inserts `k` into the fresh set and returns its identity.
+  private mutating func insert(fresh k: any Constraint) -> GoalIdentity {
+    let g = goals.count
+    goals.append(k)
+    if k.isTrivial && false {
+      outcomes.append(.success)
+    } else {
+      outcomes.append(.pending)
+      fresh.append(g)
+    }
+    return g
   }
 
-  /// Schedules `g` to be solved in the future and returns its identity.
-  private mutating func schedule(_ g: Constraint) -> GoalIdentity {
-    log("- schedule: \(typer.program.show(g))")
-    return insert(fresh: g)
+  /// Schedules `k` to be solved in the future and returns its identity.
+  private mutating func schedule(_ k: Constraint) -> GoalIdentity {
+    log("- schedule: \(typer.program.show(k))")
+    return insert(fresh: k)
   }
 
   /// Reschedules `g` to be solved once the solver has inferred more information about at least one

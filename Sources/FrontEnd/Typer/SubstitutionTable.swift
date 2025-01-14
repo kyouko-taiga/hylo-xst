@@ -52,7 +52,9 @@ public struct SubstitutionTable {
   /// substitution of a type or term variable. For instance, if `self` contains `%0` -> `%1` and
   /// `%1 -> V`, then `self.optimized()` maps the two variables to `V` directly.
   internal func optimized() -> Self {
-    self
+    var result = Self()
+    result.types = self.types.mapValues({ self[$0] })
+    return result
   }
 
   /// Returns the type variable representing the equivalence class of `v` in `self`.

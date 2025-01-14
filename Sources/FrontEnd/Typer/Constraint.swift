@@ -66,6 +66,37 @@ internal struct TypeEquality: Constraint {
 
 }
 
+/// A constraint stating that there exists a compiler-known coercion from values a type to values
+/// of another (wider) type.
+internal struct WideningConstraint: Constraint {
+
+  /// The left operand.
+  internal private(set) var lhs: AnyTypeIdentity
+
+  /// The right operand.
+  internal private(set) var rhs: AnyTypeIdentity
+
+  /// The site from which the constraint originates.
+  internal let site: SourceSpan
+
+  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
+  internal var isTrivial: Bool {
+    lhs == rhs
+  }
+
+  /// Applies `transform` on constituent types of `self`.
+  internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    lhs = transform(lhs)
+    rhs = transform(rhs)
+  }
+
+  /// Returns a textual representation of `self`, reading contents from `program`.
+  internal func show(using program: Program) -> String {
+    program.format("%T <: %T", [lhs, rhs])
+  }
+
+}
+
 /// A constraint stating that a value of type `F` can be applied to values of types `A1, ..., An`
 /// for producing a value of type `R`.
 internal struct CallConstraint: Constraint {

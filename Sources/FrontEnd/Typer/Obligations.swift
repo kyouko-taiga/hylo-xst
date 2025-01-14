@@ -53,4 +53,14 @@ internal struct Obligations {
     return t
   }
 
+  internal typealias PostCheck = (
+    _ s: Solution,
+    _ p: inout Program,
+    _ d: inout DiagnosticSet
+  ) -> Void
+
+  internal mutating func finally(_ callback: @escaping PostCheck) {
+
+  }
+
 }

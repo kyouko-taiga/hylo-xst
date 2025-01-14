@@ -502,6 +502,63 @@ public struct Parser {
 
   /// Parses an expression into `module`.
   private mutating func parseExpression(in module: inout Module) throws -> ExpressionIdentity {
+    try parseInfixExpression(in: &module)
+  }
+
+  /// Parses the root of infix expression whose operator binds at least as tightly as `p`.
+  private mutating func parseInfixExpression(
+    minimumPrecedence p: PrecedenceGroup = .assignment, in module: inout Module
+  ) throws -> ExpressionIdentity {
+    var l = try parseCoercionExpression(in: &module)
+
+    while p < .max {
+      guard let h = peek(), h.isOperator, whitespaceBeforeNextToken() else { break }
+      guard let (o, q) = try parseInfixOperator(notTighterThan: p) else { break }
+
+      if !whitespaceBeforeNextToken() {
+        report(.init("infix operator requires whitespaces on both sides", at: .empty(at: o.end)))
+      }
+
+      let r = try parseInfixExpression(minimumPrecedence: q.next, in: &module)
+      let f = module.insert(
+        NameExpression(
+          qualification: .explicit(l),
+          name: .init(Name(identifier: String(o.text), notation: .infix), at: o),
+          site: o),
+        in: file)
+      let n = module.insert(
+        Call(
+          callee: .init(f),
+          arguments: [.init(label: nil, value: r)],
+          style: .parenthesized,
+          site: module[l].site.extended(upTo: position.index)),
+        in: file)
+      l = .init(n)
+    }
+
+    return l
+  }
+
+  /// Parses an expression possibly wrapped in a coercion into `module`.
+  private mutating func parseCoercionExpression(
+    in module: inout Module
+  ) throws -> ExpressionIdentity {
+    let l = try parsePrefixExpression(in: &module)
+    guard let o = take(.coercion) else { return l }
+
+    let r = try parseExpression(in: &module)
+    let n = module.insert(
+      Coercion(
+        source: l, target: r, semantics: .init(o.text)!,
+        site: module[l].site.extended(upTo: position.index)),
+      in: file)
+    return .init(n)
+  }
+
+  /// Parses an expression possibly prefixed by an operator into `module`
+  private mutating func parsePrefixExpression(
+    in module: inout Module
+  ) throws -> ExpressionIdentity {
     try parseCompoundExpression(in: &module)
   }
 
@@ -1058,6 +1115,25 @@ public struct Parser {
       }
     }
     return first.site.extended(toCover: last.site)
+  }
+
+  /// Parses an infix operator and returns the region of the file from which it has been extracted
+  /// iff it binds less than or as tightly as `p`.
+  private mutating func parseInfixOperator(
+    notTighterThan p: PrecedenceGroup
+  ) throws -> (SourceSpan, PrecedenceGroup)? {
+    let s = tokens.save()
+    let l = lookahead
+
+    let o = try parseOperator()
+    let q = PrecedenceGroup(containing: o.text)
+    if (p < q) || ((p == q) && !q.isRightAssociative) {
+      return (o, q)
+    } else {
+      tokens.restore(s)
+      lookahead = l
+      return nil
+    }
   }
 
   /// Parses a simple identifier.
