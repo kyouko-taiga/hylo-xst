@@ -1,3 +1,0 @@
-negative/no-coercion.hylo:2.7-9: error: no coercion from 'Void' to '{Void, Void}'
-  _ = () as {Void, Void}
-      ~~

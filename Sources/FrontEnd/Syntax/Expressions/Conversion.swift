@@ -1,9 +1,9 @@
 import Archivist
 
-/// The expression of a conversion.
-public struct Coercion: Expression {
+/// The expression of an explicit conversion.
+public struct Conversion: Expression {
 
-  /// A coercion operator.
+  /// A conversion operator.
   public enum Operator: UInt8 {
 
     /// A guaranteed conversion into a type that can represent the source.
@@ -23,7 +23,7 @@ public struct Coercion: Expression {
   /// The type to which the value is converted.
   public let target: ExpressionIdentity
 
-  /// The semantics of the coercion.
+  /// The semantics of the conversion.
   public let semantics: Operator
 
   /// The site from which `self` was parsed.
@@ -36,7 +36,7 @@ public struct Coercion: Expression {
 
 }
 
-extension Coercion: Archivable {
+extension Conversion: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self.source = try archive.read(ExpressionIdentity.self, in: &context)
@@ -54,7 +54,7 @@ extension Coercion: Archivable {
 
 }
 
-extension Coercion.Operator: LosslessStringConvertible {
+extension Conversion.Operator: LosslessStringConvertible {
 
   public init?<T: StringProtocol>(_ description: T) {
     switch description {
@@ -75,7 +75,7 @@ extension Coercion.Operator: LosslessStringConvertible {
 
 }
 
-extension Coercion.Operator: Archivable {
+extension Conversion.Operator: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self = try archive.read(rawValueOf: Self.self, in: &context)

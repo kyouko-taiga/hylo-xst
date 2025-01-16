@@ -181,7 +181,7 @@ internal struct Solver {
     return .split([s]) { (s, _, p, d) in
       let t = p.types.reify(old.lhs, applying: s)
       let u = p.types.reify(old.rhs, applying: s)
-      d.insert(p.noCoercion(from: t, to: u, at: old.site))
+      d.insert(p.noConversion(from: t, to: u, at: old.site))
     }
   }
 

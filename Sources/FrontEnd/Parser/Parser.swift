@@ -506,7 +506,7 @@ public struct Parser {
   private mutating func parseInfixExpression(
     minimumPrecedence p: PrecedenceGroup = .assignment, in module: inout Module
   ) throws -> ExpressionIdentity {
-    var l = try parseCoercionExpression(in: &module)
+    var l = try parseConversionExpression(in: &module)
 
     while p < .max {
       guard let h = peek(), h.isOperator, whitespaceBeforeNextToken() else { break }
@@ -536,16 +536,16 @@ public struct Parser {
     return l
   }
 
-  /// Parses an expression possibly wrapped in a coercion into `module`.
-  private mutating func parseCoercionExpression(
+  /// Parses an expression possibly wrapped in a conversion into `module`.
+  private mutating func parseConversionExpression(
     in module: inout Module
   ) throws -> ExpressionIdentity {
     let l = try parsePrefixExpression(in: &module)
-    guard let o = take(.coercion) else { return l }
+    guard let o = take(.conversion) else { return l }
 
     let r = try parseExpression(in: &module)
     let n = module.insert(
-      Coercion(
+      Conversion(
         source: l, target: r, semantics: .init(o.text)!,
         site: module[l].site.extended(upTo: position.index)),
       in: file)

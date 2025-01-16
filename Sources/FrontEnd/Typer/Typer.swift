@@ -1041,8 +1041,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: BooleanLiteral.self), in: &context)
     case Call.self:
       return inferredType(of: castUnchecked(e, to: Call.self), in: &context)
-    case Coercion.self:
-      return inferredType(of: castUnchecked(e, to: Coercion.self), in: &context)
+    case Conversion.self:
+      return inferredType(of: castUnchecked(e, to: Conversion.self), in: &context)
     case NameExpression.self:
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case RemoteTypeExpression.self:
@@ -1120,7 +1120,7 @@ public struct Typer {
 
   /// Returns the inferred type of `e`'s callee.
   private mutating func inferredType(
-    of e: Coercion.ID, in context: inout InferenceContext
+    of e: Conversion.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     let h = context.expectedType.map({ (m) in demand(Metatype(inhabitant: m)).erased })
     let target = context.withSubcontext(expectedType: h) { (ctx) in

@@ -115,11 +115,11 @@ extension Program {
     return .init(.error, m, at: site)
   }
 
-  /// Returns an error diagnosing an invalid coercion.
-  internal func noCoercion(
+  /// Returns an error diagnosing an invalid conversion.
+  internal func noConversion(
     from t: AnyTypeIdentity, to u: AnyTypeIdentity, at site: SourceSpan
   ) -> Diagnostic {
-    .init(.error, format("no coercion from '%T' to '%T'", [t, u]), at: site)
+    .init(.error, format("no conversion from '%T' to '%T'", [t, u]), at: site)
   }
 
   /// Returns an error diagnosing an undefined symbol.

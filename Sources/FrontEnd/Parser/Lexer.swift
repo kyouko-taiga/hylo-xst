@@ -46,7 +46,7 @@ public struct Lexer: IteratorProtocol, Sequence {
 
     if word == "as" {
       _ = take("!") ?? take("*")
-      return .init(tag: .coercion, site: span(word.startIndex ..< position))
+      return .init(tag: .conversion, site: span(word.startIndex ..< position))
     }
 
     let tag: Token.Tag
