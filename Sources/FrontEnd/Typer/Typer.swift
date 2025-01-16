@@ -1744,18 +1744,12 @@ public struct Typer {
       let (x, xs) = i.context.headAndTail!
 
       let v = xs.isEmpty ? i.head : demand(Implication(context: .init(xs), head: i.head)).erased
-      let r = ImplicitDeduction.next { (me) in
-        me.summon(x, in: scopeOfUse, where: subs, withMaxDepth: maxDepth - 1) { (me, arguments) in
-          var rs: [ImplicitDeduction] = []
-          for a in arguments {
-            let w = WitnessExpression(value: .termApplication(witness, a.witness), type: v)
-            let s = subs.union(a.environment)
-            let m = me.match(
-              w, b, in: scopeOfUse, where: s, withMaxDepth: maxDepth)
-            rs.append(contentsOf: m)
-          }
-          return rs
-        }
+      let r = usingEachSummoning(
+        of: x, in: scopeOfUse, where: subs, withMaxDepth: maxDepth
+      ) { (me, a) in
+        let w = WitnessExpression(value: .termApplication(witness, a.witness), type: v)
+        let s = subs.union(a.environment)
+        return me.match(w, b, in: scopeOfUse, where: s, withMaxDepth: maxDepth)
       }
       return [r]
     }
@@ -1769,6 +1763,23 @@ public struct Typer {
 
     // Resolution failed.
     else { return [.fail] }
+  }
+
+  /// Returns a continuation that returns an array accumulating the results of `action` called with
+  /// each witness of a value of type `t` derivable from the implicit store in `scopeOfUse`.
+  private mutating func usingEachSummoning(
+    of t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
+    where subs: SubstitutionTable,
+    withMaxDepth maxDepth: Int,
+    do action: @escaping (inout Self, SummonResult) -> [ImplicitDeduction]
+  ) -> ImplicitDeduction {
+    ImplicitDeduction.next { (me) in
+      me.summon(t, in: scopeOfUse, where: subs, withMaxDepth: maxDepth - 1) { (me, summonings) in
+        summonings.reduce(into: [] as [ImplicitDeduction]) { (result, s) in
+          result.append(contentsOf: action(&me, s))
+        }
+      }
+    }
   }
 
   /// Appends the declarations of compile-time givens in `ds` to `gs`.
