@@ -1,19 +1,38 @@
 import Utilities
 
 /// A generic parameter.
-public struct GenericParameter: TypeTree {
+public enum GenericParameter: TypeTree {
 
-  /// The declaration of the parameter.
-  public let declaration: GenericParameterDeclaration.ID
+  case reflexivity
 
-  /// Properties about `self`.
+  case symmetry(UInt8)
+
+  case transitivity(UInt8)
+
+  case user(GenericParameterDeclaration.ID)
+
+  // Properties about `self`.
   public var properties: ValueProperties {
     .init()
   }
 
+  /// The declaration of the parameter, unless it is predefined.
+  public var declaration: GenericParameterDeclaration.ID? {
+    if case .user(let d) = self { return d } else { return nil }
+  }
+
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    program[declaration].identifier.value
+    switch self {
+    case .reflexivity:
+      return "T"
+    case .symmetry(let i):
+      return "T\(i)"
+    case .transitivity(let i):
+      return "T\(i)"
+    case .user(let d):
+      return program[d].identifier.value
+    }
   }
 
 }

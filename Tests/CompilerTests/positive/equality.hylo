@@ -1,0 +1,8 @@
+// Applies reflexivity.
+fun f0<T>() { f1<T, T>() }
+
+// Applies symmetry.
+fun f1<T, U where T == U>() { f1<U, T>() }
+
+// Applies transitivity.
+fun f2<T, U, V where T == U, U == V>() { f1<T, V>() }

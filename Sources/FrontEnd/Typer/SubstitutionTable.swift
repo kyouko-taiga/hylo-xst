@@ -11,6 +11,11 @@ public struct SubstitutionTable {
     self.types = [:]
   }
 
+  /// `true` iff `self` is empty.
+  internal var isEmpty: Bool {
+    types.isEmpty
+  }
+
   /// Returns the substitution for `v`, if any.
   internal subscript(v: TypeVariable.ID) -> AnyTypeIdentity? {
     types[walk(v)]

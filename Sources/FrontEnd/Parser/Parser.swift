@@ -278,9 +278,9 @@ public struct Parser {
   private mutating func parseContextParameter(
     in module: inout Module
   ) throws -> DeclarationIdentity {
-    let l = try parseExpression(in: &module)
+    let l = try parseCompoundExpression(in: &module)
     let s = try take(.colon) ?? take(.equal) ?? expected("':' or '=='")
-    let r = try parseExpression(in: &module)
+    let r = try parseCompoundExpression(in: &module)
 
     let d = module.insert(
       UsingDeclaration(

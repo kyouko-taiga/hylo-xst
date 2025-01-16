@@ -77,6 +77,9 @@ public struct Typer {
     /// The cache of `Typer.aliasesInConformance(seenThrough:)`.
     var witnessToAliases: [WitnessExpression: [AnyTypeIdentity: AnyTypeIdentity]]
 
+    /// The cache of `Typer.declaredType(of:)` for predefined givens.
+    var predefinedGivens: [Given: AnyTypeIdentity]
+
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
       self.moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
@@ -87,6 +90,7 @@ public struct Typer {
       self.scopeToSummoned = [:]
       self.scopeToTypeOfSelf = [:]
       self.witnessToAliases = [:]
+      self.predefinedGivens = [:]
     }
 
   }
@@ -616,7 +620,7 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    let t = metatype(of: GenericParameter(declaration: d)).erased
+    let t = metatype(of: GenericParameter.user(d)).erased
     program[module].setType(t, for: d)
     return t
   }
@@ -745,15 +749,15 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
+    let t: AnyTypeIdentity
     switch program[d].semantics.value {
     case .conformance:
-      let t = declaredConformanceType(program[d].lhs, program[d].rhs)
-      program[module].setType(t, for: d)
-      return t
-
+      t = declaredConformanceType(program[d].lhs, program[d].rhs)
     case .equality:
-      fatalError()
+      t = declaredEqualityType(program[d].lhs, program[d].rhs)
     }
+    program[module].setType(t, for: d)
+    return t
   }
 
   /// Returns the declared properties of the parameters in `ds` without checking.
@@ -792,6 +796,68 @@ public struct Typer {
     else {
       return demand(TypeApplication(abstraction: c, arguments: [.type(e)])).erased
     }
+  }
+
+  /// Returns the type of a value witnessing the conformance of `lhs` to `rhs`.
+  private mutating func declaredEqualityType(
+    _ lhs: ExpressionIdentity, _ rhs: ExpressionIdentity
+  ) -> AnyTypeIdentity {
+    let l = evaluateTypeAscription(lhs)
+    let r = evaluateTypeAscription(rhs)
+
+    // Was there an error?
+    if (l == .error) || (r == .error) {
+      return .error
+    }
+
+    // All is well.
+    else {
+      return demand(EqualityWitness(lhs: l, rhs: r)).erased
+    }
+  }
+
+  /// Returns the declared type of `g` without checking.
+  private mutating func declaredType(of g: Given) -> AnyTypeIdentity {
+    if case .user(let d) = g {
+      return declaredType(of: d)
+    } else if let t = cache.predefinedGivens[g] {
+      return t
+    }
+
+    let result: AnyTypeIdentity
+    switch g {
+    case .reflexivity:
+      // <T> T ~ T
+      let t0 = demand(GenericParameter.reflexivity)
+      let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t0.erased)).erased
+      result = demand(UniversalType(parameters: [t0], body: x0)).erased
+
+    case .symmetry:
+      // <T0, T1> T0 ~ T1 ==> T1 ~ T0
+      let t0 = demand(GenericParameter.symmetry(0))
+      let t1 = demand(GenericParameter.symmetry(1))
+      let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t1.erased)).erased
+      let x1 = demand(EqualityWitness(lhs: t1.erased, rhs: t0.erased)).erased
+      let x2 = demand(Implication(context: [x0], head: x1)).erased
+      result = demand(UniversalType(parameters: [t0, t1], body: x2)).erased
+
+    case .transitivity:
+      // <T0, T1, T2> T0 ~ T1, T1 ~ T2 ==> T0 ~ T2
+      let t0 = demand(GenericParameter.transitivity(0))
+      let t1 = demand(GenericParameter.transitivity(1))
+      let t2 = demand(GenericParameter.transitivity(2))
+      let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t1.erased)).erased
+      let x1 = demand(EqualityWitness(lhs: t1.erased, rhs: t2.erased)).erased
+      let x2 = demand(EqualityWitness(lhs: t0.erased, rhs: t2.erased)).erased
+      let x3 = demand(Implication(context: [x0, x1], head: x2)).erased
+      result = demand(UniversalType(parameters: [t0, t1, t2], body: x3)).erased
+
+    case .user:
+      unreachable()
+    }
+
+    cache.predefinedGivens[g] = result
+    return result
   }
 
   /// Returns the type of `requirement` seen through a conformance witnessed by `witness`.
@@ -1443,7 +1509,7 @@ public struct Typer {
 
   /// Returns the context parameters of the type of an instance of `Self` in `s`.
   private mutating func contextOfSelf(in s: TraitDeclaration.ID) -> ContextClause {
-    let t = demand(GenericParameter(declaration: program[s].conformer))
+    let t = demand(GenericParameter.user(program[s].conformer))
     let c = demand(Trait(declaration: s)).erased
     let w = demand(TypeApplication(abstraction: c, arguments: [.type(t.erased)])).erased
     return .init(parameters: [t], usings: [w])
@@ -1571,7 +1637,7 @@ public struct Typer {
     }
 
     // Collect givens defined in `scopeOfUse`.
-    var gs: [DeclarationIdentity] = []
+    var gs: [Given] = []
     appendGivens(in: program.declarations(lexicallyIn: scopeOfUse), to: &gs)
 
     // If there aren't any givens in `scopeOfUse`, just summon in the parent scope.
@@ -1594,16 +1660,32 @@ public struct Typer {
       appendGivens(in: program[i].topLevelDeclarations, to: &gs)
     }
 
-    let roots: [ImplicitDeduction.Continuation] = gs.map { (d) in
-      let u = declaredType(of: d)
-      let w = WitnessExpression(value: .reference(.direct(d)), type: u)
+    // Built-in givens.
+    gs.append(.reflexivity)
+    gs.append(.symmetry)
+    gs.append(.transitivity)
+
+    let roots: [ImplicitDeduction.Continuation] = gs.map { (g) in
+      let u = declaredType(of: g)
+      let v: WitnessExpression.Value
+      switch g {
+      case .user(let d):
+        v = .reference(.direct(d))
+      case .reflexivity, .symmetry, .transitivity:
+        v = .reference(.predefined)
+      }
+      let w = WitnessExpression(value: v, type: u)
       return { (me) in
         me.match(w, t, in: scopeOfUse, where: subs, without: usings, withMaxDepth: maxDepth)
       }
     }
 
     let done = explore(roots)
-    cache.scopeToSummoned[scopeOfUse, default: [:]][t] = done
+
+    // We can't cache results having unification variables.
+    if done.allSatisfy(\.environment.isEmpty) {
+      cache.scopeToSummoned[scopeOfUse, default: [:]][t] = done
+    }
     return continuation(&self, done)
   }
 
@@ -1642,13 +1724,8 @@ public struct Typer {
     let a = program.types.reify(witness.type, applying: subs, withVariables: .kept)
     let b = program.types.reify(queried, applying: subs, withVariables: .kept)
 
-    // The witness has the desired type?
-    if let s = program.types.unifiable(a, b) {
-      return [.done(.init(witness: witness, environment: subs.union(s)))]
-    }
-
     // The witness is a universal type?
-    else if let u = program.types[a] as? UniversalType {
+    if let u = program.types[a] as? UniversalType {
       var vs: [AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
       var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
       for p in u.parameters {
@@ -1693,18 +1770,23 @@ public struct Typer {
       return [r]
     }
 
+    // The witness has the desired type?
+    else if let s = program.types.unifiable(a, b) {
+      let e = subs.union(s)
+      let w = program.types.reify(witness, applying: e)
+      return [.done(.init(witness: w, environment: e))]
+    }
+
     // Resolution failed.
     else { return [.fail] }
   }
 
   /// Appends the declarations of compile-time givens in `ds` to `gs`.
-  private func appendGivens<S: Sequence<DeclarationIdentity>>(
-    in ds: S, to gs: inout [DeclarationIdentity]
-  ) {
+  private func appendGivens<S: Sequence<DeclarationIdentity>>(in ds: S, to gs: inout [Given]) {
     for d in ds {
       switch program.tag(of: d) {
       case ConformanceDeclaration.self, UsingDeclaration.self:
-        gs.append(d)
+        gs.append(.user(d))
       default:
         continue
       }

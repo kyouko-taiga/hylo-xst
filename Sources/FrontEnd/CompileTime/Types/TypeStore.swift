@@ -357,6 +357,8 @@ public struct TypeStore {
       return unifiable(lhs, rhs, extending: &subs)
     case (_ as BuiltinType, _ as BuiltinType):
       return false
+    case (let lhs as EqualityWitness, let rhs as EqualityWitness):
+      return unifiable(lhs, rhs, extending: &subs)
     case (_ as ErrorType, _ as ErrorType):
       return false
     case (_ as GenericParameter, _ as GenericParameter):
@@ -399,6 +401,13 @@ public struct TypeStore {
     _ lhs: AssociatedType, _ rhs: AssociatedType, extending subs: inout SubstitutionTable
   ) -> Bool {
     unifiable(lhs.qualification, rhs.qualification, extending: &subs)
+  }
+
+  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  private func unifiable(
+    _ lhs: EqualityWitness, _ rhs: EqualityWitness, extending subs: inout SubstitutionTable
+  ) -> Bool {
+    unifiable(lhs.lhs, rhs.lhs, extending: &subs) && unifiable(lhs.rhs, rhs.rhs, extending: &subs)
   }
 
   /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
