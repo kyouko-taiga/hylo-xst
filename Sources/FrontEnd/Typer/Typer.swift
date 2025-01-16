@@ -1609,9 +1609,7 @@ public struct Typer {
   internal mutating func summon(
     _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity
   ) -> [SummonResult] {
-    summon(
-      t, in: scopeOfUse, where: .init(), without: [t], withMaxDepth: maxImplicitDepth,
-      then: { (_, ws) in ws })
+    summon(t, in: scopeOfUse, where: .init(), withMaxDepth: maxImplicitDepth) { (_, ws) in ws }
   }
 
   /// Returns the result of `continuation` called with witnesses of values of type `t` derivable
@@ -1621,13 +1619,11 @@ public struct Typer {
   ///   - t: The type whose instance is summoned.
   ///   - scopeOfUse: The scope in which the witnesses are resolve.
   ///   - subs: A table mapping type variables in `t` and `usings` to their values.
-  ///   - usings: The types whose instances can't be summoned to resolve witneses.
   ///   - maxDepth: The maximum depth of the derivations resolve witnesses.
   ///   - continuation: A closure called with the resolve witnesses.
   private mutating func summon<T>(
     _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
     where subs: SubstitutionTable,
-    without usings: Set<AnyTypeIdentity>,
     withMaxDepth maxDepth: Int,
     then continuation: (inout Self, [SummonResult]) -> T
   ) -> T {
@@ -1676,7 +1672,7 @@ public struct Typer {
       }
       let w = WitnessExpression(value: v, type: u)
       return { (me) in
-        me.match(w, t, in: scopeOfUse, where: subs, without: usings, withMaxDepth: maxDepth)
+        me.match(w, t, in: scopeOfUse, where: subs, withMaxDepth: maxDepth)
       }
     }
 
@@ -1717,7 +1713,6 @@ public struct Typer {
   private mutating func match(
     _ witness: WitnessExpression, _ queried: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
     where subs: SubstitutionTable,
-    without usings: Set<AnyTypeIdentity>,
     withMaxDepth maxDepth: Int
   ) -> [ImplicitDeduction] {
     // Weak-head normal forms.
@@ -1738,7 +1733,7 @@ public struct Typer {
         value: .typeApplication(witness, vs),
         type: program.types.substitute(ss, in: u.body))
       let r = ImplicitDeduction.next { (me) in
-        me.match(w, b, in: scopeOfUse, where: subs, without: usings, withMaxDepth: maxDepth)
+        me.match(w, b, in: scopeOfUse, where: subs, withMaxDepth: maxDepth)
       }
       return [r]
     }
@@ -1748,20 +1743,15 @@ public struct Typer {
       // Assume that the implication has a non-empty context.
       let (x, xs) = i.context.headAndTail!
 
-      var us = usings
-      if !us.insert(x).inserted { return [.fail] }
-
       let v = xs.isEmpty ? i.head : demand(Implication(context: .init(xs), head: i.head)).erased
       let r = ImplicitDeduction.next { (me) in
-        me.summon(
-          x, in: scopeOfUse, where: subs, without: us, withMaxDepth: maxDepth - 1
-        ) { (me, arguments) in
+        me.summon(x, in: scopeOfUse, where: subs, withMaxDepth: maxDepth - 1) { (me, arguments) in
           var rs: [ImplicitDeduction] = []
           for a in arguments {
             let w = WitnessExpression(value: .termApplication(witness, a.witness), type: v)
             let s = subs.union(a.environment)
             let m = me.match(
-              w, b, in: scopeOfUse, where: s, without: usings, withMaxDepth: maxDepth)
+              w, b, in: scopeOfUse, where: s, withMaxDepth: maxDepth)
             rs.append(contentsOf: m)
           }
           return rs
@@ -2124,7 +2114,7 @@ public struct Typer {
 
     // Slow path: use the match judgement of implicit resolution..
     let c: ImplicitDeduction.Continuation = { (me) in
-      me.match(w, t, in: s, where: .init(), without: [], withMaxDepth: me.maxImplicitDepth)
+      me.match(w, t, in: s, where: .init(), withMaxDepth: me.maxImplicitDepth)
     }
     return explore([c]).uniqueElement
   }
