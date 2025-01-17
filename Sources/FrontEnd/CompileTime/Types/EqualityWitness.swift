@@ -22,7 +22,7 @@ public struct EqualityWitness: TypeTree {
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    program.format("%T ~ %T", [lhs, rhs])
+    program.format("(%T ~ %T)", [lhs, rhs])
   }
 
 }

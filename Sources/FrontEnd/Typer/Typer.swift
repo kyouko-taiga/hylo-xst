@@ -21,7 +21,7 @@ public struct Typer {
   private let isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)?
 
   /// The maximum depth of a derivation during implicit search.
-  private let maxImplicitDepth = 100
+  private let maxImplicitDepth = 10
 
   /// Creates an instance assigning types to syntax trees in `m`, which is a module in `p`.
   public init(
@@ -1642,9 +1642,9 @@ public struct Typer {
         self.givens = givens
       }
 
-      /// Returns a copy of `self` in which `g` is assumed.
-      func assuming(given g: AnyTypeIdentity) -> Self {
-        .init(substitutions: substitutions, givens: givens + [g])
+      /// Returns a copy of `self` in which `gs` are assumed.
+      func assuming(givens gs: [AnyTypeIdentity]) -> Self {
+        .init(substitutions: substitutions, givens: givens + gs)
       }
 
     }
@@ -1756,7 +1756,7 @@ public struct Typer {
     let b = program.types.reify(
       thread.queried, applying: thread.environment.substitutions, withVariables: .kept)
 
-    // The witness is a universal type?
+    // The witness has a universal type?
     if let u = program.types[a] as? UniversalType {
       var vs: [AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
       var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
@@ -1777,28 +1777,46 @@ public struct Typer {
     // The witness is an implication?
     else if let i = program.types[a] as? Implication {
       // Assume that the implication has a non-empty context.
-      let (x, xs) = i.context.headAndTail!
-
-      let e = thread.environment.assuming(given: x)
-      let v = xs.isEmpty ? i.head : demand(Implication(context: .init(xs), head: i.head)).erased
+      let h = i.context.first!
+      let e = thread.environment.assuming(givens: [h])
       let w = WitnessExpression(
-        value: .termApplication(thread.witness, .init(value: .reference(.assumed(x)), type: x)),
-        type: v)
+        value: .termApplication(thread.witness, .init(value: .reference(.assumed(h)), type: h)),
+        type: program.types.dropFirstRequirement(.init(uncheckedFrom: a)))
       return .next([
         .init(witness: w, queried: b, environment: e, tail: thread.tail)
       ])
     }
 
-    // The witness has the desired type?
-    else if let subs = program.types.unifiable(a, b) {
+    // The witness has a simple type; attempt a match.
+    var subs = SubstitutionTable()
+    var coercions: [(AnyTypeIdentity, AnyTypeIdentity)] = []
+    _ = program.types.unifiable(a, b, extending: &subs) { (x, y) in
+      coercions.append((x, y))
+      return true
+    }
+
+    // No coercion required?
+    if coercions.isEmpty {
       let s = thread.environment.substitutions.union(subs)
       let w = program.types.reify(thread.witness, applying: s, withVariables: .kept)
       let r = SummonResult(witness: w, environment: s)
       return threadContinuation(appending: r, to: thread, in: scopeOfUse)
     }
 
-    // Resolution failed.
-    else { return .next([]) }
+    // Resolution failed if nothing matches structurally.
+    else if let (x, y) = coercions.uniqueElement, (x == a), (y == b) {
+      return .next([])
+    }
+
+    // Otherwise, assume non-syntactic equalities.
+    let e = thread.environment.assuming(
+      givens: coercions.map({ (c) in demand(EqualityWitness(lhs: c.0, rhs: c.1)).erased }))
+    let w = WitnessExpression(
+      value: .termApplication(.init(value: .reference(.predefined), type: .void), thread.witness),
+      type: b)
+    return .next([
+      .init(witness: w, queried: b, environment: e, tail: thread.tail)
+    ])
   }
 
   /// Returns the continuation of `thread` after having resolved `operand` in `scopeOfUse`.

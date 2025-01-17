@@ -1,0 +1,8 @@
+trait P {}
+
+fun g<V where V: P>() {}
+
+fun f<T, U where T == U, T: P>() {
+  // `P<U>` must be deduced from `T ~ U` and `P<T>`
+  g<U>()
+}

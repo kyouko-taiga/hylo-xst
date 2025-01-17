@@ -129,6 +129,16 @@ public struct TypeStore {
     return result
   }
 
+  /// Returns `n` without its first requirement.
+  public mutating func dropFirstRequirement(_ n: Implication.ID) -> AnyTypeIdentity {
+    let i = self[n]
+    if i.context.count == 1 {
+      return i.head
+    } else {
+      return demand(Implication(context: .init(i.context.dropFirst()), head: i.head)).erased
+    }
+  }
+
   /// Returns `n` if it identifies a tree of type `U`; otherwise, returns `nil`.
   public func cast<T: TypeIdentity, U: TypeTree>(_ n: T, to: U.Type) -> U.ID? {
     if type(of: self[n]) == U.self {

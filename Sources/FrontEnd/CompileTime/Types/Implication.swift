@@ -3,11 +3,18 @@ import Utilities
 /// The type of an implicit abstraction.
 public struct Implication: TypeTree {
 
-  /// The left-hand side of the implication.
+  /// The left-hand side of the implication, which is not empty.
   public let context: [AnyTypeIdentity]
 
   /// The right-hand side of the implication.
   public let head: AnyTypeIdentity
+
+  /// Creates an instance with the given properties.
+  public init(context: [AnyTypeIdentity], head: AnyTypeIdentity) {
+    assert(!context.isEmpty)
+    self.context = context
+    self.head = head
+  }
 
   /// Properties about `self`.
   public var properties: ValueProperties {
