@@ -18,6 +18,9 @@ public indirect enum DeclarationReference: Hashable {
   /// A reference to a predefined entity.
   case predefined
 
+  /// A reference to an assumed given during implicit resolution.
+  case assumed(AnyTypeIdentity)
+
   /// A direct reference.
   case direct(DeclarationIdentity)
 
@@ -32,6 +35,8 @@ public indirect enum DeclarationReference: Hashable {
     switch self {
     case .predefined, .direct, .member:
       return false
+    case .assumed(let t):
+      return t[.hasVariable]
     case .inherited(let w, _):
       return w.hasVariable
     }
@@ -50,7 +55,7 @@ public indirect enum DeclarationReference: Hashable {
   /// A measure of the complexity of reference's elaborated expression.
   public var elaborationCost: Int {
     switch self {
-    case .predefined, .direct, .member:
+    case .predefined, .assumed, .direct, .member:
       return 0
     case .inherited(let w, _):
       return 1 + w.elaborationCost
@@ -66,16 +71,14 @@ extension Program {
     switch r {
     case .predefined:
       return "$predefined"
+    case .assumed(let t):
+      return "$<assumed given \(show(t))>"
     case .direct(let d):
       return nameOrTag(of: d)
     case .member(let q, let d):
       return show(q) + "." + nameOrTag(of: d)
     case .inherited(_, let d):
       return nameOrTag(of: d)
-    }
-
-    func nameOrTag(of d: DeclarationIdentity) -> String {
-      name(of: d)?.description ?? "$<\(tag(of: d))>"
     }
   }
 

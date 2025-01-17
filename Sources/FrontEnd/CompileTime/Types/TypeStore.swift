@@ -261,8 +261,10 @@ public struct TypeStore {
     switch r {
     case .predefined, .direct, .member:
       return r
+    case .assumed(let t):
+      return .assumed(reify(t, applying: subs, withVariables: substitutionPolicy))
     case .inherited(let w, let d):
-      return .inherited(w, d)
+      return .inherited(reify(w, applying: subs, withVariables: substitutionPolicy), d)
     }
   }
 
@@ -306,29 +308,38 @@ public struct TypeStore {
     self.map(n) { (s, t) in .stepInto(substitutions[t] ?? t) }
   }
 
-  /// Returns `true` if `t` and `u` can be unified, recording substitutions in `subs`.
-  public func unifiable(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> SubstitutionTable? {
+  /// Returns a substitution table that makes `lhs` and `rhs` equal modulo substitution of their
+  /// open variables.
+  public func unifiable(_ lhs: AnyTypeIdentity, _ rhs: AnyTypeIdentity) -> SubstitutionTable? {
     var s = SubstitutionTable()
-    if unifiable(t, u, extending: &s) { return s } else { return nil }
-  }
-
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
-  public func unifiable(
-    _ t: Value, _ u: Value, extending subs: inout SubstitutionTable
-  ) -> Bool {
-    if let a = t.type, let b = u.type {
-      return unifiable(a, b, extending: &subs)
+    if unifiable(lhs, rhs, extending: &s, handlingCoercionsWith: { (_, _) in false }) {
+      return s
     } else {
-      return t == u
+      return nil
     }
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` can be made equal, recording substitutions of unification
+  /// variables in `subs` and calling `areCoercible` to resolve non-syntactically equalities.
   public func unifiable(
-    _ t: AnyTypeIdentity, _ u: AnyTypeIdentity, extending subs: inout SubstitutionTable
+    _ lhs: Value, _ rhs: Value, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    let a = subs[t]
-    let b = subs[u]
+    if let a = lhs.type, let b = rhs.type {
+      return unifiable(a, b, extending: &subs, handlingCoercionsWith: areCoercible)
+    } else {
+      return lhs == rhs
+    }
+  }
+
+  /// Returns `true` if `lhs` and `rhs` can be made equal, recording substitutions of unification
+  /// variables in `subs` and calling `areCoercible` to resolve non-syntactically equalities.
+  public func unifiable(
+    _ lhs: AnyTypeIdentity, _ rhs: AnyTypeIdentity, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
+  ) -> Bool {
+    let a = subs[lhs]
+    let b = subs[rhs]
 
     // The two types are trivially equal?
     if a == b { return true }
@@ -343,133 +354,174 @@ public struct TypeStore {
     }
 
     /// There are aliases?
-    else if let lhs = self[a] as? TypeAlias {
-      return unifiable(lhs.aliasee, b, extending: &subs)
-    } else if let rhs = self[b] as? TypeAlias {
-      return unifiable(a, rhs.aliasee, extending: &subs)
+    else if let t = self[a] as? TypeAlias {
+      return unifiable(t.aliasee, b, extending: &subs, handlingCoercionsWith: areCoercible)
+    } else if let u = self[b] as? TypeAlias {
+      return unifiable(a, u.aliasee, extending: &subs, handlingCoercionsWith: areCoercible)
     }
 
     // The two types have the same shape?
+    let result: Bool
     switch (self[a], self[b]) {
-    case (let lhs as Arrow, let rhs as Arrow):
-      return unifiable(lhs, rhs, extending: &subs)
-    case (let lhs as AssociatedType, let rhs as AssociatedType):
-      return unifiable(lhs, rhs, extending: &subs)
+    case (let t as Arrow, let u as Arrow):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (let t as AssociatedType, let u as AssociatedType):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (_ as BuiltinType, _ as BuiltinType):
-      return false
-    case (let lhs as EqualityWitness, let rhs as EqualityWitness):
-      return unifiable(lhs, rhs, extending: &subs)
+      result = false
+    case (let t as EqualityWitness, let u as EqualityWitness):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (_ as ErrorType, _ as ErrorType):
-      return false
+      result = false
+    case (let t as EqualityWitness, let u as EqualityWitness):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (_ as GenericParameter, _ as GenericParameter):
-      return false
-    case (let lhs as Implication, let rhs as Implication):
-      return unifiable(lhs, rhs, extending: &subs)
-    case (let lhs as Metatype, let rhs as Metatype):
-      return unifiable(lhs, rhs, extending: &subs)
-    case (let lhs as RemoteType, let rhs as RemoteType):
-      return unifiable(lhs, rhs, extending: &subs)
+      result = false
+    case (let t as Implication, let u as Implication):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (let t as Metatype, let u as Metatype):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (let t as RemoteType, let u as RemoteType):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (_ as Struct, _ as Struct):
-      return false
+      result = false
     case (_ as Trait, _ as Trait):
-      return false
-    case (let lhs as Tuple, let rhs as Tuple):
-      return unifiable(lhs, rhs, extending: &subs)
-    case (let lhs as TypeApplication, let rhs as TypeApplication):
-      return unifiable(lhs, rhs, extending: &subs)
-    case (let lhs as Union, let rhs as Union):
-      return unifiable(lhs, rhs, extending: &subs)
+      result = false
+    case (let t as Tuple, let u as Tuple):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (let t as TypeApplication, let u as TypeApplication):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (let t as Union, let u as Union):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     default:
       assert(tag(of: a) != tag(of: b))
-      return false
+      result = false
     }
+
+    return result || areCoercible(a, b)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: Arrow, _ rhs: Arrow, extending subs: inout SubstitutionTable
+    _ lhs: Arrow, _ rhs: Arrow, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
     (lhs.effect == rhs.effect) && (lhs.isByName == rhs.isByName)
       && lhs.labels.elementsEqual(rhs.labels)
-      && unifiable(lhs.environment, rhs.environment, extending: &subs)
-      && unifiable(lhs.inputs, rhs.inputs, extending: &subs, by: unifiable(_:_:extending:))
-      && unifiable(lhs.output, rhs.output, extending: &subs)
+      && unifiable(
+        lhs.environment, rhs.environment, extending: &subs, handlingCoercionsWith: areCoercible)
+      && unifiable(
+        lhs.inputs, rhs.inputs, extending: &subs,
+        by: { (a, b, s) in unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible) })
+      && unifiable(
+        lhs.output, rhs.output, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `t` and `u` are unifiable.
   private func unifiable(
-    _ lhs: AssociatedType, _ rhs: AssociatedType, extending subs: inout SubstitutionTable
+    _ lhs: AssociatedType, _ rhs: AssociatedType, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.qualification, rhs.qualification, extending: &subs)
+    unifiable(
+      lhs.qualification, rhs.qualification, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: EqualityWitness, _ rhs: EqualityWitness, extending subs: inout SubstitutionTable
+    _ lhs: EqualityWitness, _ rhs: EqualityWitness, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.lhs, rhs.lhs, extending: &subs) && unifiable(lhs.rhs, rhs.rhs, extending: &subs)
+    unifiable(lhs.lhs, rhs.lhs, extending: &subs, handlingCoercionsWith: areCoercible)
+      && unifiable(lhs.rhs, rhs.rhs, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: Implication, _ rhs: Implication, extending subs: inout SubstitutionTable
+    _ lhs: Implication, _ rhs: Implication, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.context, rhs.context, extending: &subs) &&
-      unifiable(lhs.head, rhs.head, extending: &subs)
+    unifiable(lhs.context, rhs.context, extending: &subs, handlingCoercionsWith: areCoercible)
+      && unifiable(lhs.head, rhs.head, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: Metatype, _ rhs: Metatype, extending subs: inout SubstitutionTable
+    _ lhs: Metatype, _ rhs: Metatype, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.inhabitant, rhs.inhabitant, extending: &subs)
+    unifiable(
+      lhs.inhabitant, rhs.inhabitant, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: RemoteType, _ rhs: RemoteType, extending subs: inout SubstitutionTable
+    _ lhs: RemoteType, _ rhs: RemoteType, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    (lhs.access == rhs.access) && unifiable(lhs.projectee, rhs.projectee, extending: &subs)
+    (lhs.access == rhs.access)
+      && unifiable(
+        lhs.projectee, rhs.projectee, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: Tuple, _ rhs: Tuple, extending subs: inout SubstitutionTable
+    _ lhs: Tuple, _ rhs: Tuple, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.elements, rhs.elements, extending: &subs, by: unifiable(_:_:extending:))
+    unifiable(lhs.elements, rhs.elements, extending: &subs) { (a, b, s) in
+      unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible)
+    }
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: Parameter, _ rhs: Parameter, extending subs: inout SubstitutionTable
+    _ lhs: Parameter, _ rhs: Parameter, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    (lhs.label == rhs.label) && unifiable(lhs.type, rhs.type, extending: &subs)
+    (lhs.label == rhs.label)
+      && unifiable(lhs.type, rhs.type, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: TypeApplication, _ rhs: TypeApplication, extending subs: inout SubstitutionTable
+    _ lhs: TypeApplication, _ rhs: TypeApplication, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.abstraction, rhs.abstraction, extending: &subs)
-      && unifiable(lhs.arguments, rhs.arguments, extending: &subs, by: unifiable(_:_:extending:))
+    unifiable(
+      lhs.abstraction, rhs.abstraction, extending: &subs, handlingCoercionsWith: areCoercible)
+      && unifiable(
+        lhs.arguments, rhs.arguments, extending: &subs,
+        by: { (a, b, s) in unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible) })
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: Union, _ rhs: Union, extending subs: inout SubstitutionTable
+    _ lhs: Union, _ rhs: Union, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.elements, rhs.elements, extending: &subs)
+    unifiable(lhs.elements, rhs.elements, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff `lhs` can be unified with `rhs`, recording substitutions in `subs`.
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
-    _ lhs: Tuple.Element, _ rhs: Tuple.Element, extending subs: inout SubstitutionTable
+    _ lhs: Tuple.Element, _ rhs: Tuple.Element, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    (lhs.label == rhs.label) && unifiable(lhs.type, rhs.type, extending: &subs)
+    (lhs.label == rhs.label)
+      && unifiable(lhs.type, rhs.type, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
-  /// Returns `true` iff the the pairwise elements of `lhs` and `rhs` are unifiable by `unify`,
-  /// recording substitutions in `subs`.
+  /// Returns `true` if the the pairwise elements of `lhs` and `rhs` are unifiable.
+  private func unifiable<T: Sequence<AnyTypeIdentity>>(
+    _ lhs: T, _ rhs: T, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
+  ) -> Bool {
+    unifiable(lhs, rhs, extending: &subs) { (a, b, s) in
+      unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible)
+    }
+  }
+
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable<T: Sequence>(
     _ lhs: T, _ rhs: T, extending subs: inout SubstitutionTable,
     by unify: (T.Element, T.Element, inout SubstitutionTable) -> Bool
@@ -482,14 +534,6 @@ public struct TypeStore {
     return j.next() == nil
   }
 
-  /// Returns `true` iff the the pairwise elements of `lhs` and `rhs` are unifiable, recording
-  /// substitutions in `subs`.
-  private func unifiable<T: Sequence<AnyTypeIdentity>>(
-    _ lhs: T, _ rhs: T, extending subs: inout SubstitutionTable
-  ) -> Bool {
-    unifiable(lhs, rhs, extending: &subs, by: unifiable(_:_:extending:))
-  }
-
 }
 
 /// The result of a call to a closure passed to `TypeStore.transform(_:)`.
@@ -500,3 +544,9 @@ public enum TypeTransformAction {
   case stepOver(AnyTypeIdentity)
 
 }
+
+/// A closure returning `true` if its first argument can be coerced to the second.
+public typealias CoercionHandler = (
+  _ lhs: AnyTypeIdentity,
+  _ rhs: AnyTypeIdentity
+) -> Bool

@@ -56,6 +56,9 @@ public struct Typer {
     /// The cache of `Typer.lookup(_:atTopLevelOf:)`.
     var moduleToIdentifierToDeclaration: [LookupTable?]
 
+    /// The cache of `Typer.givens(atTopLevelOf:)`.
+    var moduleToGivens: [[Given]?]
+
     /// The cache of `Typer.imports(of:in:)`.
     var sourceToImports: [[Program.ModuleIdentity]?]
 
@@ -65,8 +68,11 @@ public struct Typer {
     /// The cache of `Typer.declarations(lexicallyIn:)`.
     var scopeToLookupTable: [ScopeIdentity: LookupTable]
 
-    /// The cache of `Typer.traits(visibleFrom:)`
+    /// The cache of `Typer.traits(visibleFrom:)`.
     var scopeToTraits: [ScopeIdentity: [TraitDeclaration.ID]]
+
+    /// The cache of `Typer.givens(lexicallyIn:)`.
+    var scopeToGivens: [ScopeIdentity: [Given]]
 
     /// The cache of `Typer.summon(_:in:)`.
     var scopeToSummoned: [ScopeIdentity: [AnyTypeIdentity: [SummonResult]]]
@@ -83,10 +89,12 @@ public struct Typer {
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
       self.moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
+      self.moduleToGivens = .init(repeating: nil, count: p.modules.count)
       self.sourceToImports = .init(repeating: nil, count: p[m].sources.count)
       self.scopeToExtensions = [:]
       self.scopeToLookupTable = [:]
       self.scopeToTraits = [:]
+      self.scopeToGivens = [:]
       self.scopeToSummoned = [:]
       self.scopeToTypeOfSelf = [:]
       self.witnessToAliases = [:]
@@ -820,6 +828,8 @@ public struct Typer {
   private mutating func declaredType(of g: Given) -> AnyTypeIdentity {
     if case .user(let d) = g {
       return declaredType(of: d)
+    } else if case .assumed(let t) = g {
+      return t
     } else if let t = cache.predefinedGivens[g] {
       return t
     }
@@ -852,7 +862,7 @@ public struct Typer {
       let x3 = demand(Implication(context: [x0, x1], head: x2)).erased
       result = demand(UniversalType(parameters: [t0, t1, t2], body: x3)).erased
 
-    case .user:
+    case .assumed, .user:
       unreachable()
     }
 
@@ -1577,23 +1587,6 @@ public struct Typer {
 
   // MARK: Implicit search
 
-  /// The result of a derivation step produced by implicit resolution.
-  private enum ImplicitDeduction {
-
-    /// The type of a continuation representing the premise of resolution rule.
-    typealias Continuation = (inout Typer) -> [ImplicitDeduction]
-
-    /// Resolution failed.
-    case fail
-
-    /// Resolution succeeded.
-    case done(SummonResult)
-
-    /// Resolution requires a recursive lookup.
-    case next(Continuation)
-
-  }
-
   /// A witness resolved by implicit resolution.
   internal struct SummonResult {
 
@@ -1605,55 +1598,131 @@ public struct Typer {
 
   }
 
+  /// The process of elaborating a the value of a witness satisfying having some given type.
+  ///
+  /// An instance represents a possibly non-terminating thread of execution modeling the steps of a
+  /// witness' resolution. Taking a step yields either a witness (when resolution completes) or a
+  /// set of other threads representing all possible conclusions.
+  private struct ResolutionThread {
+
+    /// The result of taking a step in a resolution thread.
+    enum Advanced {
+
+      /// The thread has completed execution.
+      case done(SummonResult)
+
+      /// The thread has taken a step and suspended, spawning zero or threads to resume.
+      case next([ResolutionThread])
+
+    }
+
+    /// A part of a thread continuation.
+    enum ContinuationItem {
+
+      /// Either the result of a thread or an operand to a thread continuation.
+      case done(SummonResult)
+
+      /// A continuation substituting assumed witnesses of the given type by a summoned witness.
+      case substitute(AnyTypeIdentity)
+
+    }
+
+    /// The environment of a thread, representing open variable assignments and assumed givens.
+    struct Environment {
+
+      /// A table from open variable to its assignment.
+      let substitutions: SubstitutionTable
+
+      /// The set of assumed givens.
+      let givens: [AnyTypeIdentity]
+
+      /// Creates an instance with the given properties.
+      init(substitutions: SubstitutionTable = .init(), givens: [AnyTypeIdentity] = []) {
+        self.substitutions = substitutions
+        self.givens = givens
+      }
+
+      /// Returns a copy of `self` in which `g` is assumed.
+      func assuming(given g: AnyTypeIdentity) -> Self {
+        .init(substitutions: substitutions, givens: givens + [g])
+      }
+
+    }
+
+    /// The witness being resolved, whose value is matched against some queried type.
+    let witness: WitnessExpression
+
+    /// The type of the witness to resolve.
+    let queried: AnyTypeIdentity
+
+    /// The environment in which matching takes place.
+    let environment: Environment
+
+    /// The thread's continuation.
+    ///
+    /// A continuation is represented as a stack of operands and operators, encoding an operation
+    /// in a tack-based DSL.
+    let tail: [ContinuationItem]
+
+  }
+
   /// Returns witnesses of values of type `t` derivable from the implicit store in `scopeOfUse`.
   internal mutating func summon(
     _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity
   ) -> [SummonResult] {
-    summon(t, in: scopeOfUse, where: .init(), withMaxDepth: maxImplicitDepth) { (_, ws) in ws }
+    // Did we already compute the result?
+    if let table = cache.scopeToSummoned[scopeOfUse], let result = table[t] {
+      return result
+    }
+
+    let result: [SummonResult]
+
+    // If there aren't any givens in `scopeOfUse`, just summon in the parent scope.
+    if givens(lexicallyIn: scopeOfUse).isEmpty, let p = program.parent(containing: scopeOfUse) {
+      result = summon(t, in: p)
+    }
+
+    // Otherwise, we can't just extend the set of candidates summoned in the outer scope as the
+    // introduction of a new given may change the result of implicit resolution. Instead, we must
+    // consider all visible givens at once.
+    else {
+      let threads = summon(t, in: scopeOfUse, where: .init(), then: [])
+      result = takeSummonResults(from: threads, in: scopeOfUse)
+    }
+
+    cache.scopeToSummoned[scopeOfUse, default: [:]][t] = result
+    return result
   }
 
-  /// Returns the result of `continuation` called with witnesses of values of type `t` derivable
+  /// Returns the result of `continuation` applied to witnesses of values of type `t` derivable
   /// from the implicit store in `scopeOfUse`.
   ///
   /// - Parameters:
   ///   - t: The type whose instance is summoned.
   ///   - scopeOfUse: The scope in which the witnesses are resolve.
-  ///   - subs: A table mapping type variables in `t` and `usings` to their values.
-  ///   - maxDepth: The maximum depth of the derivations resolve witnesses.
-  ///   - continuation: A closure called with the resolve witnesses.
-  private mutating func summon<T>(
+  ///   - environment: An assignment of unification variables in `t` and a set of assumed givens.
+  ///   - continuation: The work to be done with the summoned results.
+  private mutating func summon(
     _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
-    where subs: SubstitutionTable,
-    withMaxDepth maxDepth: Int,
-    then continuation: (inout Self, [SummonResult]) -> T
-  ) -> T {
-    // Did we already compute the result?
-    if let table = cache.scopeToSummoned[scopeOfUse], let result = table[t] {
-      return continuation(&self, result)
-    }
-
-    // Collect givens defined in `scopeOfUse`.
+    where environment: ResolutionThread.Environment,
+    then continuation: [ResolutionThread.ContinuationItem]
+  ) -> [ResolutionThread] {
     var gs: [Given] = []
-    appendGivens(in: program.declarations(lexicallyIn: scopeOfUse), to: &gs)
 
-    // If there aren't any givens in `scopeOfUse`, just summon in the parent scope.
-    if gs.isEmpty && !scopeOfUse.isFile {
-      let result = program.parent(containing: scopeOfUse).map({ (p) in summon(t, in: p) }) ?? []
-      cache.scopeToSummoned[scopeOfUse, default: [:]][t] = result
-      return continuation(&self, result)
-    }
-
-    // We can't just extend the set of candidates summoned in the outer scope as the introduction
-    // of a new given may change the result of implicit resolution. Instead, we must consider all
-    // visible givens at once.
-    for p in program.scopes(from: scopeOfUse).dropFirst() {
-      appendGivens(in: program.declarations(lexicallyIn: p), to: &gs)
+    // Givens visible from `scopeOfUse`.
+    for s in program.scopes(from: scopeOfUse) {
+      gs.append(contentsOf: givens(lexicallyIn: s))
     }
     for f in program[scopeOfUse.module].sourceFileIdentities where f != scopeOfUse.file {
-      appendGivens(in: program.declarations(lexicallyIn: .init(file: f)), to: &gs)
+      gs.append(contentsOf: givens(lexicallyIn: .init(file: f)))
     }
     for i in imports(of: scopeOfUse.file) {
-      appendGivens(in: program[i].topLevelDeclarations, to: &gs)
+      gs.append(contentsOf: givens(atTopLevelOf: i))
+    }
+
+    // Assumed givens.
+    for g in environment.givens {
+      gs.append(.assumed(type: g))
     }
 
     // Built-in givens.
@@ -1661,7 +1730,7 @@ public struct Typer {
     gs.append(.symmetry)
     gs.append(.transitivity)
 
-    let roots: [ImplicitDeduction.Continuation] = gs.map { (g) in
+    return gs.map { (g) -> ResolutionThread in
       let u = declaredType(of: g)
       let v: WitnessExpression.Value
       switch g {
@@ -1669,55 +1738,23 @@ public struct Typer {
         v = .reference(.direct(d))
       case .reflexivity, .symmetry, .transitivity:
         v = .reference(.predefined)
+      case .assumed:
+        v = .reference(.predefined)
       }
       let w = WitnessExpression(value: v, type: u)
-      return { (me) in
-        me.match(w, t, in: scopeOfUse, where: subs, withMaxDepth: maxDepth)
-      }
+      return .init(witness: w, queried: t, environment: environment, tail: continuation)
     }
-
-    let done = explore(roots)
-
-    // We can't cache results having unification variables.
-    if done.allSatisfy(\.environment.isEmpty) {
-      cache.scopeToSummoned[scopeOfUse, default: [:]][t] = done
-    }
-    return continuation(&self, done)
   }
 
-  /// Returns the result of implicit resolution for the roots branches.
-  private mutating func explore(_ roots: [ImplicitDeduction.Continuation]) -> [SummonResult] {
-    var work = roots
-    var done: [SummonResult] = []
-
-    while done.isEmpty && !work.isEmpty {
-      var next: [ImplicitDeduction.Continuation] = []
-
-      for step in work {
-        for r in step(&self) {
-          switch r {
-          case .fail: continue
-          case .done(let w): done.append(w)
-          case .next(let s): next.append(s)
-          }
-        }
-      }
-
-      swap(&next, &work)
-    }
-
-    return done
-  }
-
-  /// Returns the result of a derivation step in the matching of `witness` with `queried`.
+  /// Returns the result of taking a step in `thread`, which resolves a witness in `scopeOfUse`.
   private mutating func match(
-    _ witness: WitnessExpression, _ queried: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
-    where subs: SubstitutionTable,
-    withMaxDepth maxDepth: Int
-  ) -> [ImplicitDeduction] {
+    _ thread: ResolutionThread, in scopeOfUse: ScopeIdentity
+  ) -> ResolutionThread.Advanced {
     // Weak-head normal forms.
-    let a = program.types.reify(witness.type, applying: subs, withVariables: .kept)
-    let b = program.types.reify(queried, applying: subs, withVariables: .kept)
+    let a = program.types.reify(
+      thread.witness.type, applying: thread.environment.substitutions, withVariables: .kept)
+    let b = program.types.reify(
+      thread.queried, applying: thread.environment.substitutions, withVariables: .kept)
 
     // The witness is a universal type?
     if let u = program.types[a] as? UniversalType {
@@ -1730,56 +1767,132 @@ public struct Typer {
       }
 
       let w = WitnessExpression(
-        value: .typeApplication(witness, vs),
+        value: .typeApplication(thread.witness, vs),
         type: program.types.substitute(ss, in: u.body))
-      let r = ImplicitDeduction.next { (me) in
-        me.match(w, b, in: scopeOfUse, where: subs, withMaxDepth: maxDepth)
-      }
-      return [r]
+      return .next([
+        .init(witness: w, queried: b, environment: thread.environment, tail: thread.tail)
+      ])
     }
 
     // The witness is an implication?
-    else if let i = program.types[a] as? Implication, maxDepth > 0 {
+    else if let i = program.types[a] as? Implication {
       // Assume that the implication has a non-empty context.
       let (x, xs) = i.context.headAndTail!
 
+      let e = thread.environment.assuming(given: x)
       let v = xs.isEmpty ? i.head : demand(Implication(context: .init(xs), head: i.head)).erased
-      let r = usingEachSummoning(
-        of: x, in: scopeOfUse, where: subs, withMaxDepth: maxDepth
-      ) { (me, a) in
-        let w = WitnessExpression(value: .termApplication(witness, a.witness), type: v)
-        let s = subs.union(a.environment)
-        return me.match(w, b, in: scopeOfUse, where: s, withMaxDepth: maxDepth)
-      }
-      return [r]
+      let w = WitnessExpression(
+        value: .termApplication(thread.witness, .init(value: .reference(.assumed(x)), type: x)),
+        type: v)
+      return .next([
+        .init(witness: w, queried: b, environment: e, tail: thread.tail)
+      ])
     }
 
     // The witness has the desired type?
-    else if let s = program.types.unifiable(a, b) {
-      let e = subs.union(s)
-      let w = program.types.reify(witness, applying: e)
-      return [.done(.init(witness: w, environment: e))]
+    else if let subs = program.types.unifiable(a, b) {
+      let s = thread.environment.substitutions.union(subs)
+      let w = program.types.reify(thread.witness, applying: s, withVariables: .kept)
+      let r = SummonResult(witness: w, environment: s)
+      return threadContinuation(appending: r, to: thread, in: scopeOfUse)
     }
 
     // Resolution failed.
-    else { return [.fail] }
+    else { return .next([]) }
   }
 
-  /// Returns a continuation that returns an array accumulating the results of `action` called with
-  /// each witness of a value of type `t` derivable from the implicit store in `scopeOfUse`.
-  private mutating func usingEachSummoning(
-    of t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
-    where subs: SubstitutionTable,
-    withMaxDepth maxDepth: Int,
-    do action: @escaping (inout Self, SummonResult) -> [ImplicitDeduction]
-  ) -> ImplicitDeduction {
-    ImplicitDeduction.next { (me) in
-      me.summon(t, in: scopeOfUse, where: subs, withMaxDepth: maxDepth - 1) { (me, summonings) in
-        summonings.reduce(into: [] as [ImplicitDeduction]) { (result, s) in
-          result.append(contentsOf: action(&me, s))
+  /// Returns the continuation of `thread` after having resolved `operand` in `scopeOfUse`.
+  private mutating func threadContinuation(
+    appending operand: SummonResult, to thread: ResolutionThread, in scopeOfUse: ScopeIdentity
+  ) -> ResolutionThread.Advanced {
+    // Are there assumptions to discharge?
+    if let assumed = thread.environment.givens.last {
+      let e = ResolutionThread.Environment(
+        substitutions: operand.environment, givens: thread.environment.givens.dropLast())
+      var t = thread.tail
+      t.append(.done(operand))
+      t.append(.substitute(assumed))
+      return .next(summon(assumed, in: scopeOfUse, where: e, then: t))
+    }
+
+    // We're done; apply the continuation.
+    else { return .done(applyContinuation(thread.tail[...], to: operand)) }
+  }
+
+  /// Returns the result of  `continuation` applied to `operand`.
+  private mutating func applyContinuation(
+    _ continuation: ArraySlice<ResolutionThread.ContinuationItem>, to operand: SummonResult
+  ) -> SummonResult {
+    switch continuation.last {
+    case .some(.substitute(let assumed)):
+      let r = executeContinuation(continuation.dropLast())
+      let g = program.types.reify(assumed, applying: r.environment, withVariables: .kept)
+      let x = r.witness.substituting(.reference(.assumed(g)), for: operand.witness.value)
+      let e = operand.environment.union(r.environment)
+      return .init(witness: program.types.reify(x, applying: e), environment: e)
+
+    case .some(.done):
+      unreachable("ill-formed continuation")
+
+    case .none:
+      let w = program.types.reify(
+        operand.witness, applying: operand.environment, withVariables: .kept)
+      return .init(witness: w, environment: operand.environment)
+    }
+  }
+
+  /// Returns the result of the given thread continuation.
+  private mutating func executeContinuation(
+    _ continuation: ArraySlice<ResolutionThread.ContinuationItem>
+  ) -> SummonResult {
+    if case .some(.done(let a)) = continuation.last {
+      applyContinuation(continuation.dropLast(), to: a)
+    } else {
+      unreachable("ill-formed continuation")
+    }
+  }
+
+  /// Returns the results of `threads`, which are defined in `scopeOfUse`.
+  private mutating func takeSummonResults(
+    from threads: [ResolutionThread], in scopeOfUse: ScopeIdentity
+  ) -> [SummonResult] {
+    var work = threads
+    var done: [SummonResult] = []
+    var depth = 0
+
+    while done.isEmpty && !work.isEmpty && (depth < maxImplicitDepth) {
+      var next: [ResolutionThread] = []
+      for item in work {
+        switch match(item, in: scopeOfUse) {
+        case .done(let r): done.append(r)
+        case .next(let s): next.append(contentsOf: s)
         }
       }
+      depth += 1
+      swap(&next, &work)
     }
+
+    return done
+  }
+
+  /// Returns the givens whose definitions are at the top-level of `m`.
+  private mutating func givens(atTopLevelOf m: Program.ModuleIdentity) -> [Given] {
+    if let memoized = cache.moduleToGivens[m] { return memoized }
+
+    var gs: [Given] = []
+    appendGivens(in: program[m].topLevelDeclarations, to: &gs)
+    cache.moduleToGivens[m] = gs
+    return gs
+  }
+
+  /// Returns the givens whose definitions are directly contained in `s`.
+  private mutating func givens(lexicallyIn s: ScopeIdentity) -> [Given] {
+    if let memoized = cache.scopeToGivens[s] { return memoized }
+
+    var gs: [Given] = []
+    appendGivens(in: program.declarations(lexicallyIn: s), to: &gs)
+    cache.scopeToGivens[s] = gs
+    return gs
   }
 
   /// Appends the declarations of compile-time givens in `ds` to `gs`.
@@ -2090,7 +2203,7 @@ public struct Typer {
     }
   }
 
-  /// Returns the declarations lexically contained in `s`.
+  /// Returns the declarations directly contained in `s`.
   private mutating func declarations(lexicallyIn s: ScopeIdentity) -> Memos.LookupTable {
     if let table = cache.scopeToLookupTable[s] {
       return table
@@ -2102,7 +2215,7 @@ public struct Typer {
     }
   }
 
-  /// Returns the extensions that are lexically contained in `s`.
+  /// Returns the extensions that are directly contained in `s`.
   private mutating func extensions(lexicallyIn s: ScopeIdentity) -> [ExtensionDeclaration.ID] {
     if let ds = cache.scopeToExtensions[s] {
       return ds
@@ -2124,10 +2237,8 @@ public struct Typer {
     if t == u { return .init(witness: w, environment: .init()) }
 
     // Slow path: use the match judgement of implicit resolution..
-    let c: ImplicitDeduction.Continuation = { (me) in
-      me.match(w, t, in: s, where: .init(), withMaxDepth: me.maxImplicitDepth)
-    }
-    return explore([c]).uniqueElement
+    let thread = ResolutionThread(witness: w, queried: t, environment: .init(), tail: [])
+    return takeSummonResults(from: [thread], in: s).uniqueElement
   }
 
   /// Returns the modules that are imported by `f`, which is in the module being typed.

@@ -10,6 +10,9 @@ public enum Given: Hashable {
   /// The built-in given of equality's transitivity
   case transitivity
 
+  /// A given that is assumed during implicit resolution.
+  case assumed(type: AnyTypeIdentity)
+
   /// A user-defined given.
   case user(DeclarationIdentity)
 

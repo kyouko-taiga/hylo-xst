@@ -13,6 +13,19 @@ public struct WitnessExpression: Hashable {
     /// A type abstraction applied to type arguments.
     case typeApplication(WitnessExpression, [AnyTypeIdentity])
 
+    public func substituting(_ old: Value, for new: Value) -> Self {
+      switch self {
+      case old:
+        return new
+      case .reference:
+        return self
+      case .termApplication(let w, let a):
+        return .termApplication(w.substituting(old, for: new), a.substituting(old, for: new))
+      case .typeApplication(let w, let ts):
+        return .typeApplication(w.substituting(old, for: new), ts)
+      }
+    }
+
   }
 
   /// The (synthesized) syntax of the witness.
@@ -24,6 +37,7 @@ public struct WitnessExpression: Hashable {
   /// `true` iff this expression mentions open variable.
   public var hasVariable: Bool {
     if type[.hasVariable] { return true }
+
     switch value {
     case .reference(let r):
       return r.hasVariable
@@ -53,6 +67,31 @@ public struct WitnessExpression: Hashable {
       return d
     case .termApplication(let w, _), .typeApplication(let w, _):
       return w.declaration
+    }
+  }
+
+  public func substituting(_ old: Value, for new: Value) -> Self {
+    .init(value: self.value.substituting(old, for: new), type: self.type)
+  }
+
+}
+
+extension Program {
+
+  /// Returns a debug representation of `w`.
+  public func show(_ w: WitnessExpression) -> String {
+    show(w.value)
+  }
+
+  /// Returns a debug representation of `v`.
+  public func show(_ v: WitnessExpression.Value) -> String {
+    switch v {
+    case .reference(let d):
+      return show(d)
+    case .termApplication(let w, let a):
+      return "\(show(w))(\(show(a)))"
+    case .typeApplication(let w, let ts):
+      return "\(show(w))<\(format("%T*", [ts]))>"
     }
   }
 
