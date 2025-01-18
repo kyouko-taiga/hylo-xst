@@ -2,10 +2,10 @@
 public struct EqualityWitness: TypeTree {
 
   /// The left-hand side of the equality.
-  let lhs: AnyTypeIdentity
+  public let lhs: AnyTypeIdentity
 
   /// The right-hand side of the equality.
-  let rhs: AnyTypeIdentity
+  public let rhs: AnyTypeIdentity
 
   /// Properties about `self`.
   public var properties: ValueProperties {

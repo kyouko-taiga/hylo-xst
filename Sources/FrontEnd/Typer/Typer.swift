@@ -588,6 +588,7 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
+    initializeContext(program[d].contextParameters)
     let t = declaredConformanceType(program[d].extendee, program[d].concept)
     let u = introduce(program[d].contextParameters, into: t)
     program[module].setType(u, for: d)
@@ -599,6 +600,7 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
+    initializeContext(program[d].contextParameters)
     let inputs = declaredTypes(of: program[d].parameters)
     let output = program[d].output.map({ (a) in evaluateTypeAscription(a) }) ?? .void
 
@@ -912,10 +914,21 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
+    initializeContext(program[d].contextParameters)
     let t = ignoring(d, { (me) in me.evaluateTypeAscription(me.program[d].extendee) })
     let u = introduce(program[d].contextParameters, into: t)
     program[module].setType(u, for: d)
     return u
+  }
+
+  /// Computes the types of the given context parameters, introducing them in order.
+  private mutating func initializeContext(_ parameters: StaticParameters) {
+    declarationsOnStack.formUnion(parameters.implicit)
+    for p in parameters.implicit {
+      _ = declaredType(of: p)
+      let q = declarationsOnStack.remove(p)
+      assert(q != nil)
+    }
   }
 
   /// Returns `t` as the head of a universal type and/or implication introducing `parameters`.
@@ -1469,10 +1482,17 @@ public struct Typer {
   private mutating func typeOfImplementation(
     satisfying requirement: AssociatedTypeDeclaration.ID, in witness: WitnessExpression
   ) -> AnyTypeIdentity {
-    // Is the witness referring to a given declaration?
-    if let d = program.cast(witness.declaration.target!, to: ConformanceDeclaration.self) {
+    assert(program.types.castToTraitApplication(witness.type) != nil)
+
+    // The witness is the result of a coercion?
+    if let (_, b) = asCoercionApplication(witness) {
+      return typeOfImplementation(satisfying: requirement, in: b)
+    }
+
+    // The witness refers to a given declaration?
+    else if let d = witness.declaration, let c = program.cast(d, to: ConformanceDeclaration.self) {
       // Read the associated type definition.
-      if let i = implementation(of: requirement, in: d) {
+      if let i = implementation(of: requirement, in: c) {
         return declaredType(of: i)
       } else {
         return .error
@@ -1711,13 +1731,13 @@ public struct Typer {
 
     // Givens visible from `scopeOfUse`.
     for s in program.scopes(from: scopeOfUse) {
-      gs.append(contentsOf: givens(lexicallyIn: s))
+      for g in givens(lexicallyIn: s) where !isOnStack(g) { gs.append(g) }
     }
     for f in program[scopeOfUse.module].sourceFileIdentities where f != scopeOfUse.file {
-      gs.append(contentsOf: givens(lexicallyIn: .init(file: f)))
+      for g in givens(lexicallyIn: .init(file: f)) where !isOnStack(g) { gs.append(g) }
     }
     for i in imports(of: scopeOfUse.file) {
-      gs.append(contentsOf: givens(atTopLevelOf: i))
+      for g in givens(atTopLevelOf: i) where !isOnStack(g) { gs.append(g) }
     }
 
     // Assumed givens.
@@ -1737,9 +1757,9 @@ public struct Typer {
       case .user(let d):
         v = .reference(.direct(d))
       case .reflexivity, .symmetry, .transitivity:
-        v = .reference(.predefined)
+        v = .reference(.builtin(.coercion))
       case .assumed:
-        v = .reference(.predefined)
+        v = .variable
       }
       let w = WitnessExpression(value: v, type: u)
       return .init(witness: w, queried: t, environment: environment, tail: continuation)
@@ -1811,8 +1831,9 @@ public struct Typer {
     // Otherwise, assume non-syntactic equalities.
     let e = thread.environment.assuming(
       givens: coercions.map({ (c) in demand(EqualityWitness(lhs: c.0, rhs: c.1)).erased }))
+    let t = demand(EqualityWitness(lhs: a, rhs: b)).erased
     let w = WitnessExpression(
-      value: .termApplication(.init(value: .reference(.predefined), type: .void), thread.witness),
+      value: .termApplication(.init(builtin: .coercion, type: t), thread.witness),
       type: b)
     return .next([
       .init(witness: w, queried: b, environment: e, tail: thread.tail)
@@ -2033,21 +2054,21 @@ public struct Typer {
     case "Self":
       if let t = typeOfSelf(in: scopeOfUse) {
         let u = demand(Metatype(inhabitant: t)).erased
-        return [.init(reference: .predefined, type: u)]
+        return [.init(reference: .builtin(.alias), type: u)]
       } else {
         return []
       }
 
     case "self":
       if let t = typeOfSelf(in: scopeOfUse) {
-        return [.init(reference: .predefined, type: t)]
+        return [.init(reference: .builtin(.alias), type: t)]
       } else {
         return []
       }
 
     case "Void":
       let t = demand(Metatype(inhabitant: .void)).erased
-      return [.init(reference: .predefined, type: t)]
+      return [.init(reference: .builtin(.alias), type: t)]
 
     default:
       return []
@@ -2337,6 +2358,11 @@ public struct Typer {
 
   // MARK: Helpers
 
+  /// Returns `true` iff the type of `g`'s declaration is being computed.
+  private func isOnStack(_ g: Given) -> Bool {
+    g.declaration.map(declarationsOnStack.contains(_:)) ?? false
+  }
+
   /// Returns the type of values expected to be returned or projected in `s`, or `nil` if `s` is
   /// not in the body of a function or subscript.
   private mutating func expectedOutputType(in s: ScopeIdentity) -> AnyTypeIdentity? {
@@ -2361,6 +2387,17 @@ public struct Typer {
       return a.output
     } else {
       return .error
+    }
+  }
+
+  /// Returns the abstraction and argument of `w` if it is a coercion. Otherwise, returns `nil`.
+  private func asCoercionApplication(
+    _ w: WitnessExpression
+  ) -> (coercion: WitnessExpression, argument: WitnessExpression)? {
+    if case .termApplication(let a, let b) = w.value, program.types[a.type] is EqualityWitness {
+      return (a, b)
+    } else {
+      return nil
     }
   }
 

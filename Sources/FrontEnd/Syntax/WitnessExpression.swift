@@ -4,6 +4,9 @@ public struct WitnessExpression: Hashable {
   /// The expression of a witness.
   public indirect enum Value: Hashable {
 
+    /// A unification variable.
+    case variable
+
     /// A reference to a term declaration.
     case reference(DeclarationReference)
 
@@ -13,11 +16,12 @@ public struct WitnessExpression: Hashable {
     /// A type abstraction applied to type arguments.
     case typeApplication(WitnessExpression, [AnyTypeIdentity])
 
+    /// Returns a copy of `self` in which occurrences of `old` have been substituted for `new`.
     public func substituting(_ old: Value, for new: Value) -> Self {
       switch self {
       case old:
         return new
-      case .reference:
+      case .variable, .reference:
         return self
       case .termApplication(let w, let a):
         return .termApplication(w.substituting(old, for: new), a.substituting(old, for: new))
@@ -34,11 +38,25 @@ public struct WitnessExpression: Hashable {
   /// The type of the witness.
   public let type: AnyTypeIdentity
 
+  /// Creates an instance with the given properties.
+  public init(value: Value, type: AnyTypeIdentity) {
+    self.value = value
+    self.type = type
+  }
+
+  /// Creates a reference to a built-in entity.
+  public init(builtin entity: BuiltinEntity, type: AnyTypeIdentity) {
+    self.value = .reference(.builtin(entity))
+    self.type = type
+  }
+
   /// `true` iff this expression mentions open variable.
   public var hasVariable: Bool {
     if type[.hasVariable] { return true }
 
     switch value {
+    case .variable:
+      return false
     case .reference(let r):
       return r.hasVariable
     case .termApplication(let w, let a):
@@ -51,7 +69,7 @@ public struct WitnessExpression: Hashable {
   /// A measure of the size of the deduction tree used to produce the witness.
   public var elaborationCost: Int {
     switch value {
-    case .reference:
+    case .variable, .reference:
       return 0
     case .termApplication(let w, let a):
       return 1 + w.elaborationCost + a.elaborationCost
@@ -60,16 +78,19 @@ public struct WitnessExpression: Hashable {
     }
   }
 
-  /// The reference to the declaration of the witness evaluated by this expression.
-  public var declaration: DeclarationReference {
+  /// The declaration of the witness evaluated by this expression, if any.
+  public var declaration: DeclarationIdentity? {
     switch value {
-    case .reference(let d):
-      return d
+    case .variable:
+      return nil
+    case .reference(let r):
+      return r.target
     case .termApplication(let w, _), .typeApplication(let w, _):
       return w.declaration
     }
   }
 
+  /// Returns a copy of `self` in which occurrences of `old` have been substituted for `new`.
   public func substituting(_ old: Value, for new: Value) -> Self {
     .init(value: self.value.substituting(old, for: new), type: self.type)
   }
@@ -86,6 +107,8 @@ extension Program {
   /// Returns a debug representation of `v`.
   public func show(_ v: WitnessExpression.Value) -> String {
     switch v {
+    case .variable:
+      return "$?"
     case .reference(let d):
       return show(d)
     case .termApplication(let w, let a):

@@ -15,8 +15,8 @@ public indirect enum DeclarationReference: Hashable {
 
   }
 
-  /// A reference to a predefined entity.
-  case predefined
+  /// A reference to a built-in entity.
+  case builtin(BuiltinEntity)
 
   /// A reference to an assumed given during implicit resolution.
   case assumed(AnyTypeIdentity)
@@ -33,7 +33,7 @@ public indirect enum DeclarationReference: Hashable {
   /// `true` iff this referennce mentions open variable.
   public var hasVariable: Bool {
     switch self {
-    case .predefined, .direct, .member:
+    case .builtin, .direct, .member:
       return false
     case .assumed(let t):
       return t[.hasVariable]
@@ -55,7 +55,7 @@ public indirect enum DeclarationReference: Hashable {
   /// A measure of the complexity of reference's elaborated expression.
   public var elaborationCost: Int {
     switch self {
-    case .predefined, .assumed, .direct, .member:
+    case .builtin, .assumed, .direct, .member:
       return 0
     case .inherited(let w, _):
       return 1 + w.elaborationCost
@@ -69,8 +69,8 @@ extension Program {
   /// Returns a source-like representation of `r`.
   public func show(_ r: DeclarationReference) -> String {
     switch r {
-    case .predefined:
-      return "$predefined"
+    case .builtin(let e):
+      return "$<builtin \(e)>"
     case .assumed(let t):
       return "$<assumed given \(show(t))>"
     case .direct(let d):

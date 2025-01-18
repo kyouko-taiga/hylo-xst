@@ -1139,7 +1139,7 @@ public struct Parser {
       return .init(String(n.text), at: n.site)
     } else {
       report(expected("identifier"))
-      return .init("#?", at: .empty(at: position))
+      return .init("$!", at: .empty(at: position))
     }
   }
 

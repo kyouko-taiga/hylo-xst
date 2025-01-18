@@ -269,7 +269,7 @@ public struct TypeStore {
     withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
   ) -> DeclarationReference {
     switch r {
-    case .predefined, .direct, .member:
+    case .builtin, .direct, .member:
       return r
     case .assumed(let t):
       return .assumed(reify(t, applying: subs, withVariables: substitutionPolicy))
@@ -287,6 +287,9 @@ public struct TypeStore {
     let t = reify(w.type, applying: subs)
 
     switch w.value {
+    case .variable:
+      return w
+
     case .reference(let r):
       let u = reify(r, applying: subs, withVariables: substitutionPolicy)
       return .init(value: .reference(u), type: t)

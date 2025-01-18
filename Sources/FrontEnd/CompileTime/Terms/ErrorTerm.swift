@@ -13,7 +13,7 @@ public struct ErrorTerm: Term {
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    "#?"
+    "$!"
   }
 
 }

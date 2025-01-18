@@ -1,0 +1,12 @@
+trait P { type X }
+given Void: P { typealias X = Void }
+
+fun check<T>(_ x: T) {}
+
+fun f<T, U where T == U, T: P>(x: U.X) {
+  check<T.X>(x)
+}
+
+fun g<T where T == Void>(x: T.X) {
+  check<Void>(x)
+}
