@@ -23,6 +23,12 @@ internal struct Obligations {
     self.isUnsatisfiable = false
   }
 
+  /// Creates a set from a finite sequence of constraints.
+  internal init<S: Sequence<any Constraint>>(_ constraints: S) {
+    self.init()
+    for c in constraints { assume(c) }
+  }
+
   /// Marks `self` to be unsatisfiable.
   internal mutating func setUnsatisfiable() {
     isUnsatisfiable = true

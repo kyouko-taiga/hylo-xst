@@ -457,10 +457,16 @@ public struct Typer {
   /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
   private mutating func check(_ e: ExpressionIdentity, expecting r: AnyTypeIdentity) {
     let u = check(e, inContextExpecting: r)
-    if !equal(u, r) && !equal(u, .never) && !u[.hasError] {
-      let m = program.format("expected '%T', found '%T'", [r, u])
-      report(.init(.error, m, at: program[e].site))
-    }
+
+    // Fast path: `e` has the expected type or never returns.
+    if equal(u, r) || equal(u, .never) { return }
+
+    // Bail out if `e` has errors; those must have been reported already.
+    if u[.hasError] { return }
+
+    // Slow path: can we coerce `e`?
+    let k = CoercionConstraint(on: e, from: u, to: r, reason: .return, at: program[e].site)
+    discharge(Obligations([k]), relatedTo: e)
   }
 
   /// Type checks `e`, which occurs as a statement.
@@ -1004,6 +1010,9 @@ public struct Typer {
     /// The expression is used in an unspecified way.
     case unspecified
 
+    /// The expression denotes a type ascription.
+    case ascription
+
     /// The expression denotes as the callee of a function call.
     case function(labels: [String?])
 
@@ -1304,13 +1313,12 @@ public struct Typer {
       return context.obligations.assume(d, hasType: t, at: program[d].site)
     }
 
-    // Slow path: infer a type from the ascription and the initializer (if any).
-    let p = evaluateTypeAscription(a)
-
-    if let i = program[d].initializer {
+    // Slow path: infer a type from the ascription and (if necessary) the initializer.
+    let p = evaluatePartialTypeAscription(a, in: &context)
+    if p[.hasVariable], let i = program[d].initializer {
       let v = context.withSubcontext(expectedType: p, do: { (s) in inferredType(of: i, in: &s) })
       if v != .error {
-        context.obligations.assume(EqualityConstraint(lhs: p, rhs: v, site: program[i].site))
+        context.obligations.assume(CoercionConstraint(on: i, from: v, to: p, at: program[i].site))
       }
     }
 
@@ -1550,13 +1558,22 @@ public struct Typer {
   /// Returns the value of `e` evaluated as a type ascription.
   private mutating func evaluateTypeAscription(_ e: ExpressionIdentity) -> AnyTypeIdentity {
     var c = InferenceContext()
-    let t = inferredType(of: e, in: &c)
+    let t = evaluatePartialTypeAscription(e, in: &c)
     let s = discharge(c.obligations, relatedTo: e)
-    let u = program.types.reify(t, applying: s.substitutions)
+    return program.types.reify(t, applying: s.substitutions)
+  }
 
-    if let m = program.types[u] as? Metatype {
+  /// Returns the value of `e` evaluated as a (possibly partial) type ascription.
+  private mutating func evaluatePartialTypeAscription(
+    _ e: ExpressionIdentity, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let t = context.withSubcontext(role: .ascription) { (ctx) in
+      inferredType(of: e, in: &ctx)
+    }
+
+    if let m = program.types[t] as? Metatype {
       return m.inhabitant
-    } else if u == .error {
+    } else if t == .error {
       // Error already reported.
       return .error
     } else {

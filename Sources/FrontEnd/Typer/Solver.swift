@@ -94,6 +94,8 @@ internal struct Solver {
           switch me.goals[g] {
           case is EqualityConstraint:
             o = me.solve(equality: g)
+          case is CoercionConstraint:
+            o = me.solve(coercion: g)
           case is WideningConstraint:
             o = me.solve(widening: g)
           case is CallConstraint:
@@ -119,7 +121,7 @@ internal struct Solver {
         if let result = s { return result }
       }
 
-      if fresh.isEmpty { refreshWideningConstraints() }
+      if fresh.isEmpty { refreshCoercionAndWideningConstraints() }
     }
 
     // Not enough context to solve the remaining stale constraints.
@@ -133,7 +135,7 @@ internal struct Solver {
     return formSolution()
   }
 
-  /// Discharges `g`, which is a type equality constraint.
+  /// Discharges `g`, which is an equality constraint.
   private mutating func solve(equality g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! EqualityConstraint
 
@@ -141,11 +143,36 @@ internal struct Solver {
       for (t, u) in s.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
       return .success
     } else {
-      return .failure { (s, o, p, d) in
+      return .failure { (s, _, p, d) in
         let t = p.types.reify(k.lhs, applying: s)
         let u = p.types.reify(k.rhs, applying: s)
         let m = p.format("type '%T' is not compatible with '%T'", [t, u])
         d.insert(.init(.error, m, at: k.site))
+      }
+    }
+  }
+
+  /// Discharges `g`, which is a coercion constraint.
+  private mutating func solve(coercion g: GoalIdentity) -> GoalOutcome {
+    let k = goals[g] as! CoercionConstraint
+
+    if k.isTrivial {
+      return .success
+    } else if k.source.isVariable || k.target.isVariable {
+      return postpone(g)
+    }
+
+    let e = typer.program.types.demand(EqualityWitness(lhs: k.source, rhs: k.target)).erased
+    if let w = typer.summon(e, in: typer.program.parent(containing: k.origin)).uniqueElement {
+      _ = w // TODO: Store elaboration
+      return .success
+    } else if k.source[.hasVariable] || k.target[.hasVariable] {
+      return postpone(g)
+    } else {
+      return .failure { (s, _, p, d) in
+        let t = p.types.reify(k.source, applying: s)
+        let u = p.types.reify(k.target, applying: s)
+        d.insert(p.noCoercion(from: t, to: u, at: k.site))
       }
     }
   }
@@ -169,19 +196,29 @@ internal struct Solver {
       }
 
     default:
-      return simplify(k, as: EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site))
+      return simplify(k)
     }
   }
 
-  /// Returns the simplification of `old` as `sub`.
-  private mutating func simplify(
-    _ old: WideningConstraint, as sub: any Constraint
-  ) -> GoalOutcome {
-    let s = schedule(sub)
+  /// Returns the simplification of `k` as an equality between its operands.
+  private mutating func simplify(_ k: CoercionConstraint) -> GoalOutcome {
+    let e = EqualityConstraint(lhs: k.source, rhs: k.target, site: k.site)
+    let s = schedule(e)
     return .split([s]) { (s, _, p, d) in
-      let t = p.types.reify(old.lhs, applying: s)
-      let u = p.types.reify(old.rhs, applying: s)
-      d.insert(p.noConversion(from: t, to: u, at: old.site))
+      let t = p.types.reify(e.lhs, applying: s)
+      let u = p.types.reify(e.rhs, applying: s)
+      d.insert(p.noCoercion(from: t, to: u, at: e.site))
+    }
+  }
+
+  /// Returns the simplification of `k` as an equality between its operands.
+  private mutating func simplify(_ k: WideningConstraint) -> GoalOutcome {
+    let e = EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site)
+    let s = schedule(e)
+    return .split([s]) { (s, _, p, d) in
+      let t = p.types.reify(e.lhs, applying: s)
+      let u = p.types.reify(e.rhs, applying: s)
+      d.insert(p.noConversion(from: t, to: u, at: e.site))
     }
   }
 
@@ -505,20 +542,24 @@ internal struct Solver {
     stale.removeSubrange(end...)
   }
 
-  /// Transforms all stale widening constraints into equality constraints, selecting upper/lower
-  /// bounds using to the current type assignments.
-  private mutating func refreshWideningConstraints() {
+  /// Transforms all stale coercion and widening constraints into equality constraints, selecting
+  /// upper/lower bounds using to the current type assignments.
+  private mutating func refreshCoercionAndWideningConstraints() {
     // Nothing to do if the stale set is empty.
     if stale.isEmpty { return }
 
     var end = stale.count
     for i in (0 ..< stale.count).reversed() {
-      if let k = goals[stale[i]] as? WideningConstraint {
-        outcomes[stale[i]] = simplify(
-          k, as: EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site))
-        stale.swapAt(i, end - 1)
-        end -= 1
+      switch goals[stale[i]] {
+      case let k as CoercionConstraint:
+        outcomes[stale[i]] = simplify(k)
+      case let k as WideningConstraint:
+        outcomes[stale[i]] = simplify(k)
+      default:
+        continue
       }
+      stale.swapAt(i, end - 1)
+      end -= 1
     }
 
     stale.removeSubrange(end...)

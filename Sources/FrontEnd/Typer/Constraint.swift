@@ -20,6 +20,13 @@ extension Constraint {
   /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
   internal var isTrivial: Bool { false }
 
+  /// Returns a copy of `self` with its constituent types modified by `transform`.
+  internal func updated(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) -> Self {
+    var clone = self
+    clone.update(transform)
+    return clone
+  }
+
 }
 
 extension Program {
@@ -61,7 +68,66 @@ internal struct EqualityConstraint: Constraint {
 
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
-    program.format("%T == %T", [lhs, rhs])
+    program.format("%T =:= %T", [lhs, rhs])
+  }
+
+}
+
+/// A constraint stating that a value of type `T` can be coerced to a value of type `U`.
+internal struct CoercionConstraint: Constraint {
+
+  /// The reason for a coercion constraint.
+  internal enum Reason {
+
+    /// An unspecified reason.
+    case unspecified
+
+    /// A return value.
+    case `return`
+
+  }
+
+  /// The expression of the value whose type must be corced from `source` to `target`.
+  internal let origin: ExpressionIdentity
+
+  /// The left operand.
+  internal private(set) var source: AnyTypeIdentity
+
+  /// The right operand.
+  internal private(set) var target: AnyTypeIdentity
+
+  /// The reason for this constraint.
+  internal let reason: Reason
+
+  /// The site from which the constraint originates.
+  internal let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  init(
+    on origin: ExpressionIdentity, from source: AnyTypeIdentity, to target: AnyTypeIdentity,
+    reason: Reason = .unspecified, at site: SourceSpan
+  ) {
+    self.origin = origin
+    self.source = source
+    self.target = target
+    self.reason = reason
+    self.site = site
+  }
+
+  /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
+  internal var isTrivial: Bool {
+    source == target
+  }
+
+  /// Applies `transform` on constituent types of `self`.
+  internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    source = transform(source)
+    target = transform(target)
+  }
+
+  /// Returns a textual representation of `self`, reading contents from `program`.
+  internal func show(using program: Program) -> String {
+    program.format("%T ~:~ %T", [source, target])
   }
 
 }
@@ -92,7 +158,7 @@ internal struct WideningConstraint: Constraint {
 
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
-    program.format("%T <: %T", [lhs, rhs])
+    program.format("%T <:< %T", [lhs, rhs])
   }
 
 }
