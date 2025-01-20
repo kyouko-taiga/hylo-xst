@@ -30,7 +30,7 @@ public struct SubstitutionTable {
     var result = self
     for t in other.types.keys {
       let u = other[t.erased]
-      assert(result.types[t] == nil || result[t.erased] == u)
+      assert(result.types[t] == nil || result[t.erased] == result[u.erased])
       result.types[t] = u
     }
     return result

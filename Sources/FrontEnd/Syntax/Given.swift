@@ -5,7 +5,7 @@ public enum Given: Hashable {
   case coercion(EqualityProperty)
 
   /// A given that is assumed during implicit resolution.
-  case assumed(AnyTypeIdentity)
+  case assumed(Int, AnyTypeIdentity)
 
   /// A user-defined given.
   case user(DeclarationIdentity)

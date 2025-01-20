@@ -19,7 +19,7 @@ public indirect enum DeclarationReference: Hashable {
   case builtin(BuiltinEntity)
 
   /// A reference to an assumed given during implicit resolution.
-  case assumed(AnyTypeIdentity)
+  case assumed(Int, AnyTypeIdentity)
 
   /// A direct reference.
   case direct(DeclarationIdentity)
@@ -35,7 +35,7 @@ public indirect enum DeclarationReference: Hashable {
     switch self {
     case .builtin, .direct, .member:
       return false
-    case .assumed(let t):
+    case .assumed(_, let t):
       return t[.hasVariable]
     case .inherited(let w, _):
       return w.hasVariable
@@ -71,8 +71,8 @@ extension Program {
     switch r {
     case .builtin(let e):
       return "$<builtin \(e)>"
-    case .assumed(let t):
-      return "$<assumed given \(show(t))>"
+    case .assumed(let i, _):
+      return "$<assumed given \(i)>"
     case .direct(let d):
       return nameOrTag(of: d)
     case .member(let q, let d):

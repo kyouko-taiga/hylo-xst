@@ -857,7 +857,7 @@ public struct Typer {
   private mutating func declaredType(of g: Given) -> AnyTypeIdentity {
     if case .user(let d) = g {
       return declaredType(of: d)
-    } else if case .assumed(let t) = g {
+    } else if case .assumed(_, let t) = g {
       return t
     } else if let t = cache.predefinedGivens[g] {
       return t
@@ -1714,7 +1714,7 @@ public struct Typer {
     internal let witness: WitnessExpression
 
     /// A table assigning the open variables of the witness's type.
-    internal let environment: SubstitutionTable
+    internal let substitutions: SubstitutionTable
 
   }
 
@@ -1743,7 +1743,7 @@ public struct Typer {
       case done(SummonResult)
 
       /// A continuation substituting assumed witnesses of the given type by a summoned witness.
-      case substitute(AnyTypeIdentity)
+      case substitute(Int)
 
     }
 
@@ -1754,17 +1754,31 @@ public struct Typer {
       let substitutions: SubstitutionTable
 
       /// The set of assumed givens.
-      let givens: [AnyTypeIdentity]
+      let givens: [Given]
 
-      /// Creates an instance with the given properties.
-      init(substitutions: SubstitutionTable = .init(), givens: [AnyTypeIdentity] = []) {
-        self.substitutions = substitutions
-        self.givens = givens
+      /// The identifier of the next assumed given.
+      let nextGivenIdentifier: Int
+
+      /// Returns a copy of `self` in which `ts` are assumed given.
+      func assuming(givens ts: [AnyTypeIdentity]) -> Environment {
+        let gs = ts.enumerated().map({ (i, t) in Given.assumed(nextGivenIdentifier + i, t) })
+        let e = Environment(
+          substitutions: substitutions, givens: givens + gs,
+          nextGivenIdentifier: nextGivenIdentifier + gs.count)
+        return e
       }
 
-      /// Returns a copy of `self` in which `gs` are assumed.
-      func assuming(givens gs: [AnyTypeIdentity]) -> Self {
-        .init(substitutions: substitutions, givens: givens + gs)
+      func assuming(given t: AnyTypeIdentity) -> (Environment, WitnessExpression) {
+        let i = nextGivenIdentifier
+        let g = Given.assumed(i, t)
+        let e = Environment(
+          substitutions: substitutions, givens: givens + [g], nextGivenIdentifier: i + 1)
+        return (e, .init(value: .reference(.assumed(i, t)), type: t))
+      }
+
+      /// An empty environment.
+      static var empty: Environment {
+        .init(substitutions: .init(), givens: [], nextGivenIdentifier: 0)
       }
 
     }
@@ -1806,7 +1820,7 @@ public struct Typer {
     // introduction of a new given may change the result of implicit resolution. Instead, we must
     // consider all visible givens at once.
     else {
-      let threads = summon(t, in: scopeOfUse, where: .init(), then: [])
+      let threads = summon(t, in: scopeOfUse, where: .empty, then: [])
       result = takeSummonResults(from: threads, in: scopeOfUse)
     }
 
@@ -1841,9 +1855,7 @@ public struct Typer {
     }
 
     // Assumed givens.
-    for g in environment.givens {
-      gs.append(.assumed(g))
-    }
+    gs.append(contentsOf: environment.givens)
 
     // Built-in givens.
     gs.append(.coercion(.reflexivity))
@@ -1858,8 +1870,8 @@ public struct Typer {
         v = .reference(.direct(d))
       case .coercion:
         v = .reference(.builtin(.coercion))
-      case .assumed(let t):
-        v = .reference(.assumed(t))
+      case .assumed(let i, let t):
+        v = .reference(.assumed(i, t))
       }
       let w = WitnessExpression(value: v, type: u)
       return .init(witness: w, queried: t, environment: environment, tail: continuation)
@@ -1898,9 +1910,9 @@ public struct Typer {
     else if let i = program.types[a] as? Implication {
       // Assume that the implication has a non-empty context.
       let h = i.context.first!
-      let e = thread.environment.assuming(givens: [h])
+      let (e, v) = thread.environment.assuming(given: h)
       let w = WitnessExpression(
-        value: .termApplication(thread.witness, .init(value: .reference(.assumed(h)), type: h)),
+        value: .termApplication(thread.witness, v),
         type: program.types.dropFirstRequirement(.init(uncheckedFrom: a)))
       return .next([
         .init(witness: w, queried: b, environment: e, tail: thread.tail)
@@ -1920,7 +1932,7 @@ public struct Typer {
       let s = thread.environment.substitutions.union(subs)
       let w = program.types.reify(thread.witness, applying: s, withVariables: .kept)
       assert(!w.type[.hasError])
-      let r = SummonResult(witness: w, environment: s)
+      let r = SummonResult(witness: w, substitutions: s)
       return threadContinuation(appending: r, to: thread, in: scopeOfUse)
     }
 
@@ -1952,17 +1964,21 @@ public struct Typer {
     appending operand: SummonResult, to thread: ResolutionThread, in scopeOfUse: ScopeIdentity
   ) -> ResolutionThread.Advanced {
     // Are there assumptions to discharge?
-    if let assumed = thread.environment.givens.last {
+    if case .assumed(let i, let assumed) = thread.environment.givens.last {
       let e = ResolutionThread.Environment(
-        substitutions: operand.environment, givens: thread.environment.givens.dropLast())
+        substitutions: operand.substitutions, givens: thread.environment.givens.dropLast(),
+        nextGivenIdentifier: thread.environment.nextGivenIdentifier)
       var t = thread.tail
       t.append(.done(operand))
-      t.append(.substitute(assumed))
+      t.append(.substitute(i))
       return .next(summon(assumed, in: scopeOfUse, where: e, then: t))
     }
 
     // We're done; apply the continuation.
-    else { return .done(applyContinuation(thread.tail[...], to: operand)) }
+    else {
+      assert(thread.environment.givens.isEmpty)
+      return .done(applyContinuation(thread.tail[...], to: operand))
+    }
   }
 
   /// Returns the result of  `continuation` applied to `operand`.
@@ -1970,21 +1986,20 @@ public struct Typer {
     _ continuation: ArraySlice<ResolutionThread.ContinuationItem>, to operand: SummonResult
   ) -> SummonResult {
     switch continuation.last {
-    case .some(.substitute(let assumed)):
+    case .some(.substitute(let i)):
       let r = executeContinuation(continuation.dropLast())
-      let g = program.types.reify(assumed, applying: r.environment, withVariables: .kept)
-      let x = r.witness.substituting(.reference(.assumed(g)), for: operand.witness.value)
-      let e = operand.environment.union(r.environment)
+      let x = r.witness.substituting(assumed: i, for: operand.witness.value)
+      let e = operand.substitutions.union(r.substitutions)
       return .init(
-        witness: program.types.reify(x, applying: e, withVariables: .kept), environment: e)
+        witness: program.types.reify(x, applying: e, withVariables: .kept), substitutions: e)
 
     case .some(.done):
       unreachable("ill-formed continuation")
 
     case .none:
       let w = program.types.reify(
-        operand.witness, applying: operand.environment, withVariables: .kept)
-      return .init(witness: w, environment: operand.environment)
+        operand.witness, applying: operand.substitutions, withVariables: .kept)
+      return .init(witness: w, substitutions: operand.substitutions)
     }
   }
 
@@ -2204,7 +2219,7 @@ public struct Typer {
       for a in summonings {
         for m in ms {
           let w = program.types.reify(
-            a.witness, applying: a.environment, withVariables: .substitutedByError)
+            a.witness, applying: a.substitutions, withVariables: .substitutedByError)
           let u = typeOfImplementation(satisfying: m, in: w)
           candidates.append(.init(reference: .inherited(w, m), type: u))
         }
@@ -2247,7 +2262,7 @@ public struct Typer {
         if let a = applies(e, to: q, in: scopeOfUse) {
           let s = typeOfSelf(in: .init(node: e))!
           let w = program.types.reify(
-            a.witness, applying: a.environment, withVariables: .substitutedByError)
+            a.witness, applying: a.substitutions, withVariables: .substitutedByError)
 
           for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
             let member = declaredType(of: m)
@@ -2381,10 +2396,10 @@ public struct Typer {
     let w = WitnessExpression(value: .reference(.direct(.init(d))), type: u)
 
     // Fast path: both types are trivially equal.
-    if t == u { return .init(witness: w, environment: .init()) }
+    if t == u { return .init(witness: w, substitutions: .init()) }
 
     // Slow path: use the match judgement of implicit resolution..
-    let thread = ResolutionThread(witness: w, queried: t, environment: .init(), tail: [])
+    let thread = ResolutionThread(witness: w, queried: t, environment: .empty, tail: [])
     return takeSummonResults(from: [thread], in: s).uniqueElement
   }
 

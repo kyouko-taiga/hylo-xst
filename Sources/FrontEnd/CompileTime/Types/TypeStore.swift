@@ -288,8 +288,8 @@ public struct TypeStore {
     switch r {
     case .builtin, .direct, .member:
       return r
-    case .assumed(let t):
-      return .assumed(reify(t, applying: subs, withVariables: substitutionPolicy))
+    case .assumed(let i, let t):
+      return .assumed(i, reify(t, applying: subs, withVariables: substitutionPolicy))
     case .inherited(let w, let d):
       return .inherited(reify(w, applying: subs, withVariables: substitutionPolicy), d)
     }

@@ -13,17 +13,20 @@ public struct WitnessExpression: Hashable {
     /// A type abstraction applied to type arguments.
     case typeApplication(WitnessExpression, [AnyTypeIdentity])
 
-    /// Returns a copy of `self` in which occurrences of `old` have been substituted for `new`.
-    public func substituting(_ old: Value, for new: Value) -> Self {
+    /// Returns a copy of `self` in which occurrences of assumed given identified by `i` have been
+    /// substituted for `new`.
+    public func substituting(assumed i: Int, for new: Value) -> Self {
       switch self {
-      case old:
-        return new
-      case .reference:
-        return self
+      case .reference(let r):
+        return if case .assumed(i, _) = r { new } else { self }
+
       case .termApplication(let w, let a):
-        return .termApplication(w.substituting(old, for: new), a.substituting(old, for: new))
+        return .termApplication(
+          w.substituting(assumed: i, for: new), a.substituting(assumed: i, for: new))
+
       case .typeApplication(let w, let ts):
-        return .typeApplication(w.substituting(old, for: new), ts)
+        return .typeApplication(
+          w.substituting(assumed: i, for: new), ts)
       }
     }
 
@@ -83,9 +86,10 @@ public struct WitnessExpression: Hashable {
     }
   }
 
-  /// Returns a copy of `self` in which occurrences of `old` have been substituted for `new`.
-  public func substituting(_ old: Value, for new: Value) -> Self {
-    .init(value: self.value.substituting(old, for: new), type: self.type)
+  /// Returns a copy of `self` in which occurrences of assumed given identified by `i` have been
+  /// substituted for `new`.
+  internal func substituting(assumed i: Int, for new: Value) -> Self {
+    .init(value: self.value.substituting(assumed: i, for: new), type: self.type)
   }
 
 }
