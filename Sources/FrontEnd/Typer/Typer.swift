@@ -865,13 +865,13 @@ public struct Typer {
 
     let result: AnyTypeIdentity
     switch g {
-    case .reflexivity:
+    case .coercion(.reflexivity):
       // <T> T ~ T
       let t0 = demand(GenericParameter.reflexivity)
       let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t0.erased)).erased
       result = demand(UniversalType(parameters: [t0], body: x0)).erased
 
-    case .symmetry:
+    case .coercion(.symmetry):
       // <T0, T1> T0 ~ T1 ==> T1 ~ T0
       let t0 = demand(GenericParameter.symmetry(0))
       let t1 = demand(GenericParameter.symmetry(1))
@@ -880,7 +880,7 @@ public struct Typer {
       let x2 = demand(Implication(context: [x0], head: x1)).erased
       result = demand(UniversalType(parameters: [t0, t1], body: x2)).erased
 
-    case .transitivity:
+    case .coercion(.transitivity):
       // <T0, T1, T2> T0 ~ T1, T1 ~ T2 ==> T0 ~ T2
       let t0 = demand(GenericParameter.transitivity(0))
       let t1 = demand(GenericParameter.transitivity(1))
@@ -1842,13 +1842,13 @@ public struct Typer {
 
     // Assumed givens.
     for g in environment.givens {
-      gs.append(.assumed(type: g))
+      gs.append(.assumed(g))
     }
 
     // Built-in givens.
-    gs.append(.reflexivity)
-    gs.append(.symmetry)
-    gs.append(.transitivity)
+    gs.append(.coercion(.reflexivity))
+    gs.append(.coercion(.symmetry))
+    gs.append(.coercion(.transitivity))
 
     return gs.map { (g) -> ResolutionThread in
       let u = declaredType(of: g)
@@ -1856,10 +1856,10 @@ public struct Typer {
       switch g {
       case .user(let d):
         v = .reference(.direct(d))
-      case .reflexivity, .symmetry, .transitivity:
+      case .coercion:
         v = .reference(.builtin(.coercion))
-      case .assumed:
-        v = .variable
+      case .assumed(let t):
+        v = .reference(.assumed(t))
       }
       let w = WitnessExpression(value: v, type: u)
       return .init(witness: w, queried: t, environment: environment, tail: continuation)
@@ -1919,6 +1919,7 @@ public struct Typer {
     if coercions.isEmpty {
       let s = thread.environment.substitutions.union(subs)
       let w = program.types.reify(thread.witness, applying: s, withVariables: .kept)
+      assert(!w.type[.hasError])
       let r = SummonResult(witness: w, environment: s)
       return threadContinuation(appending: r, to: thread, in: scopeOfUse)
     }
@@ -1928,7 +1929,13 @@ public struct Typer {
       return .next([])
     }
 
-    // Otherwise, assume non-syntactic equalities.
+    // Properties of equality are encoded as axioms so there is no need to assume non-syntactic
+    // equalities between parts of equality witnesses.
+    else if program.types.isEquality(a) || program.types.isEquality(b) {
+      return .next([])
+    }
+
+    // Otherwise, assume non-syntactic equalities between pairwise parts.
     let e = thread.environment.assuming(
       givens: coercions.map({ (c) in demand(EqualityWitness(lhs: c.0, rhs: c.1)).erased }))
     let t = demand(EqualityWitness(lhs: a, rhs: b)).erased
@@ -1968,7 +1975,8 @@ public struct Typer {
       let g = program.types.reify(assumed, applying: r.environment, withVariables: .kept)
       let x = r.witness.substituting(.reference(.assumed(g)), for: operand.witness.value)
       let e = operand.environment.union(r.environment)
-      return .init(witness: program.types.reify(x, applying: e), environment: e)
+      return .init(
+        witness: program.types.reify(x, applying: e, withVariables: .kept), environment: e)
 
     case .some(.done):
       unreachable("ill-formed continuation")
@@ -2001,7 +2009,8 @@ public struct Typer {
 
     while done.isEmpty && !work.isEmpty && (depth < maxImplicitDepth) {
       var next: [ResolutionThread] = []
-      for item in work {
+      for (i, item) in work.enumerated() {
+        if i == -1 { print(123) }
         switch match(item, in: scopeOfUse) {
         case .done(let r): done.append(r)
         case .next(let s): next.append(contentsOf: s)
@@ -2194,7 +2203,8 @@ public struct Typer {
 
       for a in summonings {
         for m in ms {
-          let w = program.types.reify(a.witness, applying: a.environment)
+          let w = program.types.reify(
+            a.witness, applying: a.environment, withVariables: .substitutedByError)
           let u = typeOfImplementation(satisfying: m, in: w)
           candidates.append(.init(reference: .inherited(w, m), type: u))
         }
@@ -2236,7 +2246,8 @@ public struct Typer {
       for e in es where !declarationsOnStack.contains(.init(e)) {
         if let a = applies(e, to: q, in: scopeOfUse) {
           let s = typeOfSelf(in: .init(node: e))!
-          let w = program.types.reify(a.witness, applying: a.environment)
+          let w = program.types.reify(
+            a.witness, applying: a.environment, withVariables: .substitutedByError)
 
           for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
             let member = declaredType(of: m)

@@ -64,6 +64,11 @@ public struct TypeStore {
     .init(type(of: self[n]))
   }
 
+  /// Returns `true` iff `n` identifies the type of an equality witness.
+  public func isEquality<T: TypeIdentity>(_ n: T) -> Bool {
+    tag(of: n) == EqualityWitness.self
+  }
+
   /// Returns `true` iff `n` identifies the type of an entity callable as a function.
   public func isArrowLike<T: TypeIdentity>(_ n: T) -> Bool {
     switch tag(of: n) {
@@ -278,7 +283,7 @@ public struct TypeStore {
   public mutating func reify(
     _ r: DeclarationReference,
     applying subs: SubstitutionTable,
-    withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
+    withVariables substitutionPolicy: SubstitutionPolicy
   ) -> DeclarationReference {
     switch r {
     case .builtin, .direct, .member:
@@ -294,14 +299,11 @@ public struct TypeStore {
   public mutating func reify(
     _ w: WitnessExpression,
     applying subs: SubstitutionTable,
-    withVariables substitutionPolicy: SubstitutionPolicy = .substitutedByError
+    withVariables substitutionPolicy: SubstitutionPolicy
   ) -> WitnessExpression {
-    let t = reify(w.type, applying: subs)
+    let t = reify(w.type, applying: subs, withVariables: substitutionPolicy)
 
     switch w.value {
-    case .variable:
-      return w
-
     case .reference(let r):
       let u = reify(r, applying: subs, withVariables: substitutionPolicy)
       return .init(value: .reference(u), type: t)

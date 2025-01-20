@@ -16,12 +16,7 @@ public struct SubstitutionTable {
     types.isEmpty
   }
 
-  /// Returns the substitution for `v`, if any.
-  internal subscript(v: TypeVariable.ID) -> AnyTypeIdentity? {
-    types[walk(v)]
-  }
-
-  /// Returns the substitution of `t` in this map or `t` is no such substitution exists.
+  /// Returns the representative of the equivalence class containing `t` in `self`.
   internal subscript(t: AnyTypeIdentity) -> AnyTypeIdentity {
     var a = t
     while a.isVariable, let b = types[.init(uncheckedFrom: a)] {
@@ -34,8 +29,8 @@ public struct SubstitutionTable {
   internal func union(_ other: SubstitutionTable) -> SubstitutionTable {
     var result = self
     for t in other.types.keys {
-      let u = other[t]
-      assert(result.types[t] == nil || result[t] == u)
+      let u = other[t.erased]
+      assert(result.types[t] == nil || result[t.erased] == u)
       result.types[t] = u
     }
     return result

@@ -1,17 +1,11 @@
 /// The declaration of a given.
 public enum Given: Hashable {
 
-  /// The built-in given of equality's reflexivity.
-  case reflexivity
-
-  /// The built-in given of equality's symmetry.
-  case symmetry
-
-  /// The built-in given of equality's transitivity
-  case transitivity
+  /// The built-in given of a coercion.
+  case coercion(EqualityProperty)
 
   /// A given that is assumed during implicit resolution.
-  case assumed(type: AnyTypeIdentity)
+  case assumed(AnyTypeIdentity)
 
   /// A user-defined given.
   case user(DeclarationIdentity)
