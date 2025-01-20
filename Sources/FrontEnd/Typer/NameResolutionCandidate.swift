@@ -25,7 +25,7 @@ extension Program {
         if isExtensionMember(a) && !isExtensionMember(b) {
           return true
         } else {
-          return compareLexicalDistance(a, b, relativeTo: scopeOfUse) == .ascending
+          return compareLexicalDistances(a, b, relativeTo: scopeOfUse) == .ascending
         }
 
       default:

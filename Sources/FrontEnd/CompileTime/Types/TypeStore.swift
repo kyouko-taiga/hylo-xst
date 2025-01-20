@@ -79,6 +79,18 @@ public struct TypeStore {
     return false
   }
 
+  /// Returns `true` iff `n` sans context clause identifies the type of an entity callable with the
+  /// given style and argument labels.
+  public func isCallable<S: Sequence<String?>>(
+    headOf n: AnyTypeIdentity, _ style: Call.Style, withLabels labels: S
+  ) -> Bool {
+    if let t = self[head(n)] as? any Callable {
+      return (t.style == style) && t.labels.elementsEqual(labels)
+    } else {
+      return false
+    }
+  }
+
   /// Returns `n` sans context clause.
   public func head(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
     switch self[n] {

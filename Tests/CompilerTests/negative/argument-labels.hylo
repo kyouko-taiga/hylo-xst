@@ -1,0 +1,8 @@
+struct A { memberwise init }
+
+fun one(x: A) {}
+fun one(x: A, y: A) {}
+
+fun main() {
+  one(y: A())
+}

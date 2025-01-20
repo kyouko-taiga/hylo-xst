@@ -94,25 +94,25 @@ extension Program {
     .init(.error, "expression does not denote a type", at: spanForDiagnostic(about: e))
   }
 
-  /// Returns an error diagnosing a duplicate declaration.
-  internal func duplicateDeclaration(
-    at site: SourceSpan, previousDeclarations: [SourceSpan] = []
-  ) -> Diagnostic {
-    let notes = previousDeclarations.map { (s) in
-      Diagnostic(.note, "previous declaration here", at: s)
-    }
-    return .init(.error, "duplicate declaration", at: site, notes: notes)
-  }
-
   /// Returns an error diagnosing incompatible labels in a function or subscript application.
   internal func incompatibleLabels<S1: Sequence<String?>, S2: Sequence<String?>>(
-    found: S1, expected: S2, at site: SourceSpan
+    found: S1, expected: S2, at site: SourceSpan, as level: Diagnostic.Level = .error
   ) -> Diagnostic {
     let m = """
       incompatible labels: found '(\(ArgumentLabels(found)))', \
       expected '(\(ArgumentLabels(expected)))'
       """
-    return .init(.error, m, at: site)
+    return .init(level, m, at: site)
+  }
+
+  /// Returns an error diagnosing an invalid redeclaration.
+  internal func invalidRedeclaration(
+    of n: Name, at site: SourceSpan, previousDeclarations: [SourceSpan] = []
+  ) -> Diagnostic {
+    let notes = previousDeclarations.map { (s) in
+      Diagnostic(.note, "previous declaration here", at: s)
+    }
+    return .init(.error, "invalid redeclaration of '\(n)'", at: site, notes: notes)
   }
 
   /// Returns an error diagnosing an invalid coercion.
@@ -130,13 +130,22 @@ extension Program {
   }
 
   /// Returns an error diagnosing an undefined symbol.
-  internal func undefinedSymbol(_ n: Name, at site: SourceSpan) -> Diagnostic {
-    .init(.error, "undefined symbol '\(n)'", at: site)
+  internal func undefinedSymbol(
+    _ n: Name, memberOf t: AnyTypeIdentity? = nil, at site: SourceSpan
+  ) -> Diagnostic {
+    let m = if let u = t {
+      format("type '%T' has no member '\(n)'", [u])
+    } else {
+      "undefined symbol '\(n)'"
+    }
+    return .init(.error, m, at: site)
   }
 
   /// Returns an error diagnosing an undefined symbol.
-  internal func undefinedSymbol(_ n: Parsed<Name>) -> Diagnostic {
-    undefinedSymbol(n.value, at: n.site)
+  internal func undefinedSymbol(
+    _ n: Parsed<Name>, memberOf t: AnyTypeIdentity? = nil
+  ) -> Diagnostic {
+    undefinedSymbol(n.value, memberOf: t, at: n.site)
   }
 
 }

@@ -1,9 +1,0 @@
-negative/duplicate-binding.hylo:2.7-8: error: duplicate declaration
-  let x = ()
-      ^
-negative/duplicate-binding.hylo:3.7-8: error: duplicate declaration
-  let y = ()
-      ^
-negative/duplicate-binding.hylo:4.7-8: error: duplicate declaration
-  let y = ()
-      ^

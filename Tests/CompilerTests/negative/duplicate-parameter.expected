@@ -1,6 +1,0 @@
-negative/duplicate-parameter.hylo:1.25-26: error: duplicate declaration
-fun f(x: Void, y: Void, x: Void) {}
-                        ^
-negative/duplicate-parameter.hylo:1.7-8: note: previous declaration here
-fun f(x: Void, y: Void, x: Void) {}
-      ^

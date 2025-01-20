@@ -79,22 +79,22 @@ internal struct CoercionConstraint: Constraint {
   /// The reason for a coercion constraint.
   internal enum Reason {
 
-    /// An unspecified reason.
-    case unspecified
-
     /// A return value.
     case `return`
 
+    /// An unspecified reason.
+    case unspecified
+
   }
 
-  /// The expression of the value whose type must be corced from `source` to `target`.
+  /// The expression of the value whose type must be corced from `lhs` to `rhs`.
   internal let origin: ExpressionIdentity
 
-  /// The left operand.
-  internal private(set) var source: AnyTypeIdentity
+  /// The type of the value to coerce.
+  internal private(set) var lhs: AnyTypeIdentity
 
-  /// The right operand.
-  internal private(set) var target: AnyTypeIdentity
+  /// The type to which the value is coerced.
+  internal private(set) var rhs: AnyTypeIdentity
 
   /// The reason for this constraint.
   internal let reason: Reason
@@ -104,30 +104,30 @@ internal struct CoercionConstraint: Constraint {
 
   /// Creates an instance with the given properties.
   init(
-    on origin: ExpressionIdentity, from source: AnyTypeIdentity, to target: AnyTypeIdentity,
+    on origin: ExpressionIdentity, from lhs: AnyTypeIdentity, to rhs: AnyTypeIdentity,
     reason: Reason = .unspecified, at site: SourceSpan
   ) {
     self.origin = origin
-    self.source = source
-    self.target = target
+    self.lhs = lhs
+    self.rhs = rhs
     self.reason = reason
     self.site = site
   }
 
   /// `true` iff `self` trivially holds and solving it will not enable any new deductions.
   internal var isTrivial: Bool {
-    source == target
+    lhs == rhs
   }
 
   /// Applies `transform` on constituent types of `self`.
   internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
-    source = transform(source)
-    target = transform(target)
+    lhs = transform(lhs)
+    rhs = transform(rhs)
   }
 
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
-    program.format("%T ~:~ %T", [source, target])
+    program.format("%T ~:~ %T", [lhs, rhs])
   }
 
 }
@@ -226,6 +226,9 @@ internal struct CallConstraint: Constraint {
 
 /// A constraint stating that a value of type `A` can be passed to a parameter of type `A`.
 internal struct ArgumentConstraint: Constraint {
+
+  /// The expression of the argument passed as an argument.
+  internal let origin: ExpressionIdentity
 
   /// The type of the argument.
   internal private(set) var lhs: AnyTypeIdentity

@@ -158,20 +158,20 @@ internal struct Solver {
 
     if k.isTrivial {
       return .success
-    } else if k.source.isVariable || k.target.isVariable {
+    } else if k.lhs.isVariable || k.rhs.isVariable {
       return postpone(g)
     }
 
-    let e = typer.program.types.demand(EqualityWitness(lhs: k.source, rhs: k.target)).erased
+    let e = typer.program.types.demand(EqualityWitness(lhs: k.lhs, rhs: k.rhs)).erased
     if let w = typer.summon(e, in: typer.program.parent(containing: k.origin)).uniqueElement {
       _ = w // TODO: Store elaboration
       return .success
-    } else if k.source[.hasVariable] || k.target[.hasVariable] {
+    } else if k.lhs[.hasVariable] || k.rhs[.hasVariable] {
       return postpone(g)
     } else {
       return .failure { (s, _, p, d) in
-        let t = p.types.reify(k.source, applying: s)
-        let u = p.types.reify(k.target, applying: s)
+        let t = p.types.reify(k.lhs, applying: s)
+        let u = p.types.reify(k.rhs, applying: s)
         d.insert(p.noCoercion(from: t, to: u, at: k.site))
       }
     }
@@ -202,9 +202,9 @@ internal struct Solver {
 
   /// Returns the simplification of `k` as an equality between its operands.
   private mutating func simplify(_ k: CoercionConstraint) -> GoalOutcome {
-    let e = EqualityConstraint(lhs: k.source, rhs: k.target, site: k.site)
+    let e = EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site)
     let s = schedule(e)
-    return .split([s]) { (s, _, p, d) in
+    return .forward([s]) { (s, _, p, d) in
       let t = p.types.reify(e.lhs, applying: s)
       let u = p.types.reify(e.rhs, applying: s)
       d.insert(p.noCoercion(from: t, to: u, at: e.site))
@@ -215,7 +215,7 @@ internal struct Solver {
   private mutating func simplify(_ k: WideningConstraint) -> GoalOutcome {
     let e = EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site)
     let s = schedule(e)
-    return .split([s]) { (s, _, p, d) in
+    return .forward([s]) { (s, _, p, d) in
       let t = p.types.reify(e.lhs, applying: s)
       let u = p.types.reify(e.rhs, applying: s)
       d.insert(p.noConversion(from: t, to: u, at: e.site))
@@ -306,10 +306,11 @@ internal struct Solver {
     for p in f.inputs {
       // Is there's an explicit argument with the right label?
       if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
-        let s = typer.program[typer.program[k.origin].arguments[i].value].site
+        let v = typer.program[k.origin].arguments[i].value
         let a = k.arguments[i]
         bindings.append(.explicit(i))
-        subgoals.append(ArgumentConstraint(lhs: a.type, rhs: p.type, site: s))
+        subgoals.append(
+          ArgumentConstraint(origin: v, lhs: a.type, rhs: p.type, site: typer.program[v].site))
         i += 1
       }
 
@@ -346,8 +347,10 @@ internal struct Solver {
       return postpone(g)
 
     case let p as RemoteType:
-      let s = schedule(EqualityConstraint(lhs: k.lhs, rhs: p.projectee, site: k.site))
-      return .split([s]) { (s, _, p, d) in
+      let s = schedule(
+        CoercionConstraint(
+          on: k.origin, from: k.lhs, to: p.projectee, reason: .unspecified, at: k.site))
+      return .forward([s]) { (s, _, p, d) in
         let t = p.types.reify(k.lhs, applying: s)
         let u = p.types.reify(k.rhs, applying: s)
         let m = p.format("cannot pass value of type '%T' to parameter '%T'", [t, u])
@@ -599,7 +602,7 @@ internal struct Solver {
 
   /// Returns the splitting of a goal into sub-goals `gs`, reporting each of failure individually.
   private func delegate(_ gs: [GoalIdentity]) -> GoalOutcome {
-    .split(gs) { (m, o, p, d) in
+    .forward(gs) { (m, o, p, d) in
       for g in gs {
         if let f = o.diagnosticBuilder(g) { f(m, o, &p, &d) }
       }
@@ -631,7 +634,7 @@ internal struct Solver {
       case .pending: "- defer"
       case .success: "- ok"
       case .failure: "- fail"
-      case .split: "- split"
+      case .forward: "- forward"
       }
     }())
   }
@@ -668,7 +671,7 @@ private enum GoalOutcome {
   ///
   /// The payload contains the identity of the sub-goals and a function producing a diagnostic of
   /// the failure in case one of the sub-goals is unsatisfiable.
-  case split([GoalIdentity], DiagnoseFailure)
+  case forward([GoalIdentity], DiagnoseFailure)
 
   /// `true` iff `self` is `.pending`
   var isPending: Bool {
@@ -684,7 +687,7 @@ extension [GoalOutcome] {
     switch self[g] {
     case .failure:
       return true
-    case .split(let gs, _):
+    case .forward(let gs, _):
       return gs.contains(where: failed(_:))
     default:
       return false
@@ -698,7 +701,7 @@ extension [GoalOutcome] {
       return nil
     case .failure(let f):
       return f
-    case .split(let gs, let f):
+    case .forward(let gs, let f):
       return gs.contains(where: failed(_:)) ? f : nil
     }
   }

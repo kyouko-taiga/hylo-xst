@@ -1,6 +1,9 @@
 /// The type of a callable abstraction.
 public protocol Callable: TypeTree {
 
+  /// The way in which the abstraction must be applied.
+  var style: Call.Style { get }
+
   /// The input labels and types of the abstraction.
   var inputs: [Parameter] { get }
 

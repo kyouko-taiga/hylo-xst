@@ -1,4 +1,5 @@
 trait P { type X }
+
 given Void: P { typealias X = Void }
 
 fun check<T>(_ x: T) {}
@@ -8,6 +9,11 @@ fun f0<T where T == Void>(x: T.X) {
 }
 
 fun f1<T, U where T == U, T: P>(x: U.X) {
+  check<T.X>(x)
+  let y: T.X = x
+}
+
+fun f2<T, U where T == U, T: P, U: P, T.X == U.X>(x: U.X) {
   check<T.X>(x)
   let y: T.X = x
 }

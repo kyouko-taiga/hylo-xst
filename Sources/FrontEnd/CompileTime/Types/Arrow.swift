@@ -81,6 +81,10 @@ public struct Arrow: TypeTree {
 
 extension Arrow: Callable {
 
+  public var style: Call.Style {
+    .parenthesized
+  }
+
   public func output(calleeIsMutating: Bool) -> AnyTypeIdentity {
     output
   }

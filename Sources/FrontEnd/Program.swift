@@ -374,10 +374,20 @@ public struct Program {
     }
   }
 
+  public func compareLexicalOccurrences<T: SyntaxIdentity, U: SyntaxIdentity>(
+    _ m: T, _ n: U
+  ) -> StrictPartialOrdering {
+    if parent(containing: m) == parent(containing: n) {
+      return .init(between: self[m].site.end, and: self[n].site.start)
+    } else {
+      return nil
+    }
+  }
+
   /// Retutns whether `m` or `n` is lexically closer to `s`.
   ///
   /// - Requires: The module containing `s` is scoped.
-  public func compareLexicalDistance<T: SyntaxIdentity, U: SyntaxIdentity>(
+  public func compareLexicalDistances<T: SyntaxIdentity, U: SyntaxIdentity>(
     _ m: T, _ n: U, relativeTo s: ScopeIdentity
   ) -> StrictOrdering {
     // Is `m` in the same module as `s`?

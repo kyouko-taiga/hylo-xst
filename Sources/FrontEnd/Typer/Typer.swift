@@ -1,3 +1,4 @@
+import Algorithms
 import DequeModule
 import OrderedCollections
 import Utilities
@@ -156,7 +157,8 @@ public struct Typer {
   /// Type checks `d`.
   private mutating func check(_ d: AssociatedTypeDeclaration.ID) {
     _ = declaredType(of: d)
-    // TODO
+    // TODO: Bounds
+    ensureUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
@@ -166,11 +168,8 @@ public struct Typer {
       check(i, expecting: t)
     }
 
-    let p = program.parent(containing: d)
     program.forEachVariable(introducedBy: d) { (v, _) in
-      if v.erased != lookup(program[v].identifier.value, lexicallyIn: p).uniqueElement?.erased {
-        report(program.duplicateDeclaration(at: program[v].site))
-      }
+      ensureUniqueDeclaration(v, of: program[v].identifier.value)
     }
   }
 
@@ -235,11 +234,14 @@ public struct Typer {
       check(program[d].parameters)
       check(body: program[d].body, of: .init(d), expectingOutputType: a.output)
     }
+
+    // TODO: Redeclarations
   }
 
   /// Type checks `d`.
   private mutating func check(_ d: GenericParameterDeclaration.ID) {
     _ = declaredType(of: d)
+    // TODO: redeclarations
   }
 
   /// Type checks `d`.
@@ -292,18 +294,21 @@ public struct Typer {
   private mutating func check(_ d: StructDeclaration.ID) {
     _ = declaredType(of: d)
     for m in program[d].members { check(m) }
+    ensureUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
   private mutating func check(_ d: TraitDeclaration.ID) {
     _ = declaredType(of: d)
     for m in program[d].members { check(m) }
+    ensureUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
   private mutating func check(_ d: TypeAliasDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO
+    ensureUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
@@ -320,10 +325,11 @@ public struct Typer {
       // Check for duplicate parameters.
       modify(&siblings[program[p].identifier.value]) { (q) in
         if let previous = q {
-          let m = program.duplicateDeclaration(
+          let e = program.invalidRedeclaration(
+            of: .init(identifier: program[p].identifier.value),
             at: program.spanForDiagnostic(about: p),
             previousDeclarations: [program.spanForDiagnostic(about: previous)])
-          report(m)
+          report(e)
         } else {
           q = p
         }
@@ -336,6 +342,7 @@ public struct Typer {
     for p in ps.explicit { check(p) }
     for p in ps.implicit { check(p) }
   }
+
 
   /// Returns `true` iff `d` needs a user-defined a definition.
   ///
@@ -437,6 +444,20 @@ public struct Typer {
     let n = program.name(of: requirement)
     let m = "ambiguous implementation of '\(n)'"
     report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
+  }
+
+  /// Reports a diagnostic iff `d` is not the first declaration of `identifier` in its scope.
+  private mutating func ensureUniqueDeclaration<T: Declaration>(_ d: T.ID, of identifier: String) {
+    let p = program.parent(containing: d)
+    for x in lookup(identifier, lexicallyIn: p) {
+      if (x.erased != d.erased) && program.compareLexicalOccurrences(x, d) == .ascending {
+        let e = program.invalidRedeclaration(
+          of: .init(identifier: identifier), at: program.spanForDiagnostic(about: d),
+          previousDeclarations: [program.spanForDiagnostic(about: x)])
+        report(e)
+        break
+      }
+    }
   }
 
   /// Type checks `e` and returns its type, which is expected to be `r` from the context of `e`.
@@ -1334,25 +1355,87 @@ public struct Typer {
   }
 
   /// Constrains the name component in `r` to be a reference to one of `r`'s resolution candidates
-  /// in `o`, and returns the inferred type of `r`.
+  /// `cs` in `o`, and returns the inferred type of `r`.
+  ///
+  /// - Requires: `cs` is not empty.
   private mutating func assume(
-    _ n: NameExpression.ID, boundTo cs: [NameResolutionCandidate], in o: inout Obligations
+    _ n: NameExpression.ID, boundTo cs: consuming [NameResolutionCandidate], for role: SyntaxRole,
+    in o: inout Obligations
   ) -> AnyTypeIdentity {
-    // If there's only one candidate, we're done.
-    if let pick = cs.uniqueElement {
-      // TODO: Instantiate
+    assert(!cs.isEmpty)
+    filter(&cs, for: role, reportingDiagnosticsAt: program[n].site)
 
-      o.assume(n, boundTo: pick.reference)
-      return o.assume(n, hasType: pick.type, at: program[n].site)
+    // No candidate survived filtering?
+    if cs.isEmpty {
+      return o.assume(n, hasType: .error, at: program[n].site)
+    }
+
+    // There is only one candidate left?
+    else if cs.count == 1 {
+      o.assume(n, boundTo: cs[0].reference)
+      return o.assume(n, hasType: cs[0].type, at: program[n].site)
     }
 
     // Otherwise, create an overload set.
     else {
-      assert(!cs.isEmpty)
       let t = fresh().erased
       o.assume(OverloadConstraint(name: n, type: t, candidates: cs, site: program[n].site))
       return o.assume(n, hasType: t, at: program[n].site)
     }
+  }
+
+  /// Narrows the overloaded candidates in `cs` to keep those suitable for the given `role`.
+  ///
+  /// - Note: No filtering is applied if `cs` contains a single element.
+  /// - Requires: `cs` is not empty.
+  private mutating func filter(
+    _ cs: inout [NameResolutionCandidate], for role: SyntaxRole,
+    reportingDiagnosticsAt site: SourceSpan
+  ) {
+    switch role {
+    case _ where cs.count == 1:
+      return
+    case .ascription, .unspecified:
+      return
+    case .function(let labels):
+      filter(&cs, callable: .parenthesized, withLabels: labels, reportingDiagnosticsAt: site)
+    case .subscript(let labels):
+      filter(&cs, callable: .bracketed, withLabels: labels, reportingDiagnosticsAt: site)
+    }
+  }
+
+  /// Narrows the overloaded candidates in `cs` to keep those that can be applied with the given
+  /// style and argument labels.
+  ///
+  /// - Requires: `cs` is not empty.
+  private mutating func filter(
+    _ cs: inout [NameResolutionCandidate],
+    callable style: Call.Style, withLabels labels: [String?],
+    reportingDiagnosticsAt site: SourceSpan
+  ) {
+    // Non-viable candidates moved at the end.
+    let i = cs.stablePartition { (c) in
+      !program.types.isCallable(headOf: c.type, style, withLabels: labels)
+    }
+
+    if i == 0 {
+      // Only candidates having a declaration in source are added to the notes. Other candidates
+      // are not overloadable and so we can assume that another error will be diagnosed.
+      let notes = cs.compactMap { (c) -> Diagnostic? in
+        guard let d = c.reference.target else { return nil }
+        let s = program.spanForDiagnostic(about: d)
+        let h = program.types.head(c.type)
+
+        if let t = program.types[h] as? any Callable, t.style == style {
+          return program.incompatibleLabels(found: t.labels, expected: labels, at: s, as: .note)
+        } else {
+          return .init(.note, "candidate not viable", at: s)
+        }
+      }
+      report(.init(.error, "no candidate matches the argument list", at: site, notes: notes))
+    }
+
+    cs.removeSubrange(i...)
   }
 
   /// Proves the obligations `o`, which relate to the well-typedness of `n`, returning the best
@@ -1981,6 +2064,7 @@ public struct Typer {
     _ e: NameExpression.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     let scopeOfUse = program.parent(containing: e)
+    let candidates: [NameResolutionCandidate]
 
     // Is the name qualified?
     if let qualification = resolveQualification(of: e, in: &context) {
@@ -1998,27 +2082,23 @@ public struct Typer {
         q = qualification
       }
 
-      let candidates = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
+      candidates = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
       if candidates.isEmpty {
-        let n = program[e].name
-        let m = program.format("type '%T' has no member '\(n)'", [q.type])
-        report(.init(.error, m, at: n.site))
+        report(program.undefinedSymbol(program[e].name, memberOf: q.type))
         return .error
-      } else {
-        return assume(e, boundTo: candidates, in: &context.obligations)
       }
     }
 
     // Unqualified case.
     else {
-      let candidates = resolve(program[e].name.value, unqualifiedIn: scopeOfUse)
+      candidates = resolve(program[e].name.value, unqualifiedIn: scopeOfUse)
       if candidates.isEmpty {
         report(program.undefinedSymbol(program[e].name))
         return .error
-      } else {
-        return assume(e, boundTo: candidates, in: &context.obligations)
       }
     }
+
+    return assume(e, boundTo: candidates, for: context.role, in: &context.obligations)
   }
 
   /// Resolves and returns the qualification of `e`, which occurs in `context`.

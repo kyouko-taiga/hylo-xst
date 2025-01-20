@@ -1,0 +1,7 @@
+fun f(x: Void, y: Void, x: Void) {}
+
+fun g(x: Void) {
+  let x = ()
+  let y = ()
+  let y = ()
+}
