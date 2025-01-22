@@ -277,7 +277,7 @@ public struct Program {
   public func isHigherKinded(_ t: AnyTypeIdentity) -> Bool {
     switch types[t] {
     case let u as Struct:
-      return !self[u.declaration].parameters.isEmpty
+      return !self[u.declaration].staticParameters.isEmpty
     case is Trait:
       return true
     default:

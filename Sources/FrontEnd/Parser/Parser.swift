@@ -160,7 +160,7 @@ public struct Parser {
     return module.insert(
       ConformanceDeclaration(
         introducer: introducer,
-        contextParameters: staticParameters,
+        staticParameters: staticParameters,
         extendee: extendee,
         concept: concept,
         members: members,
@@ -184,7 +184,7 @@ public struct Parser {
     return module.insert(
       ExtensionDeclaration(
         introducer: introducer,
-        contextParameters: staticParameters,
+        staticParameters: staticParameters,
         extendee: extendee,
         members: members,
         site: span(from: introducer)),
@@ -213,7 +213,7 @@ public struct Parser {
       FunctionDeclaration(
         introducer: introducer,
         identifier: identifier,
-        contextParameters: staticParameters,
+        staticParameters: staticParameters,
         parameters: runtimeParameters,
         effect: effect,
         output: output,
@@ -409,13 +409,14 @@ public struct Parser {
   ) throws -> StructDeclaration.ID {
     let introducer = try take(.struct) ?? expected("'struct'")
     let identifier = parseSimpleIdentifier()
+    let staticParameters = try parseOptionalCompileTimeParameters(in: &module)
     let members = try parseTypeBody(in: &module)
 
     return module.insert(
       StructDeclaration(
         introducer: introducer,
         identifier: identifier,
-        parameters: [],
+        staticParameters: staticParameters,
         members: members,
         site: span(from: introducer)),
       in: file)

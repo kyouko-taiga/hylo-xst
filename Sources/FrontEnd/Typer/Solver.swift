@@ -106,6 +106,8 @@ internal struct Solver {
             o = me.solve(staticCall: g)
           case is Summonable:
             o = me.solve(summonable: g)
+          case is MemberConstraint:
+            o = me.solve(member: g)
           case is OverloadConstraint:
             return me.solve(overload: g)
           default:
@@ -162,16 +164,41 @@ internal struct Solver {
       return postpone(g)
     }
 
+    // Fast path: types are unifiable without any coercion.
+    if let subs = typer.program.types.unifiable(k.lhs, k.rhs) {
+      for (t,u) in subs.types { assume(t, equals: u) }
+      return .success
+    }
+
+    // Slow path: summon a coercion.
     let e = typer.program.types.demand(EqualityWitness(lhs: k.lhs, rhs: k.rhs)).erased
     if let w = typer.summon(e, in: typer.program.parent(containing: k.origin)).uniqueElement {
-      _ = w // TODO: Store elaboration
+      // TODO: Store elaboration
+      for (t, u) in w.substitutions.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
       return .success
     } else if k.lhs[.hasVariable] || k.rhs[.hasVariable] {
       return postpone(g)
     } else {
-      return .failure { (s, _, p, d) in
-        let t = p.types.reify(k.lhs, applying: s)
-        let u = p.types.reify(k.rhs, applying: s)
+      return .failure(diagnoseInvalidCoercion(k))
+    }
+  }
+
+  /// Returns the simplification of `k` as an equality between its operands.
+  private mutating func simplify(_ k: CoercionConstraint) -> GoalOutcome {
+    let e = EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site)
+    let s = schedule(e)
+    return .forward([s], diagnoseInvalidCoercion(k))
+  }
+
+  /// Returns a function diagnosing a failure to solve a `k` due to an invalid coercion.
+  private func diagnoseInvalidCoercion(_ k: CoercionConstraint) -> DiagnoseFailure {
+    { (s, _, p, d) in
+      let t = p.types.reify(k.lhs, applying: s)
+      let u = p.types.reify(k.rhs, applying: s)
+      switch k.reason {
+      case .ascription:
+        d.insert(p.doesNotDenoteType(k.origin))
+      default:
         d.insert(p.noCoercion(from: t, to: u, at: k.site))
       }
     }
@@ -197,17 +224,6 @@ internal struct Solver {
 
     default:
       return simplify(k)
-    }
-  }
-
-  /// Returns the simplification of `k` as an equality between its operands.
-  private mutating func simplify(_ k: CoercionConstraint) -> GoalOutcome {
-    let e = EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site)
-    let s = schedule(e)
-    return .forward([s]) { (s, _, p, d) in
-      let t = p.types.reify(e.lhs, applying: s)
-      let u = p.types.reify(e.rhs, applying: s)
-      d.insert(p.noCoercion(from: t, to: u, at: e.site))
     }
   }
 
@@ -369,6 +385,7 @@ internal struct Solver {
   /// Discharges `g`, which is a static call constraint.
   private mutating func solve(staticCall g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! StaticCallConstraint
+    assert(k.arguments.count == typer.program[k.origin].arguments.count)
 
     // Can't do anything before we've inferred the type of the callee.
     if k.callee.isVariable {
@@ -385,7 +402,7 @@ internal struct Solver {
 
     var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: f.parameters.count)
     for (p, a) in zip(f.parameters, k.arguments) {
-      ss[p.erased] = (typer.program.types[a] as? Metatype)?.inhabitant ?? .error
+      ss[p.erased] = a
     }
 
     let body = typer.program.types.substitute(ss, in: f.body)
@@ -441,6 +458,41 @@ internal struct Solver {
         let m = p.format("ambiguous given instance of '%T'", [t])
         d.insert(.init(.error, m, at: k.site))
       }
+    }
+  }
+
+  /// Discharges `g`, which is a member constraint.
+  private mutating func solve(member g: GoalIdentity) -> GoalOutcome {
+    let k = goals[g] as! MemberConstraint
+
+    // Can't do anything before we've inferred the type of the qualification.
+    if k.qualification.type.isVariable {
+      return postpone(g)
+    }
+
+    let n = typer.program[k.member].name
+    let q = typer.qualificationForSelectionOn(
+      k.qualification.value, withType: k.qualification.type)
+    let cs = typer.resolve(
+      n.value, memberOf: q, visibleFrom: typer.program.parent(containing: k.member))
+
+    if cs.isEmpty {
+      return .failure { (s, _, p, d) in
+        let q = p.types.reify(k.qualification.type, applying: s)
+        d.insert(p.undefinedSymbol(p[k.member].name, memberOf: q))
+      }
+    }
+
+    var o = Obligations()
+    switch typer.assume(k.member, boundTo: cs, for: k.role, at: k.site, in: &o) {
+    case .left(let t):
+      bindings.merge(o.bindings, uniquingKeysWith: { (_, _) in unreachable() })
+      var subs = [schedule(EqualityConstraint(lhs: t, rhs: k.type, site: k.site))]
+      subs.append(contentsOf: o.constraints.map({ (c) in schedule(c) }))
+      return delegate(subs)
+
+    case .right(let e):
+      return .failure { (_, _, _, d) in d.insert(e) }
     }
   }
 

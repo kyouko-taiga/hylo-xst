@@ -79,6 +79,9 @@ internal struct CoercionConstraint: Constraint {
   /// The reason for a coercion constraint.
   internal enum Reason {
 
+    /// A type ascription.
+    case ascription
+
     /// A return value.
     case `return`
 
@@ -315,6 +318,37 @@ internal struct Summonable: Constraint {
   /// Returns a textual representation of `self`, reading contents from `program`.
   internal func show(using program: Program) -> String {
     program.format("\u{22A9} %T", [type])
+  }
+
+}
+
+/// A constraint stating that a value of type `Q` has a member `m` of type `R`.
+internal struct MemberConstraint: Constraint {
+
+  /// The expression of the member.
+  internal let member: NameExpression.ID
+
+  /// The role of the member in the syntax tree.
+  internal let role: SyntaxRole
+
+  /// The qualification of the member.
+  internal private(set) var qualification: TypedQualification
+
+  /// The type of the member.
+  internal private(set) var type: AnyTypeIdentity
+
+  /// The site from which the constraint originates.
+  internal let site: SourceSpan
+
+  /// Applies `transform` on constituent types of `self`.
+  internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    qualification = .init(value: qualification.value, type: transform(qualification.type))
+    type = transform(type)
+  }
+
+  /// Returns a textual representation of `self`, reading contents from `program`.
+  internal func show(using program: Program) -> String {
+    program.format("%T.\(program[member].name) =:= %T", [qualification.type, type])
   }
 
 }

@@ -22,7 +22,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   public let identifier: Parsed<Identifier>
 
   /// The compile-time parameters of the function.
-  public let contextParameters: StaticParameters
+  public let staticParameters: StaticParameters
 
   /// The run-time parameters of the function.
   public let parameters: [ParameterDeclaration.ID]
@@ -41,7 +41,7 @@ public struct FunctionDeclaration: Declaration, Scope {
 
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    let w = contextParameters.isEmpty ? "" : program.show(contextParameters)
+    let w = staticParameters.isEmpty ? "" : program.show(staticParameters)
     let i = parameters.map(program.show(_:))
     let k = String(describing: effect.value)
     let o = output.map(program.show(_:)) ?? "Void"

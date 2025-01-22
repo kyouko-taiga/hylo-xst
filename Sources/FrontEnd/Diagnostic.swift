@@ -129,6 +129,11 @@ extension Program {
     .init(.error, format("no conversion from '%T' to '%T'", [t, u]), at: site)
   }
 
+  /// Returns an error diagnosing a failure to infer a type due to lacking context.
+  internal func notEnoughContext(_ n: AnySyntaxIdentity) -> Diagnostic {
+    .init(.error, "not enough context to infer a type", at: spanForDiagnostic(about: n))
+  }
+
   /// Returns an error diagnosing an undefined symbol.
   internal func undefinedSymbol(
     _ n: Name, memberOf t: AnyTypeIdentity? = nil, at site: SourceSpan

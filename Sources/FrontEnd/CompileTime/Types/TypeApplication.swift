@@ -1,17 +1,21 @@
+import OrderedCollections
 import Utilities
 
 /// The application of a type abstraction.
 public struct TypeApplication: TypeTree {
 
+  /// The arguments of a type application.
+  public typealias Arguments = OrderedDictionary<GenericParameter.ID, AnyTypeIdentity>
+
   /// The abstraction being applied.
   public var abstraction: AnyTypeIdentity
 
   /// The arguments of the application.
-  public var arguments: [Value]
+  public var arguments: Arguments
 
   /// Properties about `self`.
   public var properties: ValueProperties {
-    arguments.reduce(abstraction.properties, { (a, i) in a.union(i.properties) })
+    arguments.values.reduce(abstraction.properties, { (a, i) in a.union(i.properties) })
   }
 
   /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
@@ -20,15 +24,13 @@ public struct TypeApplication: TypeTree {
     by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
   ) -> TypeApplication {
     let t = store.map(abstraction, transform)
-    let x: [Value] = arguments.map { (a) in
-      a.type.map({ (t) in .type(store.map(t, transform)) }) ?? a
-    }
+    let x = arguments.mapValues({ (a) in store.map(a, transform) })
     return .init(abstraction: t, arguments: x)
   }
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    "\(program.show(abstraction))<\(list: arguments.map(program.show(_:)))>"
+    "\(program.show(abstraction))<\(list: arguments.values.map(program.show(_:)))>"
   }
 
 }

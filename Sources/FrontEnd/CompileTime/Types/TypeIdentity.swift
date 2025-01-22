@@ -4,6 +4,9 @@ public protocol TypeIdentity: Hashable {
   /// The type-erased value of this identity.
   var erased: AnyTypeIdentity { get }
 
+  /// Creates an instance identifying the same type as `erased`.
+  init(uncheckedFrom erased: AnyTypeIdentity)
+
 }
 
 extension TypeIdentity {
@@ -102,6 +105,11 @@ public struct AnyTypeIdentity: Hashable {
 
 extension AnyTypeIdentity: TypeIdentity {
 
+  /// Creates an instance identifying the same type as `erased`.
+  public init(uncheckedFrom erased: AnyTypeIdentity) {
+    self = erased
+  }
+
   /// The type-erased value of this identity.
   public var erased: AnyTypeIdentity {
     self
@@ -129,19 +137,19 @@ public struct ConcreteTypeIdentity<T: TypeTree>: TypeIdentity {
   /// The type-erased value of this identity.
   public let erased: AnyTypeIdentity
 
-  /// Creates an instance with the given raw value.
-  internal init(uncheckedFrom erased: AnyTypeIdentity) {
+  /// Creates an instance identifying the same type as `erased`.
+  public init(uncheckedFrom erased: AnyTypeIdentity) {
     self.erased = erased
   }
 
-    /// Returns `true` iff `l` denotes the same tree as `r`.
-    public static func == <U: TypeIdentity>(l: Self, r: U) -> Bool {
-      l.erased == r.erased
-    }
-  
-    /// Returns `true` iff `l` denotes the same node as `r`.
-    public static func == <U: TypeIdentity>(l: U, r: Self) -> Bool {
-      l.erased == r.erased
-    }
+  /// Returns `true` iff `l` denotes the same tree as `r`.
+  public static func == <U: TypeIdentity>(l: Self, r: U) -> Bool {
+    l.erased == r.erased
+  }
+
+  /// Returns `true` iff `l` denotes the same node as `r`.
+  public static func == <U: TypeIdentity>(l: U, r: Self) -> Bool {
+    l.erased == r.erased
+  }
 
 }

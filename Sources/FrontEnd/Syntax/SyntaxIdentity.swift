@@ -110,7 +110,7 @@ public struct AnySyntaxIdentity {
 
 extension AnySyntaxIdentity: SyntaxIdentity {
 
-  /// Creates an instance with the given type-erased value.
+  /// Creates an identifying the same node as `erased`.
   public init(uncheckedFrom erased: AnySyntaxIdentity) {
     self = erased
   }

@@ -1,0 +1,3 @@
+negative/missing-context.hylo:6.7-10: error: not enough context to infer a type
+  _ = A()
+      ~~~

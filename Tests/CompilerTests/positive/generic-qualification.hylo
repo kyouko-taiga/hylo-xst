@@ -1,0 +1,9 @@
+struct A<T> {
+  memberwise init
+  fun f(x: T) {}
+}
+
+fun main() {
+  let a: A<Void>
+  a.f(x: ())
+}

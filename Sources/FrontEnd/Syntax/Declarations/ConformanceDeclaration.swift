@@ -7,7 +7,7 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   public let introducer: Token
 
   /// The compile-time parameters of the conformance.
-  public let contextParameters: StaticParameters
+  public let staticParameters: StaticParameters
 
   /// The type for which the conformance is declared.
   public let extendee: ExpressionIdentity
@@ -25,7 +25,7 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   public func show(readingChildrenFrom program: Program) -> String {
     let e = program.show(extendee)
     let c = program.show(concept)
-    let w = contextParameters.isEmpty ? "" : " \(program.show(contextParameters))"
+    let w = staticParameters.isEmpty ? "" : " \(program.show(staticParameters))"
     let m = members.map(program.show(_:)).lazy
       .map(\.indented)
       .joined(separator: "\n")

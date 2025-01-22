@@ -178,7 +178,7 @@ public struct TypeStore {
     if
       let t = cast(n, to: TypeApplication.self),
       let u = cast(self[t].abstraction, to: Trait.self),
-      let v = self[t].arguments.first?.type
+      let v = self[t].arguments.values.first
     {
       assert(self[t].arguments.count == 1)
       return (concept: u, subject: v)
@@ -327,12 +327,30 @@ public struct TypeStore {
     self.map(n, { (s, t) in .stepInto((t == old) ? new : t) })
   }
 
-  /// Returns `n` with each occurrences of every key in `substitutions` substituted for its
-  /// corresponding value.
+  /// Returns `n` with the keys in `substitutions` substituted for their corresponding values.
   public mutating func substitute(
     _ substitutions: [AnyTypeIdentity: AnyTypeIdentity], in n: AnyTypeIdentity
   ) -> AnyTypeIdentity {
     self.map(n) { (s, t) in .stepInto(substitutions[t] ?? t) }
+  }
+
+  /// Returns `n` with the keys in `substitutions` substituted for their corresponding values.
+  public mutating func substitute(
+    _ substitutions: TypeApplication.Arguments, in n: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    // The uncheked cast is okay because type of an identity is irrelevant to `Hashable`.
+    self.map(n) { (s, t) in .stepInto(substitutions[.init(uncheckedFrom: t)] ?? t) }
+  }
+
+  /// Returns `n` with unification variables substituted for an error.
+  public mutating func substituteVariableForError(in n: AnyTypeIdentity) -> AnyTypeIdentity {
+    self.map(n) { (s, t) in
+      if t.isVariable {
+        return .stepOver(.error)
+      } else {
+        return t[.hasVariable] ? .stepInto(t) : .stepOver(t)
+      }
+    }
   }
 
   /// Returns a substitution table that makes `lhs` and `rhs` equal modulo substitution of their
@@ -343,19 +361,6 @@ public struct TypeStore {
       return s
     } else {
       return nil
-    }
-  }
-
-  /// Returns `true` if `lhs` and `rhs` can be made equal, recording substitutions of unification
-  /// variables in `subs` and calling `areCoercible` to resolve non-syntactically equalities.
-  public func unifiable(
-    _ lhs: Value, _ rhs: Value, extending subs: inout SubstitutionTable,
-    handlingCoercionsWith areCoercible: CoercionHandler
-  ) -> Bool {
-    if let a = lhs.type, let b = rhs.type {
-      return unifiable(a, b, extending: &subs, handlingCoercionsWith: areCoercible)
-    } else {
-      return lhs == rhs
     }
   }
 
@@ -517,7 +522,7 @@ public struct TypeStore {
     unifiable(
       lhs.abstraction, rhs.abstraction, extending: &subs, handlingCoercionsWith: areCoercible)
       && unifiable(
-        lhs.arguments, rhs.arguments, extending: &subs,
+        lhs.arguments.values, rhs.arguments.values, extending: &subs,
         by: { (a, b, s) in unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible) })
   }
 
