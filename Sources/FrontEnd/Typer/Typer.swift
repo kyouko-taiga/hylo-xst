@@ -180,28 +180,37 @@ public struct Typer {
     check(program[d].staticParameters)
     for m in program[d].members { check(m) }
 
-    let witness = program.types.head(t)
-    guard let (c, conformer) = program.types.castToTraitApplication(witness) else {
+    // The type of the declaration has the form `<T...> A... ==> P<B...>` where `P<B...>` is the
+    // type of the declared witness and the rest forms a context. Requirements are resolved as
+    // members of the type `<T...> B`.
+    let (witness, context) = program.types.bodyAndContext(t)
+    guard let (c, contextlessConformer) = program.types.castToTraitApplication(witness) else {
       assert(t == .error)
       return
     }
 
     let concept = program.types[c].declaration
-    let requirements = program[concept].members
-    var substitutions = [typeOfSelf(in: concept): conformer]
+    let (requirements, associatedTypes) = program[concept].members.partitioned { (r) in
+      program.tag(of: r) == AssociatedTypeDeclaration.self
+    }
 
-    // Find the implementations of associated types.
-    for r in program.collect(AssociatedTypeDeclaration.self, in: requirements) {
-      let value = implementation(of: r, in: d).map({ (i) in declaredType(of: i) }) ?? .error
+    // Find the implementations of associated types in the conformance declaration itself.
+    var substitutions: [AnyTypeIdentity: AnyTypeIdentity] = [:]
+    for r in associatedTypes {
+      let a = program.castUnchecked(r, to: AssociatedTypeDeclaration.self)
+      let i = implementation(of: a, in: d).map({ (i) in declaredType(of: i) }) ?? .error
 
-      if let m = program.types[value] as? Metatype {
-        let k0 = declaredType(of: r)
+      if let m = program.types[i] as? Metatype {
+        let k0 = declaredType(of: a)
         let k1 = program.types[k0] as! Metatype
         substitutions[k1.inhabitant] = m.inhabitant
       } else {
-        return reportMissingImplementation(of: r)
+        return reportMissingImplementation(of: a)
       }
     }
+
+    let conformer = program.types.introduce(context, into: contextlessConformer)
+    substitutions[typeOfSelf(in: concept)] = contextlessConformer
 
     // Check that other requirements may be satisfied. We do not need to store the implementations
     // since witness tables are built on demand.
@@ -210,10 +219,10 @@ public struct Typer {
       case FunctionDeclaration.self:
         _ = implementation(
           of: program.castUnchecked(r, to: FunctionDeclaration.self), in: concept,
-          for: conformer, applying: substitutions, in: d)
+          for: conformer, under: context.parameters, applying: substitutions, in: d)
 
       default:
-        continue
+        program.unexpected(r)
       }
     }
   }
@@ -370,22 +379,27 @@ public struct Typer {
     lookup(program[requirement].identifier.value, lexicallyIn: .init(node: d)).uniqueElement
   }
 
-  /// Returns the declarations implementing `requirement` in `d`, if any.
+  /// Returns the declarations implementing the requirement `r` of the concept `c` for the
+  /// conformance of `conformer`, which is declared by `d`.
+  ///
+  /// The type of the implementations that may satisfy the requirement is computed by substituting
+  /// the abstract types of the concept by their corresponding assignment in `subs`, and then
+  /// introducing the generic parameters in the context of `conformer`, which are in `parameters`.
   private mutating func implementation(
     of r: FunctionDeclaration.ID, in c: TraitDeclaration.ID,
-    for t: AnyTypeIdentity,
-    applying ss: [AnyTypeIdentity: AnyTypeIdentity], in d: ConformanceDeclaration.ID
+    for conformer: AnyTypeIdentity,
+    under parameters: [GenericParameter.ID],
+    applying subs: [AnyTypeIdentity: AnyTypeIdentity], in d: ConformanceDeclaration.ID
   ) -> DeclarationReference? {
-    let n = program.name(of: r)
-    let u = declaredType(of: r)
-    let expectedType = program.types.substitute(ss, in: program.types.bodyAndContext(u).body)
+    let requiredName = program.name(of: r)
+    let requiredType = expectedImplementationType(of: r, applying: subs, under: parameters)
     let scopeOfUse = ScopeIdentity(node: d)
     var viable: [DeclarationReference] = []
 
     // Is there a unique implementation in the conformance declaration?
-    for d in lookup(n.identifier, lexicallyIn: .init(node: d)) {
-      let u = declaredType(of: d)
-      if unifiable(u, expectedType) { viable.append(.direct(d)) }
+    for d in lookup(requiredName.identifier, lexicallyIn: .init(node: d)) {
+      let candidateType = declaredType(of: d)
+      if unifiable(candidateType, requiredType) { viable.append(.direct(d)) }
     }
 
     if let pick = viable.uniqueElement {
@@ -396,8 +410,9 @@ public struct Typer {
     }
 
     // Is there an implementation that is already member of the conforming type?
-    for c in resolve(n, memberOf: .init(value: .virtual, type: t), visibleFrom: scopeOfUse) {
-      if !unifiable(c.type, expectedType) { continue }
+    let q = TypedQualification(value: .virtual, type: conformer)
+    for c in resolve(requiredName, memberOf: q, visibleFrom: scopeOfUse) {
+      if !unifiable(c.type, requiredType) { continue }
 
       switch c.reference {
       case .inherited(_, .init(r)) where program[r].body == nil:
@@ -417,6 +432,18 @@ public struct Typer {
       }
       return nil
     }
+  }
+
+  /// Returns the expected type of an implementation of `requirement` substituting abstract types
+  /// with `subs` and introducing `parameters`.
+  private mutating func expectedImplementationType(
+    of requirement: FunctionDeclaration.ID, applying subs: [AnyTypeIdentity: AnyTypeIdentity],
+    under parameters: [GenericParameter.ID]
+  ) -> AnyTypeIdentity {
+    let t = declaredType(of: requirement)
+    let u = program.types.substitute(subs, in: program.types.bodyAndContext(t).body)
+    let v = program.types.introduce(parameters: parameters, into: u)
+    return v
   }
 
   /// Reports that `requirement` has no implementation.
@@ -1927,17 +1954,14 @@ public struct Typer {
 
     // The witness has a universal type?
     if let u = program.types[a] as? UniversalType {
-      var vs: [AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
-      var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
+      var vs = TypeApplication.Arguments(minimumCapacity: u.parameters.count)
       for p in u.parameters {
-        let v = fresh().erased
-        vs.append(v)
-        ss[p.erased] = v
+        vs[p] = fresh().erased
       }
 
       let w = WitnessExpression(
         value: .typeApplication(thread.witness, vs),
-        type: program.types.substitute(ss, in: u.body))
+        type: program.types.substitute(vs, in: u.body))
       return .next([
         .init(witness: w, queried: b, environment: thread.environment, tail: thread.tail)
       ])
@@ -2062,8 +2086,7 @@ public struct Typer {
 
     while done.isEmpty && !work.isEmpty && (depth < maxImplicitDepth) {
       var next: [ResolutionThread] = []
-      for (i, item) in work.enumerated() {
-        if i == -1 { print(123) }
+      for item in work {
         switch match(item, in: scopeOfUse) {
         case .done(let r): done.append(r)
         case .next(let s): next.append(contentsOf: s)
@@ -2237,6 +2260,10 @@ public struct Typer {
         return []
       }
 
+    case "Never":
+      let t = demand(Metatype(inhabitant: .never)).erased
+      return [.init(reference: .builtin(.alias), type: t)]
+
     case "Void":
       let t = demand(Metatype(inhabitant: .void)).erased
       return [.init(reference: .builtin(.alias), type: t)]
@@ -2284,16 +2311,16 @@ public struct Typer {
     _ n: Name, nativeMemberOf q: TypedQualification
   ) -> [NameResolutionCandidate] {
     assert(!q.type.isVariable)
-    let (body, context) = program.types.bodyAndContext(q.type)
+    let (receiver, context) = program.types.bodyAndContext(q.type)
     var candidates: [NameResolutionCandidate] = []
 
     for m in declarations(nativeMembersOf: q.type)[n.identifier] ?? [] {
-      var t = declaredType(of: m)
-      if let a = program.types[body] as? TypeApplication {
-        t = program.types.substitute(a.arguments, in: t)
+      var member = declaredType(of: m)
+      if let a = program.types[receiver] as? TypeApplication {
+        member = program.types.substitute(a.arguments, in: member)
       }
-      t = program.types.introduce(context, into: t)
-      candidates.append(.init(reference: .member(q.value, m), type: t))
+      member = program.types.introduce(context, into: member)
+      candidates.append(.init(reference: .member(q.value, m), type: member))
     }
 
     return candidates
@@ -2303,6 +2330,8 @@ public struct Typer {
   private mutating func resolve(
     _ n: Name, memberInExtensionOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
+    let (_, context) = program.types.bodyAndContext(q)
+
     // Are we in the scope of a syntax tree?
     if let p = program.parent(containing: scopeOfUse) {
       var result = resolve(n, memberInExtensionOf: q, visibleFrom: p)
@@ -2335,10 +2364,17 @@ public struct Typer {
             a.witness, applying: a.substitutions, withVariables: .substitutedByError)
 
           for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
-            let member = declaredType(of: m)
-            let (memberSansContext, _) = program.types.bodyAndContext(member)
-            let memberAdapted = program.types.substitute(s, for: w.type, in: memberSansContext)
-            result.append(.init(reference: .inherited(w, m), type: memberAdapted))
+            var member = declaredType(of: m)
+
+            // Strip the context defined by the extension, apply type arguments from the matching
+            // witness, and substitute the extendee for the receiver.
+            (member, _) = program.types.bodyAndContext(member)
+            if case .typeApplication(_, let arguments) = w.value {
+              member = program.types.substitute(arguments, in: member)
+            }
+            member = program.types.substitute(s, for: w.type, in: member)
+            member = program.types.introduce(context, into: member)
+            result.append(.init(reference: .inherited(w, m), type: member))
           }
         }
       }
@@ -2461,6 +2497,8 @@ public struct Typer {
   }
 
   /// Returns how to match a value of type `t` to apply the members of `d` in `s`.
+  ///
+  /// - Requires: The context clause of `t`, if present, has no usings.
   private mutating func applies(
     _ d: ExtensionDeclaration.ID, to t: AnyTypeIdentity, in s: ScopeIdentity
   ) -> SummonResult? {
@@ -2470,8 +2508,11 @@ public struct Typer {
     // Fast path: types are trivially equal.
     if t == u { return .init(witness: w, substitutions: .init()) }
 
-    // Slow path: use the match judgement of implicit resolution..
-    let thread = ResolutionThread(witness: w, queried: t, environment: .empty, tail: [])
+    // Slow path: use the match judgement of implicit resolution to create a witness describing
+    // "how" the type matches the extension.
+    let (body, context) = program.types.bodyAndContext(t)
+    assert(context.usings.isEmpty)
+    let thread = ResolutionThread(witness: w, queried: body, environment: .empty, tail: [])
     return takeSummonResults(from: [thread], in: s).uniqueElement
   }
 

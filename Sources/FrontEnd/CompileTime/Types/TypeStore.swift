@@ -130,20 +130,27 @@ public struct TypeStore {
     }
   }
 
-  /// Returns `t` as the head of a universal type and/or implication introducing `c`.
-  public mutating func introduce(_ c: ContextClause, into n: AnyTypeIdentity) -> AnyTypeIdentity {
-    // Fast path: the clause is empty.
-    if c.isEmpty { return n }
+  /// Returns `body` as the head of a universal type and/or implication introducing `c`.
+  public mutating func introduce(
+    _ c: ContextClause, into body: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    let t = introduce(usings: c.usings, into: body)
+    let u = introduce(parameters: c.parameters, into: t)
+    return u
+  }
 
-    // Slow path: introduce parameters.
-    var result = n
-    if !c.usings.isEmpty {
-      result = demand(Implication(context: c.usings, head: result)).erased
-    }
-    if !c.parameters.isEmpty {
-      result = demand(UniversalType(parameters: c.parameters, body: result)).erased
-    }
-    return result
+  /// Returns `body` as the head of an implication having `lhs` on the left-hand side.
+  public mutating func introduce(
+    usings lhs: [AnyTypeIdentity], into body: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    lhs.isEmpty ? body : demand(Implication(context: lhs, head: body)).erased
+  }
+
+  /// Returns `body` as the head of a universal type introducing `ps`.
+  public mutating func introduce(
+    parameters ps: [GenericParameter.ID], into body: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    ps.isEmpty ? body : demand(UniversalType(parameters: ps, body: body)).erased
   }
 
   /// Returns `n` without its first requirement.
@@ -315,7 +322,7 @@ public struct TypeStore {
 
     case .typeApplication(let a, let b):
       let u = reify(a, applying: subs, withVariables: substitutionPolicy)
-      let v = b.map({ (n) in reify(n, applying: subs, withVariables: substitutionPolicy) })
+      let v = b.mapValues({ (n) in reify(n, applying: subs, withVariables: substitutionPolicy) })
       return .init(value: .typeApplication(u, v), type: t)
     }
   }
@@ -425,6 +432,8 @@ public struct TypeStore {
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (let t as Union, let u as Union):
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (let t as UniversalType, let u as UniversalType):
+      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     default:
       assert(tag(of: a) != tag(of: b))
       result = false
@@ -532,6 +541,15 @@ public struct TypeStore {
     handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
     unifiable(lhs.elements, rhs.elements, extending: &subs, handlingCoercionsWith: areCoercible)
+  }
+
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
+  private func unifiable(
+    _ lhs: UniversalType, _ rhs: UniversalType, extending subs: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
+  ) -> Bool {
+    lhs.parameters.elementsEqual(rhs.parameters)
+      && unifiable(lhs.body, rhs.body, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
   /// Returns `true` if `lhs` and `rhs` are unifiable.

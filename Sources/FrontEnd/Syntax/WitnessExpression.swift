@@ -11,7 +11,7 @@ public struct WitnessExpression: Hashable {
     case termApplication(WitnessExpression, WitnessExpression)
 
     /// A type abstraction applied to type arguments.
-    case typeApplication(WitnessExpression, [AnyTypeIdentity])
+    case typeApplication(WitnessExpression, TypeApplication.Arguments)
 
     /// Returns a copy of `self` in which occurrences of assumed given identified by `i` have been
     /// substituted for `new`.
@@ -60,7 +60,7 @@ public struct WitnessExpression: Hashable {
     case .termApplication(let w, let a):
       return w.hasVariable || a.hasVariable
     case .typeApplication(let w, let a):
-      return w.hasVariable || a.contains(where: { (t) in t[.hasVariable] })
+      return w.hasVariable || a.values.contains(where: { (t) in t[.hasVariable] })
     }
   }
 
