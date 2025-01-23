@@ -18,7 +18,7 @@ public enum GenericParameter: TypeTree {
 
   /// The declaration of the parameter, unless it is predefined.
   public var declaration: GenericParameterDeclaration.ID? {
-    if case .user(let d) = self { return d } else { return nil }
+    if case .user(let d) = self { d } else { nil }
   }
 
   /// Returns a parsable representation of `self`, which is a type in `program`.

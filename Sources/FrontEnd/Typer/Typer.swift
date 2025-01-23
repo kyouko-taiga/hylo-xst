@@ -182,20 +182,21 @@ public struct Typer {
 
     // The type of the declaration has the form `<T...> A... ==> P<B...>` where `P<B...>` is the
     // type of the declared witness and the rest forms a context. Requirements are resolved as
-    // members of the type `<T...> B`.
-    let (witness, context) = program.types.bodyAndContext(t)
-    guard let (c, contextlessConformer) = program.types.castToTraitApplication(witness) else {
+    // members of the type `B` where type parameters occur as skolems.
+    let (witness, _) = program.types.bodyAndContext(t)
+    guard let (c, conformer) = program.types.castToTraitApplication(witness) else {
       assert(t == .error)
       return
     }
 
     let concept = program.types[c].declaration
+    var substitutions = [typeOfSelf(in: concept): conformer]
+
     let (requirements, associatedTypes) = program[concept].members.partitioned { (r) in
       program.tag(of: r) == AssociatedTypeDeclaration.self
     }
 
     // Find the implementations of associated types in the conformance declaration itself.
-    var substitutions: [AnyTypeIdentity: AnyTypeIdentity] = [:]
     for r in associatedTypes {
       let a = program.castUnchecked(r, to: AssociatedTypeDeclaration.self)
       let i = implementation(of: a, in: d).map({ (i) in declaredType(of: i) }) ?? .error
@@ -209,9 +210,6 @@ public struct Typer {
       }
     }
 
-    let conformer = program.types.introduce(context, into: contextlessConformer)
-    substitutions[typeOfSelf(in: concept)] = contextlessConformer
-
     // Check that other requirements may be satisfied. We do not need to store the implementations
     // since witness tables are built on demand.
     for r in requirements {
@@ -219,7 +217,7 @@ public struct Typer {
       case FunctionDeclaration.self:
         _ = implementation(
           of: program.castUnchecked(r, to: FunctionDeclaration.self), in: concept,
-          for: conformer, under: context.parameters, applying: substitutions, in: d)
+          for: conformer, applying: substitutions, in: d)
 
       default:
         program.unexpected(r)
@@ -388,11 +386,10 @@ public struct Typer {
   private mutating func implementation(
     of r: FunctionDeclaration.ID, in c: TraitDeclaration.ID,
     for conformer: AnyTypeIdentity,
-    under parameters: [GenericParameter.ID],
     applying subs: [AnyTypeIdentity: AnyTypeIdentity], in d: ConformanceDeclaration.ID
   ) -> DeclarationReference? {
     let requiredName = program.name(of: r)
-    let requiredType = expectedImplementationType(of: r, applying: subs, under: parameters)
+    let requiredType = expectedImplementationType(of: r, applying: subs)
     let scopeOfUse = ScopeIdentity(node: d)
     var viable: [DeclarationReference] = []
 
@@ -435,15 +432,12 @@ public struct Typer {
   }
 
   /// Returns the expected type of an implementation of `requirement` substituting abstract types
-  /// with `subs` and introducing `parameters`.
+  /// of with the assignments in `subs`.
   private mutating func expectedImplementationType(
-    of requirement: FunctionDeclaration.ID, applying subs: [AnyTypeIdentity: AnyTypeIdentity],
-    under parameters: [GenericParameter.ID]
+    of requirement: FunctionDeclaration.ID, applying subs: [AnyTypeIdentity: AnyTypeIdentity]
   ) -> AnyTypeIdentity {
     let t = declaredType(of: requirement)
-    let u = program.types.substitute(subs, in: program.types.bodyAndContext(t).body)
-    let v = program.types.introduce(parameters: parameters, into: u)
-    return v
+    return program.types.substitute(subs, in: program.types.bodyAndContext(t).body)
   }
 
   /// Reports that `requirement` has no implementation.
@@ -662,14 +656,14 @@ public struct Typer {
     if program.isMember(d) {
       let p = program.parent(containing: d)
       let receiver = typeOfSelf(in: p)!
-      let context = contextOfSelf(in: p)!
+      // let context = contextOfSelf(in: p)!
 
       var e = demand(RemoteType(projectee: receiver, access: program[d].effect.value)).erased
       e = demand(Tuple(elements: [.init(label: "self", type: e)])).erased
 
       result = demand(Arrow(environment: e, inputs: inputs, output: output)).erased
       result = introduce(program[d].staticParameters, into: result)
-      result = program.types.introduce(context, into: result)
+      // result = program.types.introduce(context, into: result)
     } else {
       result = demand(Arrow(environment: .void, inputs: inputs, output: output)).erased
       result = introduce(program[d].staticParameters, into: result)
@@ -2368,12 +2362,12 @@ public struct Typer {
 
             // Strip the context defined by the extension, apply type arguments from the matching
             // witness, and substitute the extendee for the receiver.
-            (member, _) = program.types.bodyAndContext(member)
+            // (member, _) = program.types.bodyAndContext(member)
             if case .typeApplication(_, let arguments) = w.value {
               member = program.types.substitute(arguments, in: member)
             }
-            member = program.types.substitute(s, for: w.type, in: member)
-            member = program.types.introduce(context, into: member)
+            // member = program.types.substitute(s, for: w.type, in: member)
+            // member = program.types.introduce(context, into: member)
             result.append(.init(reference: .inherited(w, m), type: member))
           }
         }

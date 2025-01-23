@@ -12,7 +12,7 @@ public enum Given: Hashable {
 
   /// If declaration of this given if `self` is `.user`. Otherwise, `nil`.
   public var declaration: DeclarationIdentity? {
-    if case .user(let d) = self { return d } else { return nil }
+    if case .user(let d) = self { d } else { nil }
   }
 
 }
