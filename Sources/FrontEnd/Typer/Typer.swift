@@ -149,6 +149,8 @@ public struct Typer {
       check(castUnchecked(d, to: TypeAliasDeclaration.self))
     case UsingDeclaration.self:
       check(castUnchecked(d, to: UsingDeclaration.self))
+    case VariableDeclaration.self:
+      break
     default:
       program.unexpected(d)
     }
@@ -1492,7 +1494,7 @@ public struct Typer {
 
   /// Stores the assignments made in `s` to solve `o` into the program.
   private mutating func commit(_ s: Solution, to o: Obligations) {
-    report(s.diagnostics.elements)
+    for d in s.diagnostics.elements { report(d) }
 
     // Incomplete inference results are diagnosed only once and only if no other diagnostic was
     // reported by the solver.
@@ -2640,11 +2642,6 @@ public struct Typer {
   /// Reports the diagnostic `d`.
   private mutating func report(_ d: Diagnostic) {
     program[module].addDiagnostic(d)
-  }
-
-  /// Reports the diagnostics in `ds`.
-  private mutating func report<S: Sequence<Diagnostic>>(_ ds: S) {
-    program[module].addDiagnostics(ds)
   }
 
   /// Returns the identity of a fresh type variable.

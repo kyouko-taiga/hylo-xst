@@ -20,8 +20,8 @@ public struct Module {
     /// The abstract syntax of `source`'s contents.
     internal var syntax: [AnySyntax] = []
 
-    /// The top-level declarations in `self`.
-    internal var topLevelDeclarations: [DeclarationIdentity] = []
+    /// The root of the syntax trees in `self`, which may be subset of the top-level declarations.
+    internal var roots: [DeclarationIdentity] = []
 
     /// A table from syntax tree to its tag.
     internal var syntaxToTag: [SyntaxTag] = []
@@ -32,6 +32,9 @@ public struct Module {
     /// (i.e., syntax identities sans module or source offset). Top-level declarations are mapped
     /// onto `-1`.
     internal var syntaxToParent: [Int] = []
+
+    /// The top-level declarations in `self`.
+    internal var topLevelDeclarations: [DeclarationIdentity] = []
 
     /// A table from scope to the declarations that it contains directly.
     internal var scopeToDeclarations: [Int: [DeclarationIdentity]] = [:]
@@ -45,6 +48,40 @@ public struct Module {
     /// A table from name to its declaration.
     internal var nameToDeclaration: [Int: DeclarationReference] = [:]
 
+    /// The diagnostics accumulated during compilation.
+    internal var diagnostics = DiagnosticSet()
+
+    /// Projects the node identified by `n`.
+    internal subscript<T: SyntaxIdentity>(n: T) -> any Syntax {
+      _read {
+        assert(n.file == identity)
+        yield syntax[n.offset].wrapped
+      }
+    }
+
+    /// Returns the tag of `n`.
+    internal func tag<T: SyntaxIdentity>(of n: T) -> SyntaxTag {
+      assert(n.file == identity)
+      return syntaxToTag[n.offset]
+    }
+
+    /// Inserts `child` into `self`.
+    internal mutating func insert<T: Syntax>(_ child: T) -> T.ID {
+      let d = syntax.count
+      syntax.append(.init(child))
+      syntaxToTag.append(.init(T.self))
+      syntaxToParent.append(-1)
+      return T.ID(uncheckedFrom: .init(file: identity, offset: d))
+    }
+
+    /// Adds a diagnostic to this file.
+    ///
+    /// - requires: The diagnostic is anchored at a position in `self`.
+    internal mutating func addDiagnostic(_ d: Diagnostic) {
+      assert(d.site.source.name == source.name)
+      diagnostics.insert(d)
+    }
+
   }
 
   /// The name of the module.
@@ -52,9 +89,6 @@ public struct Module {
 
   /// The position of `self` in the containing program.
   public let identity: Program.ModuleIdentity
-
-  /// The diagnostics accumulated during compilation.
-  public private(set) var diagnostics = DiagnosticSet()
 
   /// The dependencies of the module.
   public private(set) var dependencies: [Module.Name] = []
@@ -68,26 +102,28 @@ public struct Module {
     self.identity = identity
   }
 
-  /// Adds a dependency to this module.
-  public mutating func addDependency(_ d: Module.Name) {
-    if !dependencies.contains(d) {
-      dependencies.append(d)
-    }
+  /// `true` if the module has errors.
+  public var containsError: Bool {
+    sources.values.contains(where: \.diagnostics.containsError)
+  }
+
+  /// The diagnostics accumulated during compilation.
+  public var diagnostics: some Collection<Diagnostic> {
+    sources.values.map(\.diagnostics.elements).joined()
   }
 
   /// Adds a diagnostic to this module.
   ///
   /// - requires: The diagnostic relates to a source in `self`.
   public mutating func addDiagnostic(_ d: Diagnostic) {
-    assert(sources.keys.contains(d.site.source.name))
-    diagnostics.insert(d)
+    sources[d.site.source.name]!.addDiagnostic(d)
   }
 
-  /// Adds the diagnostics of `ds` to this module.
-  ///
-  /// - requires: Each diagnostic in `ds` relates to a source in `self`.
-  public mutating func addDiagnostics<S: Sequence<Diagnostic>>(_ ds: S) {
-    for d in ds { addDiagnostic(d) }
+  /// Adds a dependency to this module.
+  public mutating func addDependency(_ d: Module.Name) {
+    if !dependencies.contains(d) {
+      dependencies.append(d)
+    }
   }
 
   /// Adds a source file to this module.
@@ -97,12 +133,12 @@ public struct Module {
     if let f = sources.index(forKey: s.name) {
       return (inserted: false, identity: .init(module: identity, offset: f))
     } else {
-      let f = Program.SourceFileIdentity(module: identity, offset: sources.count)
-      sources[s.name] = .init(identity: f, source: s)
-      let parser = Parser(s, insertingNodesIn: f)
-      let declarations = parser.parseTopLevelDeclarations(in: &self)
-      sources[s.name]!.topLevelDeclarations.append(contentsOf: declarations)
-      return (inserted: true, identity: f)
+      let p = Parser(s)
+      var f = Module.SourceContainer(
+        identity: .init(module: identity, offset: sources.count), source: s)
+      p.parseTopLevelDeclarations(in: &f)
+      sources[s.name] = f
+      return (inserted: true, identity: f.identity)
     }
   }
 
@@ -261,10 +297,10 @@ extension Module: Archivable {
     for _ in 0 ..< sourceCount {
       let i = try archive.read(rawValueOf: Program.SourceFileIdentity.self)!
       let s = try archive.read(SourceFile.self)
-      newContext.sources[s.name] = .init(identity: i, source: s, syntax: [])
+      newContext.sources[s.name] = .init(identity: i, source: s)
     }
 
-    // The remainder of the module is serialized in a new context.
+    // The remainder of the module is deserialized in a new context.
     for i in 0 ..< sourceCount {
       let syntaxCount = try archive.readUnsignedLEB128()
       for _ in 0 ..< syntaxCount {
@@ -309,7 +345,7 @@ extension Module: Archivable {
       newContext.sources[f] = s
     }
 
-    // The remainder of the module is deserialized in a new context.
+    // The remainder of the module is serialized in a new context.
     var c = newContext as Any
     for s in sources.values {
       archive.write(unsignedLEB128: s.syntax.count)

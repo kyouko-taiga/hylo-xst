@@ -54,12 +54,12 @@ public struct Program {
 
   /// `true` if the program has errors.
   public var containsError: Bool {
-    modules.values.contains(where: \.diagnostics.containsError)
+    modules.values.contains(where: \.containsError)
   }
 
   /// The diagnostics of the issues in the program.
   public var diagnostics: some Collection<Diagnostic> {
-    modules.values.map(\.diagnostics.elements).joined()
+    modules.values.map(\.diagnostics).joined()
   }
 
   /// Returns the identities of the modules in `self`.
@@ -444,9 +444,7 @@ public struct Program {
   /// Returns the declarations direactly contained in `s` that identify nodes of type `T`.
   ///
   /// - Requires: The module containing `s` is scoped.
-  public func declarations<T: Declaration>(
-    of t: T.Type, lexicallyIn s: ScopeIdentity
-  ) -> [T.ID] {
+  public func declarations<T: Declaration>(of t: T.Type, lexicallyIn s: ScopeIdentity) -> [T.ID] {
     collect(t, in: declarations(lexicallyIn: s))
   }
 

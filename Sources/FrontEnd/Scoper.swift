@@ -12,8 +12,7 @@ public struct Scoper {
       Task.detached { [p] in
         let f = Program.SourceFileIdentity(module: m, offset: i)
         var v = Visitor(p[f])
-        for o in p[f].syntax.indices {
-          let n = AnySyntaxIdentity(file: f, offset: o)
+        for n in p[f].roots {
           p.visit(n, calling: &v)
         }
         return v
@@ -24,6 +23,7 @@ public struct Scoper {
       let f = Program.SourceFileIdentity(module: m, offset: i)
       var v = await t.value
       modify(&p[f]) { (w) in
+        swap(&w.topLevelDeclarations, &v.topLevelDeclarations)
         swap(&w.syntaxToParent, &v.syntaxToParent)
         swap(&w.scopeToDeclarations, &v.scopeToDeclarations)
         swap(&w.variableToBindingDeclaration, &v.variableToBindingDeclaration)
@@ -34,6 +34,9 @@ public struct Scoper {
 
   /// The computation of the scoping relationships in a single source file.
   private struct Visitor: SyntaxVisitor {
+
+    /// The top-level declarations in the file.
+    var topLevelDeclarations: [DeclarationIdentity]
 
     /// A table from syntax tree to the scope that contains it.
     var syntaxToParent: [Int]
@@ -52,6 +55,7 @@ public struct Scoper {
 
     /// Creates an instance for computing the relationships of `f`.
     init(_ f: Module.SourceContainer) {
+      self.topLevelDeclarations = []
       self.syntaxToParent = f.syntaxToParent
       self.scopeToDeclarations = [:]
       self.variableToBindingDeclaration = [:]
@@ -71,9 +75,14 @@ public struct Scoper {
         break
       }
 
-      if let m = program.castToDeclaration(n), innermostScope >= 0 {
-        scopeToDeclarations[innermostScope]!.append(m)
+      if let m = program.castToDeclaration(n) {
+        if innermostScope >= 0 {
+          scopeToDeclarations[innermostScope]!.append(m)
+        } else {
+          topLevelDeclarations.append(m)
+        }
       }
+
       if program.isScope(n) {
         innermostScope = n.offset
         scopeToDeclarations[innermostScope] = []
