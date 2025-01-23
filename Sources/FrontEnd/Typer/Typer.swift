@@ -750,7 +750,10 @@ public struct Typer {
     assert(d.module == module, "dependency is not typed")
 
     let ps = declaredTypes(of: program[d].staticParameters.explicit)
-    precondition(program[d].staticParameters.implicit.isEmpty, "TODO")
+    if let i = program[d].staticParameters.implicit.first {
+      let s = program.spanForDiagnostic(about: i)
+      report(.init(.error, "context parameters in type definitions are not supported yet", at: s))
+    }
 
     if ps.isEmpty {
       let t = metatype(of: Struct(declaration: d)).erased
