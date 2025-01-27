@@ -259,6 +259,52 @@ public struct TypeStore {
     }
   }
 
+  /// Returns `r` transformed by `transform(_:_:)`.
+  public mutating func map(
+    _ r: DeclarationReference,
+    _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> DeclarationReference {
+    switch r {
+    case .builtin, .direct, .member:
+      return r
+    case .inherited(let w, let d):
+      return .inherited(self.map(w, transform), d)
+    }
+  }
+
+  /// Returns `w` transformed by `transform(_:_:)`.
+  public mutating func map(
+    _ w: WitnessExpression,
+    _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
+  ) -> WitnessExpression {
+    let t = self.map(w.type, transform)
+
+    switch w.value {
+    case .identity(let e):
+      return .init(value: .identity(e), type: t)
+
+    case .abstract:
+      return .init(value: .abstract, type: t)
+
+    case .assumed(let i):
+      return .init(value: .assumed(i), type: t)
+
+    case .reference(let r):
+      let u = self.map(r, transform)
+      return .init(value: .reference(u), type: t)
+
+    case .termApplication(let a, let b):
+      let u = self.map(a, transform)
+      let v = self.map(b, transform)
+      return .init(value: .termApplication(u, v), type: t)
+
+    case .typeApplication(let a, let b):
+      let u = self.map(a, transform)
+      let v = b.mapValues({ (n) in self.map(n, transform) })
+      return .init(value: .typeApplication(u, v), type: t)
+    }
+  }
+
   /// Returns `n` with its parts transformed by `transform(_:_:)`.
   ///
   /// This operation is endomorphic: the result is an instance with the same type as `n`.
@@ -306,11 +352,8 @@ public struct TypeStore {
     applying subs: SubstitutionTable,
     withVariables substitutionPolicy: SubstitutionPolicy
   ) -> DeclarationReference {
-    switch r {
-    case .builtin, .direct, .member:
-      return r
-    case .inherited(let w, let d):
-      return .inherited(reify(w, applying: subs, withVariables: substitutionPolicy), d)
+    self.map(r) { (s, t) in
+      .stepOver(s.reify(t, applying: subs, withVariables: substitutionPolicy))
     }
   }
 
@@ -320,31 +363,8 @@ public struct TypeStore {
     applying subs: SubstitutionTable,
     withVariables substitutionPolicy: SubstitutionPolicy
   ) -> WitnessExpression {
-    let t = reify(w.type, applying: subs, withVariables: substitutionPolicy)
-
-    switch w.value {
-    case .identity(let e):
-      return .init(value: .identity(e), type: t)
-
-    case .abstract:
-      return .init(value: .abstract, type: t)
-
-    case .assumed(let i):
-      return .init(value: .assumed(i), type: t)
-
-    case .reference(let r):
-      let u = reify(r, applying: subs, withVariables: substitutionPolicy)
-      return .init(value: .reference(u), type: t)
-
-    case .termApplication(let a, let b):
-      let u = reify(a, applying: subs, withVariables: substitutionPolicy)
-      let v = reify(b, applying: subs, withVariables: substitutionPolicy)
-      return .init(value: .termApplication(u, v), type: t)
-
-    case .typeApplication(let a, let b):
-      let u = reify(a, applying: subs, withVariables: substitutionPolicy)
-      let v = b.mapValues({ (n) in reify(n, applying: subs, withVariables: substitutionPolicy) })
-      return .init(value: .typeApplication(u, v), type: t)
+    self.map(w) { (s, t) in
+      .stepOver(s.reify(t, applying: subs, withVariables: substitutionPolicy))
     }
   }
 
@@ -425,8 +445,8 @@ public struct TypeStore {
     switch (self[a], self[b]) {
     case (let t as Arrow, let u as Arrow):
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
-    case (let t as AssociatedType, let u as AssociatedType):
-      result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (_ as AssociatedType, _ as AssociatedType):
+      result = false
     case (_ as BuiltinType, _ as BuiltinType):
       result = false
     case (let t as EqualityWitness, let u as EqualityWitness):
@@ -477,16 +497,6 @@ public struct TypeStore {
         by: { (a, b, s) in unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible) })
       && unifiable(
         lhs.output, rhs.output, extending: &subs, handlingCoercionsWith: areCoercible)
-  }
-
-  /// Returns `true` if `t` and `u` are unifiable.
-  private func unifiable(
-    _ lhs: AssociatedType, _ rhs: AssociatedType, extending subs: inout SubstitutionTable,
-    handlingCoercionsWith areCoercible: CoercionHandler
-  ) -> Bool {
-    lhs == rhs
-//    unifiable(
-//      lhs.qualification, rhs.qualification, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
   /// Returns `true` if `lhs` and `rhs` are unifiable.

@@ -5,11 +5,11 @@ public struct AssociatedType: TypeTree {
   public let declaration: AssociatedTypeDeclaration.ID
 
   /// The qualification of the type.
-  public let qualification: AnyTypeIdentity
+  public let qualification: WitnessExpression
 
   /// Properties about `self` and its children.
   public var properties: ValueProperties {
-    qualification.properties
+    qualification.type.properties
   }
 
   /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
@@ -22,10 +22,10 @@ public struct AssociatedType: TypeTree {
 
   /// Returns a parsable representation of `self`, which is a type in `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    let concept = program.parent(containing: declaration, as: TraitDeclaration.self)!
-    let l = program[concept].identifier.value
+    let (c, t) = program.types.castToTraitApplication(qualification.type)!
+    let m = program[program.types[c].declaration].identifier.value
     let n = program[declaration].identifier.value
-    return program.format("(%T::\(l)).\(n)", [qualification])
+    return program.format("(%T::\(m)).\(n)", [t])
   }
 
 }

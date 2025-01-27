@@ -597,8 +597,12 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    let t = typeOfSelf(in: program.parent(containing: d))!
-    let u = metatype(of: AssociatedType(declaration: d, qualification: t)).erased
+    let c = program.parent(containing: d, as: TraitDeclaration.self)!
+    let s = typeOfSelf(in: c)
+    let t = typeOfModel(of: s, conformingTo: c)
+    let w = WitnessExpression(value: .abstract, type: t)
+
+    let u = metatype(of: AssociatedType(declaration: d, qualification: w)).erased
     program[module].setType(u, for: d)
     return u
   }
@@ -1705,8 +1709,7 @@ public struct Typer {
 
     // Otherwise, the value of the witness is opaque.
     else {
-      let (_, q) = program.types.castToTraitApplication(witness.type)!
-      return metatype(of: AssociatedType(declaration: requirement, qualification: q)).erased
+      return metatype(of: AssociatedType(declaration: requirement, qualification: witness)).erased
     }
   }
 
