@@ -1,0 +1,6 @@
+fun check<T>(_ x: T) {}
+
+trait P {
+  type X
+  fun f(x: X) { check<Self.X>(x) }
+}

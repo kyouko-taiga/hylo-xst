@@ -927,16 +927,19 @@ public struct Typer {
 
   /// Returns the declared type of `g` without checking.
   private mutating func declaredType(of g: Given) -> AnyTypeIdentity {
-    if case .user(let d) = g {
-      return declaredType(of: d)
-    } else if case .assumed(_, let t) = g {
-      return t
-    } else if let t = cache.predefinedGivens[g] {
-      return t
-    }
+    if let predefined = cache.predefinedGivens[g] { return predefined }
 
     let result: AnyTypeIdentity
     switch g {
+    case .user(let d):
+      return declaredType(of: d)
+
+    case .abstract(let t):
+      return t
+
+    case .assumed(_, let t):
+      return t
+
     case .coercion(.reflexivity):
       // <T> T ~ T
       let t0 = demand(GenericParameter.reflexivity)
@@ -962,9 +965,6 @@ public struct Typer {
       let x2 = demand(EqualityWitness(lhs: t0.erased, rhs: t2.erased)).erased
       let x3 = demand(Implication(context: [x0, x1], head: x2)).erased
       result = demand(UniversalType(parameters: [t0, t1, t2], body: x3)).erased
-
-    case .assumed, .user:
-      unreachable()
     }
 
     cache.predefinedGivens[g] = result
@@ -1989,12 +1989,14 @@ public struct Typer {
       let u = declaredType(of: g)
       let v: WitnessExpression.Value
       switch g {
-      case .user(let d):
-        v = .reference(.direct(d))
       case .coercion:
         v = .reference(.builtin(.coercion))
+      case .abstract:
+        v = .abstract
       case .assumed(let i, _):
         v = .assumed(i)
+      case .user(let d):
+        v = .reference(.direct(d))
       }
       let w = WitnessExpression(value: v, type: u)
       return .init(witness: w, queried: t, environment: environment, tail: continuation)
@@ -2174,6 +2176,13 @@ public struct Typer {
 
     var gs: [Given] = []
     appendGivens(in: program.declarations(lexicallyIn: s), to: &gs)
+
+    if let d = s.node, let c = program.cast(d, to: TraitDeclaration.self) {
+      let s = typeOfSelf(in: c)
+      let t = typeOfModel(of: s, conformingTo: c)
+      gs.append(.abstract(t))
+    }
+
     cache.scopeToGivens[s] = gs
     return gs
   }

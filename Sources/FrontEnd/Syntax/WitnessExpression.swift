@@ -7,6 +7,9 @@ public struct WitnessExpression: Hashable {
     /// An existing term.
     case identity(ExpressionIdentity)
 
+    /// An abstract given.
+    case abstract
+
     /// An assumed given.
     case assumed(Int)
 
@@ -23,7 +26,7 @@ public struct WitnessExpression: Hashable {
     /// substituted for `new`.
     public func substituting(assumed i: Int, for new: Value) -> Self {
       switch self {
-      case .identity:
+      case .identity, .abstract:
         return self
       case .assumed(let j):
         return i == j ? new : self
@@ -63,7 +66,7 @@ public struct WitnessExpression: Hashable {
     if type[.hasVariable] { return true }
 
     switch value {
-    case .identity, .assumed:
+    case .identity, .abstract, .assumed:
       return false
     case .reference(let r):
       return r.hasVariable
@@ -77,7 +80,7 @@ public struct WitnessExpression: Hashable {
   /// A measure of the size of the deduction tree used to produce the witness.
   public var elaborationCost: Int {
     switch value {
-    case .identity, .assumed, .reference:
+    case .identity, .abstract, .assumed, .reference:
       return 0
     case .termApplication(let w, let a):
       return 1 + w.elaborationCost + a.elaborationCost
@@ -89,7 +92,7 @@ public struct WitnessExpression: Hashable {
   /// The declaration of the witness evaluated by this expression, if any.
   public var declaration: DeclarationIdentity? {
     switch value {
-    case .identity, .assumed:
+    case .identity, .abstract, .assumed:
       return nil
     case .reference(let r):
       return r.target
@@ -118,6 +121,8 @@ extension Program {
     switch v {
     case .identity(let e):
       return show(e)
+    case .abstract:
+      return "$<abstract given>"
     case .assumed(let i):
       return "$<assumed given \(i)>"
     case .reference(let d):

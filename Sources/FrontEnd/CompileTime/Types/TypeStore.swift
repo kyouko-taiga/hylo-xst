@@ -326,6 +326,9 @@ public struct TypeStore {
     case .identity(let e):
       return .init(value: .identity(e), type: t)
 
+    case .abstract:
+      return .init(value: .abstract, type: t)
+
     case .assumed(let i):
       return .init(value: .assumed(i), type: t)
 
