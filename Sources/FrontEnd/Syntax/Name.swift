@@ -111,6 +111,15 @@ public struct Name: Hashable {
 
 }
 
+extension Name: ExpressibleByStringLiteral {
+
+  public init(stringLiteral value: StringLiteralType) {
+    assert(!value.contains("."))
+    self.init(identifier: value)
+  }
+
+}
+
 extension Name: CustomStringConvertible {
 
   public var description: String {

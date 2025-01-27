@@ -98,6 +98,8 @@ internal struct Solver {
             o = me.solve(coercion: g)
           case is WideningConstraint:
             o = me.solve(widening: g)
+          case is ConstructorConversionConstraint:
+            o = me.solve(constructorConversion: g)
           case is CallConstraint:
             o = me.solve(call: g)
           case is ArgumentConstraint:
@@ -166,15 +168,15 @@ internal struct Solver {
 
     // Fast path: types are unifiable without any coercion.
     if let subs = typer.program.types.unifiable(k.lhs, k.rhs) {
-      for (t,u) in subs.types { assume(t, equals: u) }
+      for (t, u) in subs.types { assume(t, equals: u) }
       return .success
     }
 
-    // Slow path: summon a coercion.
-    let e = typer.program.types.demand(EqualityWitness(lhs: k.lhs, rhs: k.rhs)).erased
-    if let w = typer.summon(e, in: typer.program.parent(containing: k.origin)).uniqueElement {
+    // Slow path: applies the matching judgement of implicit resolution.
+    let es = typer.coerced(k.origin, withType: k.lhs, toMatch: k.rhs)
+    if let pick = es.uniqueElement {
       // TODO: Store elaboration
-      for (t, u) in w.substitutions.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
+      for (t, u) in pick.substitutions.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
       return .success
     } else if k.lhs[.hasVariable] || k.rhs[.hasVariable] {
       return postpone(g)
@@ -224,6 +226,32 @@ internal struct Solver {
 
     default:
       return simplify(k)
+    }
+  }
+
+  /// Discharges `g`, which is a constructor conversion constraint.
+  private mutating func solve(constructorConversion g: GoalIdentity) -> GoalOutcome {
+    let k = goals[g] as! ConstructorConversionConstraint
+
+    // Can't do anything before we've inferred the type of the source.
+    if k.lhs.isVariable {
+      return postpone(g)
+    }
+
+    // Is the source an initializer?
+    else if let (i, o) = typer.program.types.castToConstructor(k.lhs) {
+      let f = typer.program.types.demand(Arrow(inputs: i, output: o)).erased
+      let s = schedule(EqualityConstraint(lhs: k.rhs, rhs: f, site: k.site))
+      return delegate([s])
+    }
+
+    // The source isn't an initializer.
+    else {
+      return .failure { (s, _, p, d) in
+        let t = p.types.reify(k.lhs, applying: s)
+        let m = p.format("cannot use value of type '%T' as a constructor", [t])
+        d.insert(.init(.error, m, at: k.site))
+      }
     }
   }
 

@@ -166,6 +166,32 @@ internal struct WideningConstraint: Constraint {
 
 }
 
+/// a constraint stating that `T` is the type of an initializer that is convertible to a
+/// constructor of type `U`.
+internal struct ConstructorConversionConstraint: Constraint {
+
+  /// The type of the initializer.
+  internal private(set) var lhs: AnyTypeIdentity
+
+  /// The type of the constructor.
+  internal private(set) var rhs: AnyTypeIdentity
+
+  /// The site from which the constraint originates.
+  internal let site: SourceSpan
+
+  /// Applies `transform` on constituent types of `self`.
+  internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
+    lhs = transform(lhs)
+    rhs = transform(rhs)
+  }
+
+  /// Returns a textual representation of `self`, reading contents from `program`.
+  internal func show(using program: Program) -> String {
+    program.format("constructor(%T) =:= %T", [lhs, rhs])
+  }
+
+}
+
 /// A constraint stating that a value of type `F` can be applied to values of types `A1, ..., An`
 /// for producing a value of type `R`.
 internal struct CallConstraint: Constraint {

@@ -66,10 +66,8 @@ public struct Parser {
       return try .init(parseConformanceDeclaration(in: &file))
     case .extension:
       return try .init(parseExtensionDeclaration(in: &file))
-    case .fun:
+    case .fun, .`init`:
       return try .init(parseFunctionDeclaration(in: &file))
-    case .`init`:
-      return try .init(parseInitializerDeclaration(in: &file))
     case .struct:
       return try .init(parseStructDeclaration(in: &file))
     case .trait:
@@ -79,7 +77,7 @@ public struct Parser {
     case .typealias:
       return try .init(parseTypeAliasDeclaration(in: &file))
     case .name where head.text == "memberwise":
-      return try .init(parseInitializerDeclaration(in: &file))
+      return try .init(parseFunctionDeclaration(in: &file))
     default:
       throw expected("declaration", at: .empty(at: head.site.start))
     }
@@ -186,30 +184,79 @@ public struct Parser {
   ///
   ///     function-declaration ::=
   ///       'fun' function-identifier parameter-clauses return-type-ascription? callable-body?
+  ///       'init' parameter-clauses callable-body?
+  ///       'memberwise' 'init'
   ///     parameter-clauses ::=
   ///       compile-time-parameters? run-time-parameters
   ///
   private mutating func parseFunctionDeclaration(
     in file: inout Module.SourceContainer
   ) throws -> FunctionDeclaration.ID {
-    let introducer = try take(.fun) ?? expected("'fun'")
-    let identifier = try parseFunctionIdentifier()
-    let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
-    let runtimeParameters = try parseParenthesizedParameterList(in: &file)
-    let effect = parseOptionalAccessEffect() ?? Parsed(.let, at: .empty(at: position))
-    let output = try parseOptionalReturnTypeAscription(in: &file)
-    let body = try parseOptionalCallableBody(in: &file)
+    let introducer = try parseFunctionIntroducer()
 
-    return file.insert(
-      FunctionDeclaration(
-        introducer: introducer,
-        identifier: identifier,
-        staticParameters: staticParameters,
-        parameters: runtimeParameters,
-        effect: effect,
-        output: output,
-        body: body,
-        site: introducer.site.extended(upTo: position.index)))
+    // Custom function?
+    if introducer.value == .fun {
+      let n = try parseFunctionIdentifier()
+      let s = try parseOptionalCompileTimeParameters(in: &file)
+      let r = try parseParenthesizedParameterList(in: &file)
+      let e = parseOptionalAccessEffect() ?? .init(.let, at: .empty(at: position))
+      let o = try parseOptionalReturnTypeAscription(in: &file)
+      let b = try parseOptionalCallableBody(in: &file)
+      return file.insert(
+        FunctionDeclaration(
+          introducer: introducer, identifier: n,
+          staticParameters: s, parameters: r,
+          effect: e,
+          output: o, body: b,
+          site: introducer.site.extended(upTo: position.index)))
+    }
+
+    // Custom initializer?
+    else if introducer.value == .`init` {
+      let s = try parseOptionalCompileTimeParameters(in: &file)
+      let r = try parseParenthesizedParameterList(in: &file)
+      let b = try parseOptionalCallableBody(in: &file)
+      return file.insert(
+        FunctionDeclaration(
+          introducer: introducer, identifier: .init(.simple("init"), at: introducer.site),
+          staticParameters: s, parameters: r,
+          effect: .init(.set, at: .empty(at: position)),
+          output: nil, body: b,
+          site: introducer.site.extended(upTo: position.index)))
+    }
+
+    // Memberwise initializer?
+    else if introducer.value == .memberwiseinit {
+      return file.insert(
+        FunctionDeclaration(
+          introducer: introducer, identifier: .init(.simple("init"), at: introducer.site),
+          staticParameters: .empty(at: .empty(at: position)), parameters: [],
+          effect: .init(.set, at: .empty(at: position)),
+          output: nil, body: nil,
+          site: introducer.site))
+    }
+
+    else { unreachable("invalid introducer") }
+  }
+
+  /// Parses the introducer of a binding pattern.
+  ///
+  ///     function-introducer ::=
+  ///       'fun'
+  ///       'memberwise'? 'init'
+  ///
+  private mutating func parseFunctionIntroducer(
+  ) throws -> Parsed<FunctionDeclaration.Introducer> {
+    if let t = take(.fun) {
+      return .init(.fun, at: t.site)
+    } else if let t = take(.`init`) {
+      return .init(.`init`, at: t.site)
+    } else if let t = take(contextual: "memberwise") {
+      let u = take(.`init`) ?? fix(expected("'init'"), with: t)
+      return .init(.memberwiseinit, at: t.site.extended(toCover: u.site))
+    } else {
+      throw expected("'fun'")
+    }
   }
 
   /// Parses a compile-time parameter list iff the next token is a left angle bracket. Otherwise,
@@ -503,7 +550,7 @@ public struct Parser {
       let r = try parseInfixExpression(minimumPrecedence: q.next, in: &file)
       let f = file.insert(
         NameExpression(
-          qualification: .explicit(l),
+          qualification: l,
           name: .init(Name(identifier: String(o.text), notation: .infix), at: o),
           site: o))
       let n = file.insert(
@@ -573,7 +620,7 @@ public struct Parser {
     if take(.dot) == nil { return false }
     let n = try parseNominalComponent()
     let s = span(from: file[h].site.start)
-    let m = file.insert(NameExpression(qualification: .explicit(h), name: n, site: s))
+    let m = file.insert(NameExpression(qualification: h, name: n, site: s))
     h = .init(m)
     return true
   }

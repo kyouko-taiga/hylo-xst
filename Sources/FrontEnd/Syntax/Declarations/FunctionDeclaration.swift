@@ -4,6 +4,20 @@ import Utilities
 /// The declaration of a function.
 public struct FunctionDeclaration: Declaration, Scope {
 
+  /// The introducer of an initializer declaration.
+  public enum Introducer: UInt8 {
+
+    /// The function introducer, `fun`.
+    case fun
+
+    /// The initializer introducer, `init`.
+    case `init`
+
+    /// The memberwise initializer introducer, `memberwise init`
+    case memberwiseinit
+
+  }
+
   /// The identifier of a function.
   public enum Identifier: Equatable {
 
@@ -16,7 +30,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   }
 
   /// The introducer of this declaration.
-  public let introducer: Token
+  public let introducer: Parsed<Introducer>
 
   /// The name of the declared function.
   public let identifier: Parsed<Identifier>
@@ -39,13 +53,31 @@ public struct FunctionDeclaration: Declaration, Scope {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
+  /// `true` iff `self` declares a memberwise initializer.
+  public var isMemberwiseInitializer: Bool {
+    introducer.value == .memberwiseinit
+  }
+
   /// Returns a parsable representation of `self`, which is a node of `program`.
   public func show(readingChildrenFrom program: Program) -> String {
-    let w = staticParameters.isEmpty ? "" : program.show(staticParameters)
-    let i = parameters.map(program.show(_:))
-    let k = String(describing: effect.value)
-    let o = output.map(program.show(_:)) ?? "Void"
-    var result = "fun \(identifier)\(w)(\(list: i)) \(k) -> \(o)"
+    var result: String = ""
+
+    switch introducer.value {
+    case .fun: result.append("fun \(identifier.value)")
+    case .`init`: result.append("init")
+    case .memberwiseinit: result.append("memberwise init")
+    }
+
+    if !staticParameters.isEmpty {
+      result.append(program.show(staticParameters))
+    }
+
+    result.append(parameters.map(program.show(_:)).descriptions())
+    result.append(" \(effect.value)")
+
+    if introducer.value == .fun {
+      result.append(" -> " + (output.map(program.show(_:)) ?? "Void"))
+    }
 
     if let b = body {
       result.append(" {\n")

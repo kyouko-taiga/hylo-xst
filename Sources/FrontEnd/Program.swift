@@ -273,6 +273,11 @@ public struct Program {
     }
   }
 
+  /// Returns `true` iff `n` has the form `q.new`, where `q` is an arbitrary qualification.
+  public func isConstructorReference(_ n: NameExpression.ID) -> Bool {
+    self[n].name.value.identifier == "new"
+  }
+
   /// Returns `true` iff `t` is a type constructor accepting parameters.
   public func isHigherKinded(_ t: AnyTypeIdentity) -> Bool {
     switch types[t] {
@@ -553,7 +558,7 @@ public struct Program {
     } else {
       labels.append(contentsOf: self[d].parameters.map(read(\.label?.value)))
     }
-    return Name(identifier: "new", labels: .init(labels))
+    return Name(identifier: "init", labels: .init(labels))
   }
 
   /// Returns the name of `d`.
@@ -564,22 +569,6 @@ public struct Program {
   /// Returns the name of `d`.
   public func name(of d: VariableDeclaration.ID) -> Name {
     Name(identifier: self[d].identifier.value)
-  }
-
-  /// Returns `(suffix: s, prefix: p)` where `s` contains the nominal components of `n` from right
-  /// to left and `p` is the non-nominal prefix of `n`, if any.
-  public func components(
-    of n: NameExpression.ID
-  ) -> (suffix: [NameExpression.ID], prefix: NameExpression.Qualification) {
-    var suffix = [n]
-    while true {
-      let prefix = self[suffix.last!].qualification
-      if case .explicit(let e) = prefix, let m = cast(e, to: NameExpression.self) {
-        suffix.append(m)
-      } else {
-        return (suffix, prefix)
-      }
-    }
   }
 
   /// If `n` is a function or subscript call, returns its callee. Otherwise, returns `nil`.

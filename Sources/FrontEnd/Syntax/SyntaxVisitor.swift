@@ -80,8 +80,12 @@ extension Program {
       traverse(castUnchecked(n, to: Call.self), calling: &v)
     case Conversion.self:
       traverse(castUnchecked(n, to: Conversion.self), calling: &v)
+    case ImplicitQualification.self:
+      break
     case NameExpression.self:
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
+    case New.self:
+      traverse(castUnchecked(n, to: New.self), calling: &v)
     case RemoteTypeExpression.self:
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
     case StaticCall.self:
@@ -206,9 +210,13 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: NameExpression.ID, calling v: inout T) {
-    if case .explicit(let e) = self[n].qualification {
-      visit(e, calling: &v)
-    }
+    visit(self[n].qualification, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: New.ID, calling v: inout T) {
+    visit(self[n].qualification, calling: &v)
+    visit(self[n].target, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

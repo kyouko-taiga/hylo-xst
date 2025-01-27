@@ -71,12 +71,7 @@ public struct TypeStore {
 
   /// Returns `true` iff `n` identifies the type of an entity callable as a function.
   public func isArrowLike<T: TypeIdentity>(_ n: T) -> Bool {
-    switch tag(of: n) {
-    case Arrow.self:
-      return true
-    default:
-      return false
-    }
+    tag(of: n) == Arrow.self
   }
 
   /// Returns `true` iff `n` identifies the type of an entity callable as a subscript.
@@ -94,6 +89,11 @@ public struct TypeStore {
     } else {
       return false
     }
+  }
+
+  /// Returns `true` iff `n` is a universal type or an implication.
+  public func hasContext<T: TypeIdentity>(_ n: T) -> Bool {
+    (tag(of: n) == UniversalType.self) || (tag(of: n) == Implication.self)
   }
 
   /// Returns `n` sans context clause.
@@ -192,6 +192,20 @@ public struct TypeStore {
     } else {
       return nil
     }
+  }
+
+  /// Returns `([A...], T)` iff `n` has the form `[{self: set T}](A...) -> Void`.
+  public func castToConstructor<T: TypeIdentity>(
+    _ n: T
+  ) -> (inputs: [Parameter], output: AnyTypeIdentity)? {
+    guard
+      let f = self[n] as? Arrow,
+      let t = self[f.environment] as? Tuple,
+      let e = t.elements.uniqueElement,
+      let p = self[e.type] as? RemoteType,
+      (e.label == "self") && (p.access == .set) && (f.output == .void)
+    else { return nil }
+    return (inputs: f.inputs, output: p.projectee)
   }
 
   /// Returns the value at `p` on the type identified by `n` if that type is an instance of `T`.
@@ -311,6 +325,9 @@ public struct TypeStore {
     let t = reify(w.type, applying: subs, withVariables: substitutionPolicy)
 
     switch w.value {
+    case .identity(let e):
+      return .init(value: .identity(e), type: t)
+
     case .reference(let r):
       let u = reify(r, applying: subs, withVariables: substitutionPolicy)
       return .init(value: .reference(u), type: t)
@@ -463,8 +480,9 @@ public struct TypeStore {
     _ lhs: AssociatedType, _ rhs: AssociatedType, extending subs: inout SubstitutionTable,
     handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(
-      lhs.qualification, rhs.qualification, extending: &subs, handlingCoercionsWith: areCoercible)
+    lhs == rhs
+//    unifiable(
+//      lhs.qualification, rhs.qualification, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
   /// Returns `true` if `lhs` and `rhs` are unifiable.

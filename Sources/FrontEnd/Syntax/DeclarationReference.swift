@@ -7,9 +7,6 @@ public indirect enum DeclarationReference: Hashable {
     /// Virtual, for the purpose of applying name resolution.
     case virtual
 
-    /// Implicit, as the `.` in `.bar`; the whole name denotes a static member.
-    case implicit
-
     /// Explicit, as `foo.` in `foo.bar` or `.foo.` in `.foo.bar`.
     case explicit(ExpressionIdentity)
 
@@ -87,8 +84,6 @@ extension Program {
     switch q {
     case .virtual:
       return "$virtual"
-    case .implicit:
-      return ""
     case .explicit(let e):
       return show(e)
     }

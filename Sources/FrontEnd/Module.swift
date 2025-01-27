@@ -163,17 +163,19 @@ public struct Module {
     return i
   }
 
-  /// Replaces the node identified by `n` by `newValue`.
+  /// Replaces the node identified by `n` by `newTree`.
   ///
   /// The result of `tag(of: n)` denotes `T` after this method returns. No other property of `n`
   /// is changed. The children of the node currently identified by `n` that are not children of
-  /// `newValue` are notionally removed from the tree after this method returns. 
-  public mutating func replace<T: Expression>(_ n: ExpressionIdentity, for replacement: T) {
+  /// `newTree` are notionally removed from the tree after this method returns.
+  @discardableResult
+  public mutating func replace<T: Expression>(_ n: ExpressionIdentity, for newTree: T) -> T.ID {
     assert(n.module == identity)
     modify(&sources.values[n.file.offset]) { (f) in
-      f.syntax[n.offset] = .init(replacement)
+      f.syntax[n.offset] = .init(newTree)
       f.syntaxToTag[n.offset] = .init(T.self)
     }
+    return .init(uncheckedFrom: n.erased)
   }
 
   /// The nodes in `self`'s abstract syntax tree.

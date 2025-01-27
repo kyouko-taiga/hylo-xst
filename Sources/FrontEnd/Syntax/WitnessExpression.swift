@@ -4,6 +4,9 @@ public struct WitnessExpression: Hashable {
   /// The expression of a witness.
   public indirect enum Value: Hashable {
 
+    /// An existing term.
+    case identity(ExpressionIdentity)
+
     /// A reference to a term declaration.
     case reference(DeclarationReference)
 
@@ -17,6 +20,9 @@ public struct WitnessExpression: Hashable {
     /// substituted for `new`.
     public func substituting(assumed i: Int, for new: Value) -> Self {
       switch self {
+      case .identity:
+        return self
+
       case .reference(let r):
         return if case .assumed(i, _) = r { new } else { self }
 
@@ -55,6 +61,8 @@ public struct WitnessExpression: Hashable {
     if type[.hasVariable] { return true }
 
     switch value {
+    case .identity:
+      return false
     case .reference(let r):
       return r.hasVariable
     case .termApplication(let w, let a):
@@ -67,7 +75,7 @@ public struct WitnessExpression: Hashable {
   /// A measure of the size of the deduction tree used to produce the witness.
   public var elaborationCost: Int {
     switch value {
-    case .reference:
+    case .identity, .reference:
       return 0
     case .termApplication(let w, let a):
       return 1 + w.elaborationCost + a.elaborationCost
@@ -79,6 +87,8 @@ public struct WitnessExpression: Hashable {
   /// The declaration of the witness evaluated by this expression, if any.
   public var declaration: DeclarationIdentity? {
     switch value {
+    case .identity:
+      return nil
     case .reference(let r):
       return r.target
     case .termApplication(let w, _), .typeApplication(let w, _):
@@ -104,12 +114,14 @@ extension Program {
   /// Returns a debug representation of `v`.
   public func show(_ v: WitnessExpression.Value) -> String {
     switch v {
+    case .identity(let e):
+      return show(e)
     case .reference(let d):
       return show(d)
     case .termApplication(let w, let a):
       return "\(show(w))(\(show(a)))"
     case .typeApplication(let w, let ts):
-      return "\(show(w))<\(format("%T*", [ts]))>"
+      return "\(show(w))<\(format("%T*", [Array(ts.values)]))>"
     }
   }
 
