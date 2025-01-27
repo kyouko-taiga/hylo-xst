@@ -15,9 +15,6 @@ public indirect enum DeclarationReference: Hashable {
   /// A reference to a built-in entity.
   case builtin(BuiltinEntity)
 
-  /// A reference to an assumed given during implicit resolution.
-  case assumed(Int, AnyTypeIdentity)
-
   /// A direct reference.
   case direct(DeclarationIdentity)
 
@@ -32,8 +29,6 @@ public indirect enum DeclarationReference: Hashable {
     switch self {
     case .builtin, .direct, .member:
       return false
-    case .assumed(_, let t):
-      return t[.hasVariable]
     case .inherited(let w, _):
       return w.hasVariable
     }
@@ -52,7 +47,7 @@ public indirect enum DeclarationReference: Hashable {
   /// A measure of the complexity of reference's elaborated expression.
   public var elaborationCost: Int {
     switch self {
-    case .builtin, .assumed, .direct, .member:
+    case .builtin, .direct, .member:
       return 0
     case .inherited(let w, _):
       return 1 + w.elaborationCost
@@ -68,8 +63,6 @@ extension Program {
     switch r {
     case .builtin(let e):
       return "$<builtin \(e)>"
-    case .assumed(let i, _):
-      return "$<assumed given \(i)>"
     case .direct(let d):
       return nameOrTag(of: d)
     case .member(let q, let d):

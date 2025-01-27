@@ -1896,7 +1896,7 @@ public struct Typer {
         let g = Given.assumed(i, t)
         let e = Environment(
           substitutions: substitutions, givens: givens + [g], nextGivenIdentifier: i + 1)
-        return (e, .init(value: .reference(.assumed(i, t)), type: t))
+        return (e, .init(value: .assumed(i), type: t))
       }
 
       /// An empty environment.
@@ -1993,8 +1993,8 @@ public struct Typer {
         v = .reference(.direct(d))
       case .coercion:
         v = .reference(.builtin(.coercion))
-      case .assumed(let i, let t):
-        v = .reference(.assumed(i, t))
+      case .assumed(let i, _):
+        v = .assumed(i)
       }
       let w = WitnessExpression(value: v, type: u)
       return .init(witness: w, queried: t, environment: environment, tail: continuation)

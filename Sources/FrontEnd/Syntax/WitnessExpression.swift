@@ -7,6 +7,9 @@ public struct WitnessExpression: Hashable {
     /// An existing term.
     case identity(ExpressionIdentity)
 
+    /// An assumed given.
+    case assumed(Int)
+
     /// A reference to a term declaration.
     case reference(DeclarationReference)
 
@@ -22,14 +25,13 @@ public struct WitnessExpression: Hashable {
       switch self {
       case .identity:
         return self
-
-      case .reference(let r):
-        return if case .assumed(i, _) = r { new } else { self }
-
+      case .assumed(let j):
+        return i == j ? new : self
+      case .reference:
+        return self
       case .termApplication(let w, let a):
         return .termApplication(
           w.substituting(assumed: i, for: new), a.substituting(assumed: i, for: new))
-
       case .typeApplication(let w, let ts):
         return .typeApplication(
           w.substituting(assumed: i, for: new), ts)
@@ -61,7 +63,7 @@ public struct WitnessExpression: Hashable {
     if type[.hasVariable] { return true }
 
     switch value {
-    case .identity:
+    case .identity, .assumed:
       return false
     case .reference(let r):
       return r.hasVariable
@@ -75,7 +77,7 @@ public struct WitnessExpression: Hashable {
   /// A measure of the size of the deduction tree used to produce the witness.
   public var elaborationCost: Int {
     switch value {
-    case .identity, .reference:
+    case .identity, .assumed, .reference:
       return 0
     case .termApplication(let w, let a):
       return 1 + w.elaborationCost + a.elaborationCost
@@ -87,7 +89,7 @@ public struct WitnessExpression: Hashable {
   /// The declaration of the witness evaluated by this expression, if any.
   public var declaration: DeclarationIdentity? {
     switch value {
-    case .identity:
+    case .identity, .assumed:
       return nil
     case .reference(let r):
       return r.target
@@ -116,6 +118,8 @@ extension Program {
     switch v {
     case .identity(let e):
       return show(e)
+    case .assumed(let i):
+      return "$<assumed given \(i)>"
     case .reference(let d):
       return show(d)
     case .termApplication(let w, let a):
