@@ -1,5 +1,4 @@
 import Algorithms
-import DequeModule
 import OrderedCollections
 import Utilities
 
@@ -1788,46 +1787,6 @@ public struct Typer {
       context.obligations.assume(
         CoercionConstraint(on: e, from: t, to: u, reason: .ascription, at: program[e].site))
       return h
-    }
-  }
-
-  /// Returns the value of the entity referred to by `r`.
-  private mutating func evaluate(_ r: DeclarationReference) -> Value {
-    precondition(isStable(r), "declaration reference is not stable")
-    fatalError("TODO")
-  }
-
-  /// Returns `true` iff `r` refers to a value whose computation is pure.
-  private func isStable(_ r: DeclarationReference) -> Bool {
-    switch r {
-    case .direct(let d):
-      return isStable(d)
-    default:
-      return false
-    }
-  }
-
-  /// Returns `true` iff `r` declares a value whose computation is pure.
-  private func isStable(_ d: DeclarationIdentity) -> Bool {
-    switch program.tag(of: d) {
-    case AssociatedTypeDeclaration.self:
-      return true
-    case ConformanceDeclaration.self:
-      return true
-    case ExtensionDeclaration.self:
-      return true
-    case GenericParameterDeclaration.self:
-      return true
-    case ImportDeclaration.self:
-      return true
-    case StructDeclaration.self:
-      return true
-    case TraitDeclaration.self:
-      return true
-    case TypeAliasDeclaration.self:
-      return true
-    default:
-      return program.parent(containing: d).node == nil
     }
   }
 
