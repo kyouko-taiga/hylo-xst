@@ -12,8 +12,12 @@ public struct ImportDeclaration: Declaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension ImportDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     "import \(identifier)"
   }
 

@@ -17,9 +17,13 @@ public struct Union: TypeTree {
     .init(elements: elements.map({ (e) in store.map(e, transform) }))
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    elements.isEmpty ? "Never" : "Union<\(list: elements.map(program.show(_:)))>"
+}
+
+extension Union: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    elements.isEmpty ? "Never" : "Union<\(printer.show(elements))>"
   }
 
 }

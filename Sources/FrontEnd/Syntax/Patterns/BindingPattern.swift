@@ -22,13 +22,16 @@ public struct BindingPattern: Pattern {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let s = "\(introducer) \(program.show(pattern))"
+}
+
+extension BindingPattern: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     if let a = ascription {
-      return "\(s): \(program.show(a))"
+      return "\(introducer) \(printer.show(pattern)): \(printer.show(a))"
     } else {
-      return s
+      return "\(introducer) \(printer.show(pattern))"
     }
   }
 

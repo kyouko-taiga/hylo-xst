@@ -40,3 +40,16 @@ public struct ScopeIdentity: Hashable {
   }
 
 }
+
+extension ScopeIdentity: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    if let n = node {
+      return printer.show(n)
+    } else {
+      return printer.show(file)
+    }
+  }
+
+}

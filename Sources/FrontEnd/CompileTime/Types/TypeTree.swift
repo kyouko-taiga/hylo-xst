@@ -1,6 +1,6 @@
 /// The tree representation of a Hylo type.
-public protocol TypeTree: Hashable {
-  
+public protocol TypeTree: Hashable, Showable {
+
   /// Properties about `self` and its children, which are types in `program`.
   var properties: ValueProperties { get }
 
@@ -9,9 +9,6 @@ public protocol TypeTree: Hashable {
     in store: inout TypeStore,
     by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
   ) -> Self
-
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  func show(readingChildrenFrom program: Program) -> String
 
 }
 

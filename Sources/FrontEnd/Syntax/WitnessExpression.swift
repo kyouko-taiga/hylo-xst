@@ -109,28 +109,32 @@ public struct WitnessExpression: Hashable {
 
 }
 
-extension Program {
+extension WitnessExpression: Showable {
 
-  /// Returns a debug representation of `w`.
-  public func show(_ w: WitnessExpression) -> String {
-    show(w.value)
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    printer.show(value)
   }
 
-  /// Returns a debug representation of `v`.
-  public func show(_ v: WitnessExpression.Value) -> String {
-    switch v {
+}
+
+extension WitnessExpression.Value: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    switch self {
     case .identity(let e):
-      return show(e)
+      return printer.show(e)
     case .abstract:
       return "$<abstract given>"
     case .assumed(let i):
       return "$<assumed given \(i)>"
     case .reference(let d):
-      return show(d)
+      return printer.show(d)
     case .termApplication(let w, let a):
-      return "\(show(w))(\(show(a)))"
+      return "\(printer.show(w))(\(printer.show(a)))"
     case .typeApplication(let w, let ts):
-      return "\(show(w))<\(format("%T*", [Array(ts.values)]))>"
+      return "\(printer.show(w))<\(printer.show(ts.values))>"
     }
   }
 

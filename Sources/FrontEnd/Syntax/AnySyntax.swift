@@ -11,11 +11,6 @@ internal struct AnySyntax {
     self.wrapped = n
   }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  internal func show(readingChildrenFrom program: Program) -> String {
-    wrapped.show(readingChildrenFrom: program)
-  }
-
 }
 
 extension AnySyntax: Equatable {

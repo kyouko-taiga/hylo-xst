@@ -20,13 +20,17 @@ public struct SynthethicExpression: Expression {
   /// The site at which the synthesized expression is anchored.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension SynthethicExpression: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     switch value {
     case .temporary:
       return "$x"
     case .defaultArgument(let n):
-      return "$default \(program.show(program[n].default!))"
+      return "$default \(printer.show(printer.program[n].default!))"
     }
   }
 

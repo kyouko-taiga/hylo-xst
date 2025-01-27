@@ -69,14 +69,6 @@ public struct Arrow: TypeTree {
     }
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let e = program.show(environment)
-    let i = isByName ? "" : "(\(list: inputs.map(program.show(_:))))"
-    let o = program.show(output)
-    return "[\(e)]\(i) \(effect) -> \(o)"
-  }
-
 }
 
 extension Arrow: Callable {
@@ -87,6 +79,18 @@ extension Arrow: Callable {
 
   public func output(calleeIsMutating: Bool) -> AnyTypeIdentity {
     output
+  }
+
+}
+
+extension Arrow: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let e = printer.show(environment)
+    let i = isByName ? "" : "(\(list: inputs.map({ (p) in printer.show(p) })))"
+    let o = printer.show(output)
+    return "[\(e)]\(i) \(effect) -> \(o)"
   }
 
 }

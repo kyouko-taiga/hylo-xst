@@ -26,15 +26,16 @@ public struct TraitDeclaration: TypeDeclaration, Scope {
     parameters[0]
   }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let ms = members.map(program.show(_:)).lazy
-      .map(\.indented)
-      .joined(separator: "\n")
+}
 
+extension TraitDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let m = members.map({ (m) in printer.show(m).indented }).joined(separator: "\n")
     return """
     trait \(identifier) {
-    \(ms)
+    \(m)
     }
     """
   }

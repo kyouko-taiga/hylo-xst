@@ -11,7 +11,7 @@ public struct ErrorTerm: Term {
     .hasError
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
+  /// Returns a textual representation of `self`, reading contents from `program`.
   public func show(readingChildrenFrom program: Program) -> String {
     "$!"
   }

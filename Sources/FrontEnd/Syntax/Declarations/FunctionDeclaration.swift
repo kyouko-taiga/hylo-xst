@@ -58,8 +58,12 @@ public struct FunctionDeclaration: Declaration, Scope {
     introducer.value == .memberwiseinit
   }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension FunctionDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     var result: String = ""
 
     switch introducer.value {
@@ -69,19 +73,20 @@ public struct FunctionDeclaration: Declaration, Scope {
     }
 
     if !staticParameters.isEmpty {
-      result.append(program.show(staticParameters))
+      result.append(printer.show(staticParameters))
     }
 
-    result.append(parameters.map(program.show(_:)).descriptions())
-    result.append(" \(effect.value)")
+    result.append("(")
+    result.append(printer.show(parameters))
+    result.append(")")
 
     if introducer.value == .fun {
-      result.append(" -> " + (output.map(program.show(_:)) ?? "Void"))
+      result.append(" \(effect.value) -> " + (output.map({ (o) in printer.show(o) }) ?? "Void"))
     }
 
     if let b = body {
       result.append(" {\n")
-      for s in b { result.append(program.show(s).indented + "\n") }
+      for s in b { result.append(printer.show(s).indented + "\n") }
       result.append("}")
     }
 

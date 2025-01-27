@@ -9,7 +9,7 @@ public struct Program {
   public typealias ModuleIdentity = Int
 
   /// The identity of a file added to a module.
-  public struct SourceFileIdentity: Hashable, RawRepresentable {
+  public struct SourceFileIdentity: Hashable, RawRepresentable, Showable {
 
     /// The raw value of this identity.
     public let rawValue: UInt32
@@ -39,6 +39,11 @@ public struct Program {
     /// The file offset of the node represented by `self` in its containing collection.
     public var offset: Int {
       .init((rawValue & 0xffff0000) >> 16)
+    }
+
+    /// Returns the contents of `self`.
+    public func show(using printer: inout TreePrinter) -> String {
+      printer.program[self].source.text
     }
 
   }
@@ -124,42 +129,18 @@ public struct Program {
     ns.compactMap({ (n) in cast(n, to: t) })
   }
 
-  /// Returns the contents of `s`.
-  public func show(_ s: SourceFileIdentity) -> String {
-    self[s].source.text
+  /// Returns a textual representation of `item`.
+  public func show<T: Showable>(_ item: T) -> String {
+    var printer = TreePrinter(program: self)
+    return printer.show(item)
   }
 
-  /// Returns a parsable representation of `v`.
-  public func show(_ v: Value) -> String {
-    switch v {
-    case .term(let t): show(t)
-    case .type(let t): show(t)
-    }
-  }
-
-  /// Returns a parsable representation of `t`.
-  public func show(_ t: AnyTerm) -> String {
-    t.wrapped.show(readingChildrenFrom: self)
-  }
-
-  /// Returns a parsable representation of `t`.
-  public func show<T: Term>(_ t: T) -> String {
-    t.show(readingChildrenFrom: self)
-  }
-
-  /// Returns a parsable representation of `t`.
-  public func show<T: TypeIdentity>(_ t: T) -> String {
-    types[t].show(readingChildrenFrom: self)
-  }
-
-  /// Returns a source-like representation of `s`.
-  public func show(_ s: ScopeIdentity) -> String {
-    s.node.map(show(_:)) ?? show(s.file)
-  }
-
-  /// Returns a parsable representation of `n`.
-  public func show<T: SyntaxIdentity>(_ n: T) -> String {
-    self[n].show(readingChildrenFrom: self)
+  /// Returns a textual representation of `items`, separating each element by `separator`.
+  public func show<T: Sequence>(
+    _ items: T, separatedBy separator: String = ", "
+  ) -> String where T.Element: Showable {
+    var printer = TreePrinter(program: self)
+    return printer.show(items, separatedBy: separator)
   }
 
   /// Returns the tag of `n`.
@@ -714,6 +695,7 @@ public struct Program {
   public func format(
     _ message: String, _ arguments: [Any], file: StaticString = #file, line: UInt = #line
   ) -> String {
+    var printer = TreePrinter(program: self)
     var output = ""
     var s = message[...]
     var a = arguments[...]
@@ -735,10 +717,10 @@ public struct Program {
 
       case "T" where prefix.removeFirst(if: "*"):
         let ts = (arguments.popFirst() as? [AnyTypeIdentity]) ?? expected("array of types")
-        return "\(list: ts.map(show(_:)))"
+        return "\(printer.show(ts))"
 
       case "T":
-        return show((arguments.popFirst() as? AnyTypeIdentity) ?? expected("type"))
+        return printer.show((arguments.popFirst() as? AnyTypeIdentity) ?? expected("type"))
 
       case "%":
         return "%"

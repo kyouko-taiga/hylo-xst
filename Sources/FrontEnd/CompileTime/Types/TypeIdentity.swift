@@ -1,5 +1,5 @@
 /// A type denoting the identity of type tree.
-public protocol TypeIdentity: Hashable {
+public protocol TypeIdentity: Hashable, Showable {
 
   /// The type-erased value of this identity.
   var erased: AnyTypeIdentity { get }
@@ -14,6 +14,11 @@ extension TypeIdentity {
   /// Properties of the identified type.
   public var properties: ValueProperties {
     erased.properties
+  }
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    printer.program.types[self].show(using: &printer)
   }
 
 }

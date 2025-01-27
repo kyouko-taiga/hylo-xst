@@ -26,10 +26,14 @@ public struct UsingDeclaration: Declaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension UsingDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     let s = (semantics.value == .conformance) ? ":" : "=="
-    return "\(program.show(lhs)) \(s) \(program.show(rhs))"
+    return "\(printer.show(lhs)) \(s) \(printer.show(rhs))"
   }
 
 }

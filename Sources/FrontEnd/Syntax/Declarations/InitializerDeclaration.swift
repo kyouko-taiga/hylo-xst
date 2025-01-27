@@ -32,22 +32,13 @@ public struct InitializerDeclaration: Declaration, Scope {
     introducer.value == .memberwiseinit
   }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    if isMemberwise {
-      return "memberwise init"
-    } else {
-      let i = parameters.map(program.show(_:)).descriptions()
-      var result = "init(\(i))"
+}
 
-      if let b = body {
-        result.append(" {\n")
-        for s in b { result.append(program.show(s).indented + "\n") }
-        result.append("}")
-      }
+extension InitializerDeclaration: Showable {
 
-      return result
-    }
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    ""
   }
 
 }

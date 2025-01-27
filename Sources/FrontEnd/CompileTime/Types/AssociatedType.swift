@@ -20,12 +20,16 @@ public struct AssociatedType: TypeTree {
     .init(declaration: declaration, qualification: store.map(qualification, transform))
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let (c, t) = program.types.castToTraitApplication(qualification.type)!
-    let m = program[program.types[c].declaration].identifier.value
-    let n = program[declaration].identifier.value
-    return program.format("(%T::\(m)).\(n)", [t])
+}
+
+extension AssociatedType: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let (c, t) = printer.program.types.castToTraitApplication(qualification.type)!
+    let m = printer.program[printer.program.types[c].declaration].identifier.value
+    let n = printer.program[declaration].identifier.value
+    return "(\(printer.show(t))::\(m)).\(n)"
   }
 
 }

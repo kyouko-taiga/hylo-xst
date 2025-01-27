@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// A type denoting the identity of a node in an abstract syntax tree.
-public protocol SyntaxIdentity: Comparable, Hashable, Archivable {
+public protocol SyntaxIdentity: Comparable, Hashable, Showable, Archivable {
 
   /// The type-erased value of this identity.
   var erased: AnySyntaxIdentity { get }
@@ -42,6 +42,10 @@ extension SyntaxIdentity {
   /// Returns `true` if `l` is ordered before `r`.
   public static func < (l: Self, r: Self) -> Bool {
     l.erased < r.erased
+  }
+
+  public func show(using printer: inout TreePrinter) -> String {
+    printer.program[self].show(using: &printer)
   }
 
   public init<A>(from archive: inout ReadableArchive<A>, in context: inout Any) throws {

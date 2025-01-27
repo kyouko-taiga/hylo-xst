@@ -20,9 +20,13 @@ public struct UniversalType: TypeTree {
     .init(parameters: parameters, body: store.map(body, transform))
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    program.format("<%T*> %T", [parameters.map(\.erased), body])
+}
+
+extension UniversalType: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    "<\(printer.show(parameters))> \(printer.show(body))"
   }
 
 }

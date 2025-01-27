@@ -23,6 +23,16 @@ extension LabeledPattern: LabeledSyntax {
 
 }
 
+extension LabeledPattern: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let v = printer.show(value)
+    return if let l = label { "\(l): \(v)" } else { v }
+  }
+
+}
+
 extension LabeledPattern: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
@@ -33,16 +43,6 @@ extension LabeledPattern: Archivable {
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
     try archive.write(label, in: &context)
     try archive.write(value, in: &context)
-  }
-
-}
-
-extension Program {
-
-  /// Returns a source-like representation of `a`.
-  public func show(_ a: LabeledPattern) -> String {
-    let v = show(a.value)
-    return if let l = a.label { "\(l): \(v)" } else { v }
   }
 
 }

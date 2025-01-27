@@ -10,12 +10,18 @@ public struct TupleTypeExpression: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    "{\(list: elements.map(program.show(_:)))}"
+}
+
+extension TupleTypeExpression: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let es = elements.map({ (e) in printer.show(e) })
+    return "{\(list: es)}"
   }
 
 }
+
 
 extension TupleTypeExpression: Archivable {
 

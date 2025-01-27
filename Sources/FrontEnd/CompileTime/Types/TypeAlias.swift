@@ -20,9 +20,13 @@ public struct TypeAlias: TypeTree {
     .init(declaration: declaration, aliasee: store.map(aliasee, transform))
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    "\(program[declaration].identifier)"
+}
+
+extension TypeAlias: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    printer.program[declaration].identifier.value
   }
 
 }

@@ -29,9 +29,13 @@ public struct Conversion: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    "\(program.show(source)) \(semantics) \(program.show(target))"
+}
+
+extension Conversion: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    "\(printer.show(source)) \(semantics) \(printer.show(target))"
   }
 
 }

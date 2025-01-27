@@ -21,15 +21,16 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let e = program.show(extendee)
-    let c = program.show(concept)
-    let w = staticParameters.isEmpty ? "" : " \(program.show(staticParameters))"
-    let m = members.map(program.show(_:)).lazy
-      .map(\.indented)
-      .joined(separator: "\n")
+}
 
+extension ConformanceDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let e = printer.show(extendee)
+    let c = printer.show(concept)
+    let w = staticParameters.isEmpty ? "" : " \(printer.show(staticParameters))"
+    let m = members.map({ (m) in printer.show(m).indented }).joined(separator: "\n")
     return """
     given\(w) \(e): \(c) {
     \(m)

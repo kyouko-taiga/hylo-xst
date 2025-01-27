@@ -12,10 +12,14 @@ public struct Return: Statement {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension Return: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     if let v = value {
-      return "return \(program.show(v))"
+      return "return \(printer.show(v))"
     } else {
       return "return"
     }

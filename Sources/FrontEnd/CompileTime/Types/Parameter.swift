@@ -24,12 +24,12 @@ public struct Parameter: Hashable {
 
 }
 
-extension Program {
+extension Parameter: Showable {
 
-  /// Returns a source-like representation of `p`.
-  public func show(_ p: Parameter) -> String {
-    let t = show(p.type)
-    return if let l = p.label { "\(l): \(t)" } else { t }
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let t = printer.show(type)
+    return if let l = label { "\(l): \(t)" } else { t }
   }
 
 }

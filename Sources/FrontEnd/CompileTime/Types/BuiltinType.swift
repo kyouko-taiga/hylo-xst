@@ -40,11 +40,6 @@ public enum BuiltinType: TypeTree {
     .init()
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    self.description
-  }
-
 }
 
 extension BuiltinType: CustomStringConvertible {
@@ -101,6 +96,15 @@ extension BuiltinType: LosslessStringConvertible {
     } else {
       return nil
     }
+  }
+
+}
+
+extension BuiltinType: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    self.description
   }
 
 }

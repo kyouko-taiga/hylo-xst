@@ -14,8 +14,12 @@ public struct VariableDeclaration: Declaration, Pattern {
   /// The site from which `self` was parsed.
   public var site: SourceSpan { identifier.site }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension VariableDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     identifier.description
   }
 

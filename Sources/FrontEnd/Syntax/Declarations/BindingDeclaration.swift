@@ -12,13 +12,16 @@ public struct BindingDeclaration: Declaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let s = program.show(pattern)
+}
+
+extension BindingDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     if let i = initializer {
-      return "\(s) = \(program.show(i))"
+      return "\(printer.show(pattern)) = \(printer.show(i))"
     } else {
-      return s
+      return printer.show(pattern)
     }
   }
 

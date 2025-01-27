@@ -10,9 +10,13 @@ public struct TupleLiteral: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let es = elements.map(program.show(_:))
+}
+
+extension TupleLiteral: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let es = elements.map({ (e) in printer.show(e) })
     if es.count == 1 {
       return "(\(es[0]),)"
     } else {

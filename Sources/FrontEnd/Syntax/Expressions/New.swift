@@ -12,12 +12,16 @@ public struct New: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    if program.tag(of: qualification) == ImplicitQualification.self {
+}
+
+extension New: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    if printer.program.tag(of: qualification) == ImplicitQualification.self {
       return ".new"
     } else {
-      return program.show(qualification) + ".new"
+      return printer.show(qualification) + ".new"
     }
   }
 

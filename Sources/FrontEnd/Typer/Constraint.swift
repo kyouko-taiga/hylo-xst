@@ -1,5 +1,7 @@
+import Utilities
+
 /// An equation involving compile-time values.
-internal protocol Constraint {
+internal protocol Constraint: Showable {
 
   /// The site from which the constraint originates.
   var site: SourceSpan { get }
@@ -9,9 +11,6 @@ internal protocol Constraint {
 
   /// Applies `transform` on constituent types of `self`.
   mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity)
-
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  func show(using program: Program) -> String
 
 }
 
@@ -31,14 +30,16 @@ extension Constraint {
 
 extension Program {
 
-  /// Returns a debug representation of `k`.
+  /// Returns a textual representation of `k`.
   internal func show(_ k: any Constraint) -> String {
-    k.show(using: self)
+    var printer = TreePrinter(program: self)
+    return printer.show(k)
   }
 
-  /// Returns a debug representation of the elements in `ks`.
+  /// Returns a textual representation of the elements in `ks`.
   internal func show<S: Sequence<any Constraint>>(_ ks: S) -> String {
-    ks.map(show(_:)).joined(separator: "\n")
+    var printer = TreePrinter(program: self)
+    return ks.map({ (k) in printer.show(k) }).joined(separator: "\n")
   }
 
 }
@@ -66,9 +67,13 @@ internal struct EqualityConstraint: Constraint {
     rhs = transform(rhs)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    program.format("%T =:= %T", [lhs, rhs])
+}
+
+extension EqualityConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    "\(printer.show(lhs)) =:= \(printer.show(rhs))"
   }
 
 }
@@ -128,12 +133,17 @@ internal struct CoercionConstraint: Constraint {
     rhs = transform(rhs)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    program.format("%T ~:~ %T", [lhs, rhs])
+}
+
+extension CoercionConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    "\(printer.show(lhs)) ~:~ \(printer.show(rhs))"
   }
 
 }
+
 
 /// A constraint stating that there exists a compiler-known conversion from values a type to values
 /// of another (wider) type.
@@ -159,12 +169,17 @@ internal struct WideningConstraint: Constraint {
     rhs = transform(rhs)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    program.format("%T <:< %T", [lhs, rhs])
+}
+
+extension WideningConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    "\(printer.show(lhs)) <:< \(printer.show(rhs))"
   }
 
 }
+
 
 /// a constraint stating that `T` is the type of an initializer that is convertible to a
 /// constructor of type `U`.
@@ -185,9 +200,13 @@ internal struct ConstructorConversionConstraint: Constraint {
     rhs = transform(rhs)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    program.format("constructor(%T) =:= %T", [lhs, rhs])
+}
+
+extension ConstructorConversionConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    "constructor(\(printer.show(lhs))) =:= \(printer.show(rhs))"
   }
 
 }
@@ -236,18 +255,22 @@ internal struct CallConstraint: Constraint {
     output = transform(output)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    var s = program.show(callee)
+}
+
+extension CallConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    var s = printer.show(callee)
     // if program.tag(of: origin) == SubscriptCall
     s.write(" applied to (")
     for i in 0 ..< arguments.count {
       if i != 0 { s.write(", ") }
       if let l = arguments[i].label { s.write("\(l): ") }
-      s.write(program.show(arguments[i].type))
+      s.write(printer.show(arguments[i].type))
     }
     s.write(") gives ")
-    s.write(program.show(output))
+    s.write(printer.show(output))
     return s
   }
 
@@ -274,9 +297,13 @@ internal struct ArgumentConstraint: Constraint {
     rhs = transform(rhs)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    program.format("%T ↓ %T", [lhs, rhs])
+}
+
+extension ArgumentConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    "\(printer.show(lhs)) ↓ \(printer.show(rhs))"
   }
 
 }
@@ -309,16 +336,20 @@ internal struct StaticCallConstraint: Constraint {
     output = transform(output)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    var s = program.show(callee)
+}
+
+extension StaticCallConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    var s = printer.show(callee)
     s.write(" applied to <")
     for i in 0 ..< arguments.count {
       if i != 0 { s.write(", ") }
-      s.write(program.show(arguments[i]))
+      s.write(printer.show(arguments[i]))
     }
     s.write("> gives ")
-    s.write(program.show(output))
+    s.write(printer.show(output))
     return s
   }
 
@@ -341,9 +372,13 @@ internal struct Summonable: Constraint {
     type = transform(type)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    program.format("\u{22A9} %T", [type])
+}
+
+extension Summonable: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    "\u{22A9} \(printer.show(type))"
   }
 
 }
@@ -372,9 +407,13 @@ internal struct MemberConstraint: Constraint {
     type = transform(type)
   }
 
-  /// Returns a textual representation of `self`, reading contents from `program`.
-  internal func show(using program: Program) -> String {
-    program.format("%T.\(program[member].name) =:= %T", [qualification.type, type])
+}
+
+extension MemberConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    "\(printer.show(qualification.type)).\(printer.program[member].name) =:= \(printer.show(type))"
   }
 
 }
@@ -405,6 +444,16 @@ internal struct OverloadConstraint: Constraint {
       "(\(program.show(c.reference)) : \(program.show(c.type)))"
     }
     return "(\(program.show(name)) : \(program.show(type))) \u{21A6} {\(list: cs)}"
+  }
+
+}
+
+extension OverloadConstraint: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  internal func show(using printer: inout TreePrinter) -> String {
+    let cs = candidates.map({ (c) in "(\(printer.show(c.reference)) : \(printer.show(c.type)))" })
+    return "(\(printer.show(name)) : \(printer.show(type))) \u{21A6} {\(list: cs)}"
   }
 
 }

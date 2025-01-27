@@ -56,29 +56,33 @@ public indirect enum DeclarationReference: Hashable {
 
 }
 
-extension Program {
+extension DeclarationReference: Showable {
 
-  /// Returns a source-like representation of `r`.
-  public func show(_ r: DeclarationReference) -> String {
-    switch r {
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    switch self {
     case .builtin(let e):
       return "$<builtin \(e)>"
     case .direct(let d):
-      return nameOrTag(of: d)
+      return printer.program.nameOrTag(of: d)
     case .member(let q, let d):
-      return show(q) + "." + nameOrTag(of: d)
+      return printer.show(q) + "." + printer.program.nameOrTag(of: d)
     case .inherited(_, let d):
-      return nameOrTag(of: d)
+      return printer.program.nameOrTag(of: d)
     }
   }
 
-  /// Returns a source-like representation of `q`.
-  public func show(_ q: DeclarationReference.Qualification) -> String {
-    switch q {
+}
+
+extension DeclarationReference.Qualification: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    switch self {
     case .virtual:
       return "$virtual"
     case .explicit(let e):
-      return show(e)
+      return printer.show(e)
     }
   }
 

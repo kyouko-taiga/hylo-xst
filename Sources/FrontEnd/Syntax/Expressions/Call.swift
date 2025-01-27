@@ -36,21 +36,25 @@ public struct Call: Expression {
     .init(callee: callee, arguments: arguments, style: style, site: site)
   }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    let c = program.show(callee)
-    let a = arguments.map(program.show(_:)).joined(separator: ", ")
+  /// The labels of the arguments.
+  public var labels: [String?] {
+    arguments.map(\.label?.value)
+  }
+
+}
+
+extension Call: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let c = printer.show(callee)
+    let a = arguments.map({ (a) in printer.show(a) }).joined(separator: ", ")
     switch style {
     case .parenthesized:
       return "\(c)(\(a))"
     case .bracketed:
       return "\(c)[\(a)]"
     }
-  }
-
-  /// The labels of the arguments.
-  public var labels: [String?] {
-    arguments.map(\.label?.value)
   }
 
 }

@@ -18,8 +18,12 @@ public struct ParameterDeclaration: Declaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension ParameterDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     var result = ""
 
     // Label and identifier.
@@ -34,12 +38,12 @@ public struct ParameterDeclaration: Declaration {
 
     // Ascription.
     if let a = ascription {
-      result.append(": \(program.show(a))")
+      result.append(": \(printer.show(a))")
     }
 
     // Default value.
     if let v = `default` {
-      result.append(" = \(program.show(v))")
+      result.append(" = \(printer.show(v))")
     }
 
     return result

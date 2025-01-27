@@ -1,13 +1,10 @@
 import Archivist
 
 /// A node in an abstract syntax tree.
-public protocol Syntax: Equatable, Archivable {
+public protocol Syntax: Equatable, Archivable, Showable {
 
   /// The site from which `self` was parsed.
   var site: SourceSpan { get }
-
-  /// Returns a representation of `self` in Hylo's syntax, given the program that stores `self`.
-  func show(readingChildrenFrom program: Program) -> String
 
 }
 

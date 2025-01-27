@@ -28,9 +28,13 @@ public struct TypeApplication: TypeTree {
     return .init(abstraction: t, arguments: x)
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    "\(program.show(abstraction))<\(list: arguments.values.map(program.show(_:)))>"
+}
+
+extension TypeApplication: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    "\(printer.show(abstraction))<\(printer.show(arguments.values))>"
   }
 
 }

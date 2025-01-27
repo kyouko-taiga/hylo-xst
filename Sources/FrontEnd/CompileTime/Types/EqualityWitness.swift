@@ -20,9 +20,13 @@ public struct EqualityWitness: TypeTree {
     .init(lhs: store.map(lhs, transform), rhs: store.map(rhs, transform))
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    program.format("(%T ~ %T)", [lhs, rhs])
+}
+
+extension EqualityWitness: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    "(\(printer.show(lhs)) ~ \(printer.show(rhs)))"
   }
 
 }

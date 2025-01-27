@@ -9,8 +9,12 @@ public struct BooleanLiteral: Expression {
   /// The value of the literal.
   public var value: Bool { site.text == "true" }
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension BooleanLiteral: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     value.description
   }
 

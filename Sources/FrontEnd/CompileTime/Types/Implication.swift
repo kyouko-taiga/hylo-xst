@@ -31,9 +31,17 @@ public struct Implication: TypeTree {
       head: store.map(head, transform))
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    program.format("%T* ==> %T", [context, head])
+}
+
+extension Implication: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    if let t = context.uniqueElement {
+      return "\(printer.show(t)) ==> \(printer.show(head))"
+    } else {
+      return "(\(printer.show(context))) ==> \(printer.show(head))"
+    }
   }
 
 }

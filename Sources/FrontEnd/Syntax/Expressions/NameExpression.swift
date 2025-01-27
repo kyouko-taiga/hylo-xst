@@ -12,13 +12,17 @@ public struct NameExpression: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension NameExpression: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     if let q = qualification {
-      if program.tag(of: q) == ImplicitQualification.self {
+      if printer.program.tag(of: q) == ImplicitQualification.self {
         return "." + name.description
       } else {
-        return program.show(q) + "." + name.description
+        return printer.show(q) + "." + name.description
       }
     } else {
       return name.description

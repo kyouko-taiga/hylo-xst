@@ -11,7 +11,7 @@ public enum GenericParameter: TypeTree {
 
   case user(GenericParameterDeclaration.ID)
 
-  // Properties about `self`.
+  /// Properties about `self`.
   public var properties: ValueProperties {
     .init()
   }
@@ -21,17 +21,21 @@ public enum GenericParameter: TypeTree {
     if case .user(let d) = self { d } else { nil }
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
+}
+
+extension GenericParameter: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
     switch self {
     case .reflexivity:
-      return "T"
+      return printer.uniquized("T", for: self)
     case .symmetry(let i):
-      return "T\(i)"
+      return printer.uniquized("T\(i)", for: self)
     case .transitivity(let i):
-      return "T\(i)"
+      return printer.uniquized("T\(i)", for: self)
     case .user(let d):
-      return program[d].identifier.value
+      return printer.uniquized(printer.program[d].identifier.value, for: self)
     }
   }
 

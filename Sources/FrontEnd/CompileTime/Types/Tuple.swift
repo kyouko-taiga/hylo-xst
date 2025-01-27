@@ -49,19 +49,24 @@ public struct Tuple: TypeTree {
     .init(elements: elements.map({ (e) in e.modified(in: &store, by: transform) }))
   }
 
-  /// Returns a parsable representation of `self`, which is a type in `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    elements.isEmpty ? "Void" : "{\(list: elements.map(program.show(_:)))}"
+}
+
+extension Tuple: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let es = elements.map({ (e) in printer.show(e) })
+    return es.isEmpty ? "Void" : "{\(list: es)}"
   }
 
 }
 
-extension Program {
+extension Tuple.Element: Showable {
 
-  /// Returns a source-like representation of `e`.
-  public func show(_ e: Tuple.Element) -> String {
-    let t = show(e.type)
-    return if let l = e.label { "\(l): \(t)" } else { t }
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    let t = printer.show(type)
+    return if let l = label { "\(l): \(t)" } else { t }
   }
 
 }

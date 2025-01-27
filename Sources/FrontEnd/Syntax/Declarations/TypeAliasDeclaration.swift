@@ -16,9 +16,13 @@ public struct TypeAliasDeclaration: TypeDeclaration, Scope {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns a parsable representation of `self`, which is a node of `program`.
-  public func show(readingChildrenFrom program: Program) -> String {
-    "typealias \(identifier) = \(program.show(aliasee))"
+}
+
+extension TypeAliasDeclaration: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    "typealias \(identifier) = \(printer.show(aliasee))"
   }
 
 }

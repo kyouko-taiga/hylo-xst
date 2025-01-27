@@ -24,6 +24,20 @@ public struct StaticParameters: Equatable {
 
 }
 
+extension StaticParameters: Showable {
+
+  /// Returns a textual representation of `self` using `printer`.
+  public func show(using printer: inout TreePrinter) -> String {
+    if implicit.isEmpty {
+      return "<\(printer.show(explicit))>"
+    } else {
+      return "<\(printer.show(explicit)) where \(printer.show(implicit))>"
+    }
+  }
+
+}
+
+
 extension StaticParameters: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
@@ -36,19 +50,6 @@ extension StaticParameters: Archivable {
     try archive.write(explicit, in: &context)
     try archive.write(implicit, in: &context)
     try archive.write(site, in: &context)
-  }
-
-}
-
-extension Program {
-
-  /// Returns a source-like representation of `ps`.
-  public func show(_ ps: StaticParameters) -> String {
-    if ps.implicit.isEmpty {
-      return "<\(list: ps.explicit.map(show(_:)))>"
-    } else {
-      return "<\(list: ps.explicit.map(show(_:))) where \(list: ps.implicit.map(show(_:)))>"
-    }
   }
 
 }
