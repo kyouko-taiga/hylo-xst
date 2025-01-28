@@ -796,8 +796,11 @@ public indirect enum SyntaxFilter {
   /// Matches any node.
   case all
 
+  /// Matches any node satisfying both filters.
+  case and(SyntaxFilter, SyntaxFilter)
+
   /// Matches any node in the given module.
-  case from(Module.Name)
+  case from(Program.ModuleIdentity)
 
   /// Matches any node with the given tag.
   case tag(any Syntax.Type)
@@ -813,8 +816,10 @@ public indirect enum SyntaxFilter {
     switch self {
     case .all:
       return true
+    case .and(let l, let r):
+      return l(n, in: p) && r(n, in: p)
     case .from(let m):
-      return p.identity(module: m) == n.module
+      return m == n.module
     case .tag(let k):
       return p.tag(of: n) == k
     case .topLevel:

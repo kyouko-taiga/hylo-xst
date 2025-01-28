@@ -37,6 +37,8 @@ let package = Package(
       name: "hc",
       dependencies: [
         .target(name: "FrontEnd"),
+        .target(name: "Utilities"),
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ]),
 
     .target(

@@ -127,6 +127,7 @@ public struct Module {
   }
 
   /// Adds a source file to this module.
+  @discardableResult
   public mutating func addSource(
     _ s: SourceFile
   ) -> (inserted: Bool, identity: Program.SourceFileIdentity) {
