@@ -324,42 +324,6 @@ public struct Parser {
     return .init(d)
   }
 
-  /// Parses an initializer declaration.
-  ///
-  ///     initializer-declaration ::=
-  ///       'memberwise' 'init'
-  ///       'init' parameters callable-body?
-  ///
-  private mutating func parseInitializerDeclaration(
-    in file: inout Module.SourceContainer
-  ) throws -> InitializerDeclaration.ID {
-    // Memberwise initializer?
-    if let head = take(contextual: "memberwise") {
-      let t = take(.`init`) ?? fix(expected("'init'"), with: head)
-      let i = InitializerDeclaration.Introducer.memberwiseinit
-      let s = head.site.extended(toCover: t.site)
-
-      return file.insert(
-        InitializerDeclaration(
-          introducer: .init(i, at: s), parameters: [], body: nil,
-          site: s))
-    }
-
-    // Regular initializer?
-    else if let head = take(.`init`) {
-      let parameters = try parseParenthesizedParameterList(in: &file)
-      let body = try parseOptionalCallableBody(in: &file)
-
-      return file.insert(
-        InitializerDeclaration(
-          introducer: .init(.`init`, at: head.site), parameters: parameters, body: body,
-          site: head.site.extended(upTo: position.index)))
-    }
-
-    // Missing introducer.
-    else { throw expected("'init'") }
-  }
-
   /// Parses a parenthesized list of parameter declarations.
   private mutating func parseParenthesizedParameterList(
     in file: inout Module.SourceContainer

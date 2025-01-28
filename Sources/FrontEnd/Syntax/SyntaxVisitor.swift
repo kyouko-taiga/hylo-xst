@@ -59,8 +59,6 @@ extension Program {
       break
     case ImportDeclaration.self:
       break
-    case InitializerDeclaration.self:
-      traverse(castUnchecked(n, to: InitializerDeclaration.self), calling: &v)
     case ParameterDeclaration.self:
       traverse(castUnchecked(n, to: ParameterDeclaration.self), calling: &v)
     case StructDeclaration.self:
@@ -164,12 +162,6 @@ extension Program {
     visit(self[n].staticParameters, calling: &v)
     visit(self[n].parameters, calling: &v)
     visit(self[n].output, calling: &v)
-    if let b = self[n].body { visit(b, calling: &v) }
-  }
-
-  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
-  public func traverse<T: SyntaxVisitor>(_ n: InitializerDeclaration.ID, calling v: inout T) {
-    visit(self[n].parameters, calling: &v)
     if let b = self[n].body { visit(b, calling: &v) }
   }
 

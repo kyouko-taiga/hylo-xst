@@ -35,7 +35,6 @@ public struct SyntaxTag {
     FunctionDeclaration.self,
     GenericParameterDeclaration.self,
     ImportDeclaration.self,
-    InitializerDeclaration.self,
     ParameterDeclaration.self,
     StructDeclaration.self,
     TraitDeclaration.self,

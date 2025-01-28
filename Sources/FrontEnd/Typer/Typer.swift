@@ -136,8 +136,6 @@ public struct Typer {
       check(castUnchecked(d, to: FunctionDeclaration.self))
     case GenericParameterDeclaration.self:
       check(castUnchecked(d, to: GenericParameterDeclaration.self))
-    case InitializerDeclaration.self:
-      check(castUnchecked(d, to: InitializerDeclaration.self))
     case ParameterDeclaration.self:
       check(castUnchecked(d, to: ParameterDeclaration.self))
     case StructDeclaration.self:
@@ -250,17 +248,6 @@ public struct Typer {
   private mutating func check(_ d: GenericParameterDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO: redeclarations
-  }
-
-  /// Type checks `d`.
-  private mutating func check(_ d: InitializerDeclaration.ID) {
-    let t = declaredType(of: d)
-
-    // Nothing more to do if the declaration doesn't have an arrow type.
-    if let a = program.types[program.types.head(t)] as? Arrow {
-      check(program[d].parameters)
-      check(body: program[d].body, of: .init(d), expectingOutputType: a.output)
-    }
   }
 
   /// Type checks `body` as the definition of `d`, which declares a function or susbscript that
@@ -572,8 +559,6 @@ public struct Typer {
       return declaredType(of: castUnchecked(d, to: FunctionDeclaration.self))
     case GenericParameterDeclaration.self:
       return declaredType(of: castUnchecked(d, to: GenericParameterDeclaration.self))
-    case InitializerDeclaration.self:
-      return declaredType(of: castUnchecked(d, to: InitializerDeclaration.self))
     case ParameterDeclaration.self:
       return declaredType(of: castUnchecked(d, to: ParameterDeclaration.self))
     case StructDeclaration.self:
@@ -708,51 +693,6 @@ public struct Typer {
     let t = metatype(of: GenericParameter.user(d)).erased
     program[module].setType(t, for: d)
     return t
-  }
-
-  /// Returns the declared type of `d` without checking.
-  private mutating func declaredType(of d: InitializerDeclaration.ID) -> AnyTypeIdentity {
-    if let memoized = program[d.module].type(assignedTo: d) { return memoized }
-    assert(d.module == module, "dependency is not typed")
-
-    // Could we resolve the type of "Self"?
-    let output = typeOfSelf(in: program.parent(containing: d))!
-    if output == .error { return .error }
-
-    // Are we looking at a memberwise initializer?
-    else if program[d].isMemberwise {
-      // Memberwise initializers can only appear nested in a struct declaration.
-      let s = program.parent(containing: d, as: StructDeclaration.self)!
-
-      var inputs: [Parameter] = []
-      for m in program[s].members {
-        guard let b = program.cast(m, to: BindingDeclaration.self) else { continue }
-
-        // Make sure there's a type for each of the variables introduced by the declaration.
-        _ = declaredType(of: b)
-        program.forEachVariable(introducedBy: b) { (v, _) in
-          let t = program[module].type(assignedTo: b) ?? .error
-          let u = demand(RemoteType(projectee: t, access: .sink)).erased
-          inputs.append(
-            Parameter(
-              declaration: nil,
-              label: program[v].identifier.value, type: u,
-              isImplicit: false))
-        }
-      }
-
-      let t = demand(Arrow(inputs: inputs, output: output)).erased
-      program[module].setType(t, for: d)
-      return t
-    }
-
-    // We're looking at a custom initializer.
-    else {
-      let inputs = declaredTypes(of: program[d].parameters)
-      let t = demand(Arrow(inputs: inputs, output: output)).erased
-      program[module].setType(t, for: d)
-      return t
-    }
   }
 
   /// Returns the declared type of `d` without checking.
@@ -2695,8 +2635,6 @@ public struct Typer {
       switch program.tag(of: n) {
       case FunctionDeclaration.self:
         return expectedOutputType(in: program.castUnchecked(n, to: FunctionDeclaration.self))
-      case InitializerDeclaration.self:
-        return .void
       default:
         continue
       }

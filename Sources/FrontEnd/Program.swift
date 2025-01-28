@@ -199,8 +199,6 @@ public struct Program {
       return true
     case FunctionDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self) != nil
-    case InitializerDeclaration.self:
-      return parent(containing: n, as: TraitDeclaration.self) != nil
     default:
       return false
     }
@@ -212,8 +210,6 @@ public struct Program {
   public func isExtensionMember<T: SyntaxIdentity>(_ n: T) -> Bool {
     switch tag(of: n) {
     case FunctionDeclaration.self:
-      return parent(containing: n, as: ExtensionDeclaration.self) != nil
-    case InitializerDeclaration.self:
       return parent(containing: n, as: ExtensionDeclaration.self) != nil
     default:
       return false
@@ -457,8 +453,6 @@ public struct Program {
       return [name(of: castUnchecked(d, to: FunctionDeclaration.self))]
     case GenericParameterDeclaration.self:
       return [name(of: castUnchecked(d, to: GenericParameterDeclaration.self))]
-    case InitializerDeclaration.self:
-      return [name(of: castUnchecked(d, to: InitializerDeclaration.self))]
     case StructDeclaration.self:
       return [name(of: castUnchecked(d, to: StructDeclaration.self))]
     case TypeAliasDeclaration.self:
@@ -497,8 +491,6 @@ public struct Program {
       return name(of: castUnchecked(d, to: FunctionDeclaration.self))
     case GenericParameterDeclaration.self:
       return name(of: castUnchecked(d, to: GenericParameterDeclaration.self))
-    case InitializerDeclaration.self:
-      return name(of: castUnchecked(d, to: InitializerDeclaration.self))
     case StructDeclaration.self:
       return name(of: castUnchecked(d, to: StructDeclaration.self))
     case TypeAliasDeclaration.self:
@@ -518,8 +510,15 @@ public struct Program {
   /// Returns the name of `d`.
   public func name(of d: FunctionDeclaration.ID) -> Name {
     switch self[d].identifier.value {
+    case _ where self[d].introducer.value == .memberwiseinit:
+      let s = parent(containing: d, as: StructDeclaration.self)!
+      var labels: [String?] = []
+      forEachStoredProperty(of: s, do: { (v, _) in labels.append(self[v].identifier.value) })
+      return Name(identifier: "init", labels: .init(labels))
+
     case .simple(let x):
       return Name(identifier: x, labels: .init(self[d].parameters.map(read(\.label?.value))))
+
     case .operator(let n, let x):
       return Name(identifier: x, notation: n)
     }
@@ -528,18 +527,6 @@ public struct Program {
   /// Returns the name of `d`.
   public func name(of d: GenericParameterDeclaration.ID) -> Name {
     Name(identifier: self[d].identifier.value)
-  }
-
-  /// Returns the name of `d`.
-  public func name(of d: InitializerDeclaration.ID) -> Name {
-    var labels: [String?] = []
-    if self[d].isMemberwise {
-      let s = parent(containing: d, as: StructDeclaration.self)!
-      forEachStoredProperty(of: s, do: { (v, _) in labels.append(self[v].identifier.value) })
-    } else {
-      labels.append(contentsOf: self[d].parameters.map(read(\.label?.value)))
-    }
-    return Name(identifier: "init", labels: .init(labels))
   }
 
   /// Returns the name of `d`.
