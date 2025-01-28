@@ -66,7 +66,7 @@ final class LexerTests: XCTestCase {
   func testKeywords() throws {
     let input: SourceFile = """
       extension false fun given  import infix init inout internal let postfix prefix private public
-      return set sink struct subscript trait true type typealias var where
+      return set sink static struct subscript trait true type typealias var where
       """
     var scanner = Lexer(tokenizing: input)
     try assertNext(from: &scanner, is: .extension)
@@ -86,6 +86,7 @@ final class LexerTests: XCTestCase {
     try assertNext(from: &scanner, is: .return)
     try assertNext(from: &scanner, is: .set)
     try assertNext(from: &scanner, is: .sink)
+    try assertNext(from: &scanner, is: .static)
     try assertNext(from: &scanner, is: .struct)
     try assertNext(from: &scanner, is: .subscript)
     try assertNext(from: &scanner, is: .trait)

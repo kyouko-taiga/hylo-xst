@@ -69,6 +69,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "return": tag = .return
     case "set": tag = .set
     case "sink": tag = .sink
+    case "static": tag = .static
     case "struct": tag = .struct
     case "subscript": tag = .subscript
     case "trait": tag = .trait

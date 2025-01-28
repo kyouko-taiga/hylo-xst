@@ -28,11 +28,15 @@ extension BindingPattern: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
+    var result = "\(introducer) \(printer.show(pattern))"
+
     if let a = ascription {
-      return "\(introducer) \(printer.show(pattern)): \(printer.show(a))"
-    } else {
-      return "\(introducer) \(printer.show(pattern))"
+      result.append(": \(printer.show(a))")
+    } else if let t = printer.program[pattern.module].type(assignedTo: pattern) {
+      result.append(": \(printer.show(t))")
     }
+
+    return result
   }
 
 }

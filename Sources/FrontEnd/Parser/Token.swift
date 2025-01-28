@@ -29,6 +29,7 @@ public struct Token: Hashable {
     case `return`
     case set
     case sink
+    case `static`
     case `struct`
     case `subscript`
     case trait

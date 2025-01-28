@@ -1,0 +1,21 @@
+negative/invalid-modifer.hylo:1.1-7: error: declaration cannot be marked 'static'
+static trait P {
+~~~~~~
+negative/invalid-modifer.hylo:3.3-9: error: declaration cannot be marked 'public'
+  public type X
+  ~~~~~~
+negative/invalid-modifer.hylo:7.1-7: error: declaration cannot be marked 'static'
+static struct A {
+~~~~~~
+negative/invalid-modifer.hylo:9.3-9: error: declaration cannot be marked 'static'
+  static typealias Z = A
+  ~~~~~~
+negative/invalid-modifer.hylo:13.1-7: error: declaration cannot be marked 'public'
+public extension A {
+~~~~~~
+negative/invalid-modifer.hylo:15.17-23: error: duplicate modifier
+  public static public fun f0() {}
+                ~~~~~~
+negative/invalid-modifer.hylo:17.10-16: error: 'public' should occur before 'static'
+  static public fun f0() {}
+         ~~~~~~

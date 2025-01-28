@@ -44,6 +44,9 @@ public struct Parser {
     swap(&file.roots, &roots)
   }
 
+  /// A sequence of modifiers prefixing a declaration.
+  private typealias DeclarationPrologue = [Parsed<DeclarationModifier>]
+
   /// Parses a declaration.
   ///
   ///     declaration ::=
@@ -57,29 +60,76 @@ public struct Parser {
   private mutating func parseDeclaration(
     in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
-    guard let head = peek() else { throw expected("declaration") }
+    let prologue = parseDeclarationModifiers()
 
+    guard let head = peek() else { throw expected("declaration") }
     switch head.tag {
     case .inout, .let, .set, .sink, .var:
-      return try .init(parseBindingDeclaration(in: &file))
+      return try .init(parseBindingDeclaration(after: prologue, in: &file))
     case .given:
-      return try .init(parseConformanceDeclaration(in: &file))
+      return try .init(parseConformanceDeclaration(after: prologue, in: &file))
     case .extension:
-      return try .init(parseExtensionDeclaration(in: &file))
+      return try .init(parseExtensionDeclaration(after: prologue, in: &file))
     case .fun, .`init`:
-      return try .init(parseFunctionDeclaration(in: &file))
+      return try .init(parseFunctionDeclaration(after: prologue, in: &file))
     case .struct:
-      return try .init(parseStructDeclaration(in: &file))
+      return try .init(parseStructDeclaration(after: prologue, in: &file))
     case .trait:
-      return try .init(parseTraitDeclaration(in: &file))
+      return try .init(parseTraitDeclaration(after: prologue, in: &file))
     case .type:
-      return try .init(parseAssociatedTypeDeclaration(in: &file))
+      return try .init(parseAssociatedTypeDeclaration(after: prologue, in: &file))
     case .typealias:
-      return try .init(parseTypeAliasDeclaration(in: &file))
+      return try .init(parseTypeAliasDeclaration(after: prologue, in: &file))
     case .name where head.text == "memberwise":
-      return try .init(parseFunctionDeclaration(in: &file))
+      return try .init(parseFunctionDeclaration(after: prologue, in: &file))
     default:
       throw expected("declaration", at: .empty(at: head.site.start))
+    }
+  }
+
+  /// Parses a sequence of declaration modifiers.
+  private mutating func parseDeclarationModifiers() -> [Parsed<DeclarationModifier>] {
+    var modifiers: [Parsed<DeclarationModifier>] = []
+    while let m = parseOptionaDeclarationModifiers() {
+      append(m)
+    }
+    return modifiers
+
+    func append(_ m: Parsed<DeclarationModifier>) {
+      for i in 0 ..< modifiers.count {
+        if modifiers[i].value == m.value {
+          report(.init("duplicate modifier", at: m.site))
+          return
+        } else if !m.value.canOccurWith(modifiers[i].value) {
+          report(.init("'\(m.value)' is incompatible with '\(modifiers[i].value)'", at: m.site))
+          return
+        } else if !m.value.canOccurAfter(modifiers[i].value) {
+          report(.init("'\(m.value)' should occur before '\(modifiers[i].value)'", at: m.site))
+          modifiers.insert(m, at: i)
+          return
+        }
+      }
+      modifiers.append(m)
+    }
+  }
+
+  /// Parses a sequence of declaration modifier if the next token denotes one.
+  ///
+  ///     declaration-modifier ::= (one of)
+  ///       static private internal private
+  ///
+  private mutating func parseOptionaDeclarationModifiers() -> Parsed<DeclarationModifier>? {
+    switch peek()?.tag {
+    case .static:
+      return .init(.static, at: take()!.site)
+    case .private:
+      return .init(.private, at: take()!.site)
+    case .internal:
+      return .init(.internal, at: take()!.site)
+    case .public:
+      return .init(.public, at: take()!.site)
+    default:
+      return nil
     }
   }
 
@@ -89,10 +139,13 @@ public struct Parser {
   ///       'type' identifier
   ///
   private mutating func parseAssociatedTypeDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> AssociatedTypeDeclaration.ID {
     let introducer = try take(.type) ?? expected("'type'")
     let identifier = parseSimpleIdentifier()
+
+    // No modifiers allowed on extensions.
+    _ = sanitize(prologue, accepting: { _ in false })
 
     return file.insert(
       AssociatedTypeDeclaration(
@@ -107,14 +160,14 @@ public struct Parser {
   ///       binding-pattern ('=' expression)?
   ///
   private mutating func parseBindingDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> BindingDeclaration.ID {
     let b = try parseBindingPattern(in: &file)
     let i = try parseOptionalInitializer(in: &file)
 
     return file.insert(
       BindingDeclaration(
-        pattern: b, initializer: i,
+        modifiers: prologue, pattern: b, initializer: i,
         site: span(from: file[b].site.start)))
   }
 
@@ -139,7 +192,7 @@ public struct Parser {
   ///       'given' expression ':' expression type-body
   ///
   private mutating func parseConformanceDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> ConformanceDeclaration.ID {
     let introducer = try take(.given) ?? expected("'given'")
     let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
@@ -164,12 +217,15 @@ public struct Parser {
   ///       'extension' expression type-body
   ///
   private mutating func parseExtensionDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> ExtensionDeclaration.ID {
     let introducer = try take(.extension) ?? expected("'extension'")
     let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
     let extendee = try parseExpression(in: &file)
     let members = try parseTypeBody(in: &file)
+
+    // No modifiers allowed on extensions.
+    _ = sanitize(prologue, accepting: { _ in false })
 
     return file.insert(
       ExtensionDeclaration(
@@ -190,7 +246,7 @@ public struct Parser {
   ///       compile-time-parameters? run-time-parameters
   ///
   private mutating func parseFunctionDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> FunctionDeclaration.ID {
     let introducer = try parseFunctionIntroducer()
 
@@ -204,6 +260,7 @@ public struct Parser {
       let b = try parseOptionalCallableBody(in: &file)
       return file.insert(
         FunctionDeclaration(
+          modifiers: prologue,
           introducer: introducer, identifier: n,
           staticParameters: s, parameters: r,
           effect: e,
@@ -218,6 +275,7 @@ public struct Parser {
       let b = try parseOptionalCallableBody(in: &file)
       return file.insert(
         FunctionDeclaration(
+          modifiers: sanitize(prologue, accepting: \.isApplicableToInitializer),
           introducer: introducer, identifier: .init(.simple("init"), at: introducer.site),
           staticParameters: s, parameters: r,
           effect: .init(.set, at: .empty(at: position)),
@@ -229,6 +287,7 @@ public struct Parser {
     else if introducer.value == .memberwiseinit {
       return file.insert(
         FunctionDeclaration(
+          modifiers: sanitize(prologue, accepting: \.isApplicableToInitializer),
           introducer: introducer, identifier: .init(.simple("init"), at: introducer.site),
           staticParameters: .empty(at: .empty(at: position)), parameters: [],
           effect: .init(.set, at: .empty(at: position)),
@@ -401,7 +460,7 @@ public struct Parser {
   ///       'struct' identifier type-body
   ///
   private mutating func parseStructDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> StructDeclaration.ID {
     let introducer = try take(.struct) ?? expected("'struct'")
     let identifier = parseSimpleIdentifier()
@@ -410,6 +469,7 @@ public struct Parser {
 
     return file.insert(
       StructDeclaration(
+        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
         staticParameters: staticParameters,
@@ -423,7 +483,7 @@ public struct Parser {
   ///       'trait' identifier type-body
   ///
   private mutating func parseTraitDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> TraitDeclaration.ID {
     let introducer = try take(.trait) ?? expected("'trait'")
     let identifier = parseSimpleIdentifier()
@@ -435,6 +495,7 @@ public struct Parser {
 
     return file.insert(
       TraitDeclaration(
+        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
         parameters: [conformer],
@@ -465,7 +526,7 @@ public struct Parser {
   ///       'typealias' identifier '=' expression
   ///
   private mutating func parseTypeAliasDeclaration(
-    in file: inout Module.SourceContainer
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> TypeAliasDeclaration.ID {
     let introducer = try take(.typealias) ?? expected("'typealias'")
     let identifier = parseSimpleIdentifier()
@@ -474,6 +535,7 @@ public struct Parser {
 
     return file.insert(
       TypeAliasDeclaration(
+        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
         aliasee: aliasee,
@@ -486,6 +548,19 @@ public struct Parser {
   ) throws -> VariableDeclaration.ID {
     let n = try take(.name) ?? expected("identifier")
     return file.insert(VariableDeclaration(identifier: .init(n)))
+  }
+
+  /// Returns `modifiers` sans those that do not satisfy `isValid`.
+  private mutating func sanitize(
+    _ modifiers: consuming DeclarationPrologue, accepting isValid: (DeclarationModifier) -> Bool
+  ) -> DeclarationPrologue {
+    var end = modifiers.count
+    for i in (0 ..< modifiers.count).reversed() where !isValid(modifiers[i].value) {
+      report(.init("declaration cannot be marked '\(modifiers[i].value)'", at: modifiers[i].site))
+      modifiers.swapAt(i, end - 1)
+      end -= 1
+    }
+    return .init(modifiers.prefix(upTo: end))
   }
 
   // MARK: Expressions

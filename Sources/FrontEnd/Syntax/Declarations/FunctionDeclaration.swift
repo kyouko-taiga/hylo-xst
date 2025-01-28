@@ -29,6 +29,9 @@ public struct FunctionDeclaration: Declaration, Scope {
 
   }
 
+  /// The modifiers applied to this declaration.
+  public let modifiers: [Parsed<DeclarationModifier>]
+
   /// The introducer of this declaration.
   public let introducer: Parsed<Introducer>
 
@@ -64,7 +67,8 @@ extension FunctionDeclaration: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    var result: String = ""
+    var result = ""
+    for m in modifiers { result.append("\(m) ") }
 
     switch introducer.value {
     case .fun: result.append("fun \(identifier.value)")
