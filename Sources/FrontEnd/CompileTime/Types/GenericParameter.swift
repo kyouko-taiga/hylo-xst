@@ -9,6 +9,8 @@ public enum GenericParameter: TypeTree {
 
   case transitivity(UInt8)
 
+  case trait(TraitDeclaration.ID)
+
   case user(GenericParameterDeclaration.ID)
 
   /// Properties about `self`.
@@ -34,6 +36,8 @@ extension GenericParameter: Showable {
       return printer.uniquized("T\(i)", for: self)
     case .transitivity(let i):
       return printer.uniquized("T\(i)", for: self)
+    case .trait:
+      return printer.uniquized("Self", for: self)
     case .user(let d):
       return printer.uniquized(printer.program[d].identifier.value, for: self)
     }

@@ -14,8 +14,6 @@ public struct TraitDeclaration: TypeDeclaration, Scope {
   public let identifier: Parsed<String>
 
   /// The generic parameters of the trait.
-  ///
-  /// The first element introduces the trait's conformer.
   public let parameters: [GenericParameterDeclaration.ID]
 
   /// The members of the declared trait.
@@ -23,11 +21,6 @@ public struct TraitDeclaration: TypeDeclaration, Scope {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
-
-  /// The declaration of the generic parameter referring to conforming types.
-  public var conformer: GenericParameterDeclaration.ID {
-    parameters[0]
-  }
 
 }
 

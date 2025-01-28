@@ -1597,8 +1597,7 @@ public struct Typer {
 
   /// Returns the type of an instance of `Self` in `s`.
   private mutating func typeOfSelf(in d: TraitDeclaration.ID) -> AnyTypeIdentity {
-    let t = declaredType(of: program[d].conformer)
-    return (program.types[program.types.head(t)] as? Metatype)?.inhabitant ?? .error
+    demand(GenericParameter.trait(d)).erased
   }
 
   /// Returns the type of a model witnessing the conformance of `conformer` to `concept`.
@@ -1606,7 +1605,7 @@ public struct Typer {
     of conformer: AnyTypeIdentity, conformingTo concept: TraitDeclaration.ID
   ) -> AnyTypeIdentity {
     let f = demand(Trait(declaration: concept)).erased
-    let p = demand(GenericParameter.user(program[concept].conformer))
+    let p = demand(GenericParameter.trait(concept))
     return demand(TypeApplication(abstraction: f, arguments: [p: conformer])).erased
   }
 
@@ -1685,7 +1684,7 @@ public struct Typer {
 
   /// Returns the context parameters of the type of an instance of `Self` in `s`.
   private mutating func contextOfSelf(in s: TraitDeclaration.ID) -> ContextClause {
-    let p = demand(GenericParameter.user(program[s].conformer))
+    let p = demand(GenericParameter.trait(s))
     let w = typeOfModel(of: p.erased, conformingTo: s)
     return .init(parameters: [p], usings: [w])
   }
