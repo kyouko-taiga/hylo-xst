@@ -67,7 +67,7 @@ public struct Parser {
     case .inout, .let, .set, .sink, .var:
       return try .init(parseBindingDeclaration(after: prologue, in: &file))
     case .given:
-      return try .init(parseConformanceDeclaration(after: prologue, in: &file))
+      return try parseGivenDeclaration(after: prologue, in: &file)
     case .extension:
       return try .init(parseExtensionDeclaration(after: prologue, in: &file))
     case .fun, .`init`:
@@ -90,7 +90,7 @@ public struct Parser {
   /// Parses a sequence of declaration modifiers.
   private mutating func parseDeclarationModifiers() -> [Parsed<DeclarationModifier>] {
     var modifiers: [Parsed<DeclarationModifier>] = []
-    while let m = parseOptionaDeclarationModifiers() {
+    while let m = parseOptionalDeclarationModifiers() {
       append(m)
     }
     return modifiers
@@ -118,7 +118,7 @@ public struct Parser {
   ///     declaration-modifier ::= (one of)
   ///       static private internal private
   ///
-  private mutating func parseOptionaDeclarationModifiers() -> Parsed<DeclarationModifier>? {
+  private mutating func parseOptionalDeclarationModifiers() -> Parsed<DeclarationModifier>? {
     switch peek()?.tag {
     case .static:
       return .init(.static, at: take()!.site)
@@ -160,55 +160,16 @@ public struct Parser {
   ///       binding-pattern ('=' expression)?
   ///
   private mutating func parseBindingDeclaration(
+    asGiven: Bool = false,
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> BindingDeclaration.ID {
     let b = try parseBindingPattern(in: &file)
-    let i = try parseOptionalInitializer(in: &file)
+    let i = try parseOptionalInitializerExpression(in: &file)
 
     return file.insert(
       BindingDeclaration(
-        modifiers: prologue, pattern: b, initializer: i,
+        modifiers: prologue, isGiven: asGiven, pattern: b, initializer: i,
         site: span(from: file[b].site.start)))
-  }
-
-  /// Parses an initializer/default expression iff the next token an equal sign.
-  ///
-  ///     initializer-expression ::=
-  ///       '=' expression
-  ///
-  private mutating func parseOptionalInitializer(
-    in file: inout Module.SourceContainer
-  ) throws -> ExpressionIdentity? {
-    if take(.assign) != nil {
-      return try parseExpression(in: &file)
-    } else {
-      return nil
-    }
-  }
-
-  /// Parses a conformance declaration.
-  ///
-  ///     conformance-declaration ::=
-  ///       'given' expression ':' expression type-body
-  ///
-  private mutating func parseConformanceDeclaration(
-    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
-  ) throws -> ConformanceDeclaration.ID {
-    let introducer = try take(.given) ?? expected("'given'")
-    let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
-    let extendee = try parseExpression(in: &file)
-    _ = try take(.colon) ?? expected("':'")
-    let concept = try parseExpression(in: &file)
-    let members = try parseTypeBody(in: &file)
-
-    return file.insert(
-      ConformanceDeclaration(
-        introducer: introducer,
-        staticParameters: staticParameters,
-        extendee: extendee,
-        concept: concept,
-        members: members,
-        site: span(from: introducer)))
   }
 
   /// Parses an extension declaration.
@@ -234,6 +195,43 @@ public struct Parser {
         extendee: extendee,
         members: members,
         site: span(from: introducer)))
+  }
+
+  /// Parses a given binding or a conformance declaration.
+  ///
+  ///     given-declaration ::=
+  ///       'given' binding-declaration
+  ///       'given' conformance-declaration
+  ///
+  private mutating func parseGivenDeclaration(
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
+  ) throws -> DeclarationIdentity {
+    let head = try take(.given) ?? expected("'given'")
+
+    // Is the next token a binding introducer?
+    let next = try peek() ?? expected("'declaration'")
+    if next.isBindingIntroducer {
+      return try .init(parseBindingDeclaration(asGiven: true, after: prologue, in: &file))
+    }
+
+    // Expect a conformance declaration.
+    else {
+      let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
+      let extendee = try parseExpression(in: &file)
+      _ = try take(.colon) ?? expected("':'")
+      let concept = try parseExpression(in: &file)
+      let members = try parseTypeBody(in: &file)
+
+      let d = file.insert(
+        ConformanceDeclaration(
+          introducer: head,
+          staticParameters: staticParameters,
+          extendee: extendee,
+          concept: concept,
+          members: members,
+          site: span(from: head)))
+      return .init(d)
+    }
   }
 
   /// Parses a function declaration.
@@ -425,7 +423,7 @@ public struct Parser {
     }
 
     let ascription = try parseOptionalParameterTypeAscription(in: &file)
-    let defaultValue = try parseOptionalInitializer(in: &file)
+    let defaultValue = try parseOptionalInitializerExpression(in: &file)
 
     return file.insert(
       ParameterDeclaration(
@@ -489,16 +487,12 @@ public struct Parser {
     let identifier = parseSimpleIdentifier()
     let members = try parseTypeBody(in: &file)
 
-    let conformer = file.insert(
-      GenericParameterDeclaration(
-        identifier: .init("Self", at: identifier.site), site: identifier.site))
-
     return file.insert(
       TraitDeclaration(
         modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
-        parameters: [conformer],
+        parameters: [],
         members: members,
         site: span(from: introducer)))
   }
@@ -548,6 +542,21 @@ public struct Parser {
   ) throws -> VariableDeclaration.ID {
     let n = try take(.name) ?? expected("identifier")
     return file.insert(VariableDeclaration(identifier: .init(n)))
+  }
+
+  /// Parses an initializer/default expression iff the next token an equal sign.
+  ///
+  ///     initializer-expression ::=
+  ///       '=' expression
+  ///
+  private mutating func parseOptionalInitializerExpression(
+    in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity? {
+    if take(.assign) != nil {
+      return try parseExpression(in: &file)
+    } else {
+      return nil
+    }
   }
 
   /// Returns `modifiers` sans those that do not satisfy `isValid`.
@@ -746,7 +755,7 @@ public struct Parser {
     case .leftParenthesis:
       return try parseTupleLiteralOrParenthesizedExpression(in: &file)
     case .underscore:
-      return try .init(parseWildcardTypeLiteral(in: &file))
+      return try .init(parseWildcardLiteral(in: &file))
     default:
       throw expected("expression")
     }
@@ -856,16 +865,16 @@ public struct Parser {
     }
   }
 
-  /// Parses a wildcard type literal.
+  /// Parses a wildcard literal.
   ///
-  ///     wildcard-type-literal ::=
+  ///     wildcard-literal ::=
   ///       '_'
   ///
-  private mutating func parseWildcardTypeLiteral(
+  private mutating func parseWildcardLiteral(
     in file: inout Module.SourceContainer
-  ) throws -> WildcardTypeLiteral.ID {
+  ) throws -> WildcardLiteral.ID {
     let u = try take(.underscore) ?? expected("'_'")
-    return file.insert(WildcardTypeLiteral(site: u.site))
+    return file.insert(WildcardLiteral(site: u.site))
   }
 
   /// Parses a type ascription iff the next token is a colon.
@@ -933,6 +942,8 @@ public struct Parser {
       return try .init(parseVariableDeclaration(in: &file))
     case .leftParenthesis:
       return try parseTuplePatternOrParenthesizedPattern(in: &file)
+    case .underscore:
+      return try .init(parseWildcardLiteral(in: &file))
     default:
       return try .init(parseExpression(in: &file))
     }

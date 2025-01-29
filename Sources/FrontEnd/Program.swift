@@ -187,7 +187,9 @@ public struct Program {
   ///
   /// - Requires: The module containing `s` is scoped.
   public func isTopLevel<T: SyntaxIdentity>(_ n: T) -> Bool {
-    parent(containing: n).node == nil
+    modules.values[n.module][n.file].topLevelDeclarations.contains { (m) in
+      m.erased == n.erased
+    }
   }
 
   /// Returns `true` iff `n` is a trait requirement.
@@ -197,8 +199,24 @@ public struct Program {
     switch tag(of: n) {
     case AssociatedTypeDeclaration.self:
       return true
+    case BindingDeclaration.self:
+      return parent(containing: n, as: TraitDeclaration.self) != nil
     case FunctionDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self) != nil
+    default:
+      return false
+    }
+  }
+
+  /// Returns `true` iff `n` introduces entities in the implicit scope.
+  public func isGiven<T: SyntaxIdentity>(_ n: T) -> Bool {
+    switch tag(of: n) {
+    case BindingDeclaration.self:
+      return self[castUnchecked(n, to: BindingDeclaration.self)].isGiven
+    case ConformanceDeclaration.self:
+      return true
+    case UsingDeclaration.self:
+      return true
     default:
       return false
     }
@@ -253,18 +271,6 @@ public struct Program {
   /// Returns `true` iff `n` has the form `q.new`, where `q` is an arbitrary qualification.
   public func isConstructorReference(_ n: NameExpression.ID) -> Bool {
     self[n].name.value.identifier == "new"
-  }
-
-  /// Returns `true` iff `t` is a type constructor accepting parameters.
-  public func isHigherKinded(_ t: AnyTypeIdentity) -> Bool {
-    switch types[t] {
-    case let u as Struct:
-      return !self[u.declaration].staticParameters.isEmpty
-    case is Trait:
-      return true
-    default:
-      return false
-    }
   }
 
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.

@@ -170,6 +170,16 @@ public struct Typer {
     program.forEachVariable(introducedBy: d) { (v, _) in
       ensureUniqueDeclaration(v, of: program[v].identifier.value)
     }
+
+    if program[d].isGiven,  let p = program.parent(containing: d).node {
+      switch program.tag(of: p) {
+      case ConformanceDeclaration.self, TraitDeclaration.self:
+        break
+      default:
+        let s = program.spanForDiagnostic(about: d)
+        report(.init(.error, "givens type definitions are not supported yet", at: s))
+      }
+    }
   }
 
   /// Type checks `d`.
@@ -188,6 +198,8 @@ public struct Typer {
       return
     }
 
+    // The expected types of implementations satisfying the concept's requirements are computed by
+    // substituting  the abstract types of the concept by their corresponding assignment.
     let concept = program.types[c].declaration
     var substitutions = [typeOfSelf(in: concept): conformer]
 
@@ -198,14 +210,14 @@ public struct Typer {
     // Find the implementations of associated types in the conformance declaration itself.
     for r in associatedTypes {
       let a = program.castUnchecked(r, to: AssociatedTypeDeclaration.self)
-      let i = implementation(of: a, in: d).map({ (i) in declaredType(of: i) }) ?? .error
+      let i = self.implementation(of: a, in: d).map({ (i) in declaredType(of: i) }) ?? .error
 
       if let m = program.types[i] as? Metatype {
         let k0 = declaredType(of: a)
         let k1 = program.types[k0] as! Metatype
         substitutions[k1.inhabitant] = m.inhabitant
       } else {
-        return reportMissingImplementation(of: a)
+        return reportMissingImplementation(of: a, in: d)
       }
     }
 
@@ -213,14 +225,65 @@ public struct Typer {
     // since witness tables are built on demand.
     for r in requirements {
       switch program.tag(of: r) {
+      case BindingDeclaration.self:
+        _ = anonymousImplementation(of: r)
       case FunctionDeclaration.self:
-        _ = implementation(
-          of: program.castUnchecked(r, to: FunctionDeclaration.self), in: concept,
-          for: conformer, applying: substitutions, in: d)
-
+        _ = namedImplementation(of: r)
       default:
         program.unexpected(r)
       }
+    }
+
+    /// Returns the declarations implementing `requirement`.
+    func namedImplementation(of requirement: DeclarationIdentity) -> DeclarationReference? {
+      let requiredName = program.name(of: requirement)!
+      let requiredType = expectedImplementationType(of: requirement)
+
+      var viable: [DeclarationReference] = []
+
+      // Is there a unique implementation in the conformance declaration?
+      for c in lookup(requiredName.identifier, lexicallyIn: .init(node: d)) {
+        let candidateType = declaredType(of: c)
+        if unifiable(candidateType, requiredType) { viable.append(.direct(c)) }
+      }
+
+      if viable.isEmpty {
+        // Is there an implementation that is already member of the conforming type?
+        let q = TypedQualification(value: .virtual, type: conformer)
+        for c in resolve(requiredName, memberOf: q, visibleFrom: .init(node: d)) {
+          if !unifiable(c.type, requiredType) { continue }
+
+          // If we resolved the requirement, make sure it has a default implementation.
+          switch c.reference {
+          case .inherited(_, requirement) where !hasDefinition(requirement):
+            continue
+          default:
+            viable.append(c.reference)
+          }
+        }
+      }
+
+      if let pick = viable.uniqueElement {
+        return pick
+      } else if !viable.isEmpty {
+        reportAmbiguousImplementation(of: requiredName, in: d)
+      } else {
+        reportMissingImplementation(of: requiredName, in: d)
+      }
+
+      return nil
+    }
+
+    func anonymousImplementation(of requirement: DeclarationIdentity) -> Any {
+      let requiredType = expectedImplementationType(of: requirement)
+      let summonings = summon(requiredType, in: .init(node: d))
+      return summonings
+    }
+
+    /// Returns the expected type of an implementation of `requirement`.
+    func expectedImplementationType(of requirement: DeclarationIdentity) -> AnyTypeIdentity {
+      let t = declaredType(of: requirement)
+      return program.types.substitute(substitutions, in: program.types.bodyAndContext(t).body)
     }
   }
 
@@ -338,6 +401,17 @@ public struct Typer {
     for p in ps.implicit { check(p) }
   }
 
+  /// Returns `true` iff `d` has a definition.
+  private func hasDefinition(_ d: DeclarationIdentity) -> Bool {
+    switch program.tag(of: d) {
+    case FunctionDeclaration.self:
+      return program[program.castUnchecked(d, to: FunctionDeclaration.self)].body != nil
+    case BindingDeclaration.self:
+      return program[program.castUnchecked(d, to: BindingDeclaration.self)].initializer != nil
+    default:
+      return true
+    }
+  }
 
   /// Returns `true` iff `d` needs a user-defined a definition.
   ///
@@ -426,10 +500,13 @@ public struct Typer {
   }
 
   /// Reports that `requirement` has no implementation.
-  private mutating func reportMissingImplementation(of requirement: AssociatedTypeDeclaration.ID) {
+  private mutating func reportMissingImplementation(
+    of requirement: AssociatedTypeDeclaration.ID,
+    in conformance: ConformanceDeclaration.ID
+  ) {
     let n = program[requirement].identifier.value
     let m = "no implementation of associated type requirement '\(n)'"
-    report(.init(.error, m, at: program.spanForDiagnostic(about: requirement)))
+    report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
   }
 
   /// Reports that `requirement` has no implementation.
@@ -449,6 +526,24 @@ public struct Typer {
   ) {
     let n = program.name(of: requirement)
     let m = "ambiguous implementation of '\(n)'"
+    report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
+  }
+
+  /// Reports that `requirement` has no implementation.
+  private mutating func reportMissingImplementation(
+    of requirement: Name,
+    in conformance: ConformanceDeclaration.ID
+  ) {
+    let m = "no implementation of '\(requirement)'"
+    report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
+  }
+
+  /// Reports that `requirement` has multiple equally valid implementations.
+  private mutating func reportAmbiguousImplementation(
+    of requirement: Name,
+    in conformance: ConformanceDeclaration.ID
+  ) {
+    let m = "ambiguous implementation of '\(requirement)'"
     report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
   }
 
@@ -623,11 +718,23 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    initializeContext(program[d].staticParameters)
-    let t = declaredConformanceType(program[d].extendee, program[d].concept)
-    let u = introduce(program[d].staticParameters, into: t)
-    program[module].setType(u, for: d)
-    return u
+    // Is it the first time we enter this method for `d`?
+    if declarationsOnStack.insert(.init(d)).inserted {
+      defer { declarationsOnStack.remove(.init(d)) }
+
+      initializeContext(program[d].staticParameters)
+      let t = declaredConformanceType(program[d].extendee, program[d].concept)
+      let u = introduce(program[d].staticParameters, into: t)
+      program[module].setType(u, for: d)
+      return u
+    }
+
+    // Cyclic reference detected.
+    else {
+      let s = program.spanForDiagnostic(about: d)
+      report(.init(.error, "declaration refers to itself", at: s))
+      return .error
+    }
   }
 
   /// Returns the declared type of `d` without checking.
@@ -739,9 +846,15 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    let t = metatype(of: Trait(declaration: d)).erased
-    program[module].setType(t, for: d)
-    return t
+    var ps = [demand(GenericParameter.trait(d))]
+    ps.append(contentsOf: declaredTypes(of: program[d].parameters))
+
+    let a = TypeApplication.Arguments(uniqueKeysWithValues: ps.map({ (p) in (p, p.erased) }))
+    let f = demand(Trait(declaration: d)).erased
+    let t = metatype(of: TypeApplication(abstraction: f, arguments: a)).erased
+    let u = demand(UniversalType(parameters: ps, body: t)).erased
+    program[module].setType(u, for: d)
+    return u
   }
 
   /// Returns the declared type of `d` without checking.
@@ -824,30 +937,33 @@ public struct Typer {
     }
   }
 
-  /// Returns the type of a value witnessing the conformance of `extendee` to `concept`.
+  /// Returns the type of a value witnessing the conformance of `conformer` to `concept`.
   private mutating func declaredConformanceType(
-    _ extendee: ExpressionIdentity, _ concept: ExpressionIdentity
+    _ conformer: ExpressionIdentity, _ concept: ExpressionIdentity
   ) -> AnyTypeIdentity {
-    let e = evaluateTypeAscription(extendee)
-    let c = evaluateTypeAscription(concept)
+    // Left-hand side represents the conformer.
+    guard let lhs = evaluateTypeAscription(conformer).unlessError else { return .error }
 
-    // Was there an error?
-    if (e == .error) || (c == .error) {
-      return .error
+    // Right-hand side should have the form `<T> P<T>`.
+    var context = InferenceContext()
+    let rhs = context.withSubcontext(role: .ascription) { (ctx) in
+      inferredType(of: concept, in: &ctx)
     }
+    let s = discharge(context.obligations, relatedTo: concept)
+    let f = program.types.reify(rhs, applying: s.substitutions)
 
-    // Is the expression of the concept denoting something other than a trait?
-    else if let concept = program.types[c] as? Trait {
-      return typeOfModel(of: e, conformingTo: concept.declaration)
-    }
-
-    // Is the expression of the concept denoting something other than a trait?
+    guard
+      let u = program.types[f] as? UniversalType,
+      let m = program.types[u.body] as? Metatype,
+      let (p, _) = program.types.castToTraitApplication(m.inhabitant)
     else {
-      let m = program.format("'%T' is not a trait", [c])
+      let m = program.format("'%T' is not a trait", [f])
       let s = program[concept].site
       report(.init(.error, m, at: s))
       return .error
     }
+
+    return typeOfModel(of: lhs, conformingTo: program.types[p].declaration)
   }
 
   /// Returns the type of a value witnessing the conformance of `lhs` to `rhs`.
@@ -876,6 +992,12 @@ public struct Typer {
     switch g {
     case .user(let d):
       return declaredType(of: d)
+
+    case .nested(let p, let d):
+      let c = contextOfSelf(in: p)
+      let t = declaredType(of: d)
+      let u = program.types.introduce(c, into: t)
+      return u
 
     case .abstract(let t):
       return t
@@ -993,6 +1115,8 @@ public struct Typer {
       ascribe(t, to: program.castUnchecked(p, to: TuplePattern.self))
     case VariableDeclaration.self:
       ascribe(t, to: program.castUnchecked(p, to: VariableDeclaration.self))
+    case WildcardLiteral.self:
+      ascribe(t, to: program.castUnchecked(p, to: WildcardLiteral.self))
     default:
       check(program.castToExpression(p)!, expecting: t)
     }
@@ -1030,6 +1154,11 @@ public struct Typer {
 
   /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
   private mutating func ascribe(_ t: AnyTypeIdentity, to p: VariableDeclaration.ID) {
+    program[module].setType(t, for: p)
+  }
+
+  /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
+  private mutating func ascribe(_ t: AnyTypeIdentity, to p: WildcardLiteral.ID) {
     program[module].setType(t, for: p)
   }
 
@@ -1091,8 +1220,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: TupleLiteral.self), in: &context)
     case TupleTypeExpression.self:
       return inferredType(of: castUnchecked(e, to: TupleTypeExpression.self), in: &context)
-    case WildcardTypeLiteral.self:
-      return inferredType(of: castUnchecked(e, to: WildcardTypeLiteral.self), in: &context)
+    case WildcardLiteral.self:
+      return inferredType(of: castUnchecked(e, to: WildcardLiteral.self), in: &context)
     default:
       program.unexpected(e)
     }
@@ -1335,14 +1464,21 @@ public struct Typer {
 
   /// Returns the inferred type of `e`.
   private mutating func inferredType(
-    of e: WildcardTypeLiteral.ID, in context: inout InferenceContext
+    of e: WildcardLiteral.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    if let t = context.expectedType, program.types.tag(of: t) == Metatype.self {
+    switch context.role {
+    case .ascription:
+      if let t = context.expectedType, program.types.tag(of: t) == Metatype.self {
+        return context.obligations.assume(e, hasType: t, at: program[e].site)
+      } else {
+        let t = fresh().erased
+        let u = demand(Metatype(inhabitant: t)).erased
+        return context.obligations.assume(e, hasType: u, at: program[e].site)
+      }
+
+    default:
+      let t = context.expectedType ?? fresh().erased
       return context.obligations.assume(e, hasType: t, at: program[e].site)
-    } else {
-      let t = fresh().erased
-      let u = demand(Metatype(inhabitant: t)).erased
-      return context.obligations.assume(e, hasType: u, at: program[e].site)
     }
   }
 
@@ -1651,6 +1787,44 @@ public struct Typer {
     }
   }
 
+//  -  /// Returns the context parameters of the type of an instance of `Self` in `s`, or `nil` if `s`
+//  -  /// isn’t notionally in the scope of a type declaration.
+//  -  private mutating func contextOfSelf(in s: ScopeIdentity) -> ContextClause? {
+//  -    guard let n = s.node else { return nil }
+//  -
+//  -    switch program.tag(of: n) {
+//  -    case ConformanceDeclaration.self:
+//  -      return contextOfSelf(in: program.castUnchecked(n, to: ConformanceDeclaration.self))
+//  -    case ExtensionDeclaration.self:
+//  -      return contextOfSelf(in: program.castUnchecked(n, to: ExtensionDeclaration.self))
+//  -    case StructDeclaration.self:
+//  -      return .empty
+//  -    case TraitDeclaration.self:
+//  -      return contextOfSelf(in: program.castUnchecked(n, to: TraitDeclaration.self))
+//  -    default:
+//  -      return contextOfSelf(in: program.parent(containing: n))
+//  -    }
+//  -  }
+//  -
+//  -  /// Returns the context parameters of the type of an instance of `Self` in `s`.
+//  -  private mutating func contextOfSelf(in s: ConformanceDeclaration.ID) -> ContextClause {
+//  -    let t = declaredType(of: s)
+//  -    return program.types.bodyAndContext(t).context
+//  -  }
+//  -
+//  -  /// Returns the context parameters of the type of an instance of `Self` in `s`.
+//  -  private mutating func contextOfSelf(in s: ExtensionDeclaration.ID) -> ContextClause {
+//  -    let t = extendeeType(s)
+//  -    return program.types.bodyAndContext(t).context
+//  -  }
+
+  /// Returns the context parameters of the type of an instance of `Self` in `s`.
+  private mutating func contextOfSelf(in s: TraitDeclaration.ID) -> ContextClause {
+    let p = demand(GenericParameter.trait(s))
+    let w = typeOfModel(of: p.erased, conformingTo: s)
+    return .init(parameters: [p], usings: [w])
+  }
+
   // MARK: Compile-time evaluation
 
   /// Returns the value of `e` evaluated as a type ascription.
@@ -1784,6 +1958,31 @@ public struct Typer {
     /// in a tack-based DSL.
     let tail: [ContinuationItem]
 
+    /// Extra weight added to the resolution of the witness.
+    ///
+    /// - Invariant: This property is greater than or equal to 0.
+    let penalties: Int
+
+    /// Creates an instance with the given properties.
+    init(
+      matching witness: WitnessExpression, to queried: AnyTypeIdentity,
+      in environment: Environment,
+      then tail: [ContinuationItem] = [],
+      delayedBy penalties: Int = 0
+    ) {
+      assert(penalties >= 0)
+      self.witness = witness
+      self.queried = queried
+      self.environment = environment
+      self.tail = tail
+      self.penalties = penalties
+    }
+
+    /// Returns a copy of `self` with one less penalty.
+    consuming func removingPenalty() -> ResolutionThread {
+      .init(matching: witness, to: queried, in: environment, then: tail, delayedBy: penalties - 1)
+    }
+
   }
 
   /// Returns witnesses of values of type `t` derivable from the implicit store in `scopeOfUse`.
@@ -1810,7 +2009,11 @@ public struct Typer {
       result = takeSummonResults(from: threads, in: scopeOfUse)
     }
 
-    cache.scopeToSummoned[scopeOfUse, default: [:]][t] = result
+    // Do not memoize the result if it has been computed while givens were on stack.
+    if !declarationsOnStack.contains(where: program.isGiven) {
+      cache.scopeToSummoned[scopeOfUse, default: [:]][t] = result
+    }
+
     return result
   }
 
@@ -1827,42 +2030,39 @@ public struct Typer {
     where environment: ResolutionThread.Environment,
     then continuation: [ResolutionThread.ContinuationItem]
   ) -> [ResolutionThread] {
-    var gs: [Given] = []
+    // Assumed givens.
+    var gs: [[Given]] = []
+
+    // Assumed givens.
+    if !environment.givens.isEmpty {
+      gs.append(environment.givens)
+    }
 
     // Givens visible from `scopeOfUse`.
     for s in program.scopes(from: scopeOfUse) {
-      for g in givens(lexicallyIn: s) where !isOnStack(g) { gs.append(g) }
+      gs.append(givens(lexicallyIn: s).filter({ (g) in !isOnStack(g) }))
     }
     for f in program[scopeOfUse.module].sourceFileIdentities where f != scopeOfUse.file {
-      for g in givens(lexicallyIn: .init(file: f)) where !isOnStack(g) { gs.append(g) }
+      gs.append(givens(lexicallyIn: .init(file: f)).filter({ (g) in !isOnStack(g) }))
     }
     for i in imports(of: scopeOfUse.file) {
-      for g in givens(atTopLevelOf: i) where !isOnStack(g) { gs.append(g) }
+      gs.append(givens(atTopLevelOf: i).filter({ (g) in !isOnStack(g) }))
     }
 
-    // Assumed givens.
-    gs.append(contentsOf: environment.givens)
-
     // Built-in givens.
-    gs.append(.coercion(.reflexivity))
-    gs.append(.coercion(.symmetry))
-    gs.append(.coercion(.transitivity))
+    gs.append([
+      .coercion(.reflexivity),
+      .coercion(.symmetry),
+      .coercion(.transitivity),
+    ])
 
-    return gs.map { (g) -> ResolutionThread in
-      let u = declaredType(of: g)
-      let v: WitnessExpression.Value
-      switch g {
-      case .coercion:
-        v = .reference(.builtin(.coercion))
-      case .abstract:
-        v = .abstract
-      case .assumed(let i, _):
-        v = .assumed(i)
-      case .user(let d):
-        v = .reference(.direct(d))
+    return gs.enumerated().reduce(into: []) { (result, grouping) in
+      for g in grouping.element {
+        let w = expression(referringTo: g)
+        let t = ResolutionThread(
+          matching: w, to: t, in: environment, then: continuation, delayedBy: grouping.offset)
+        result.append(t)
       }
-      let w = WitnessExpression(value: v, type: u)
-      return .init(witness: w, queried: t, environment: environment, tail: continuation)
     }
   }
 
@@ -1870,6 +2070,10 @@ public struct Typer {
   private mutating func match(
     _ thread: ResolutionThread, in scopeOfUse: ScopeIdentity
   ) -> ResolutionThread.Advanced {
+    if thread.penalties > 0 {
+      return .next([thread.removingPenalty()])
+    }
+
     // Weak-head normal forms.
     let a = program.types.reify(
       thread.witness.type, applying: thread.environment.substitutions, withVariables: .kept)
@@ -1887,7 +2091,7 @@ public struct Typer {
         value: .typeApplication(thread.witness, vs),
         type: program.types.substitute(vs, in: u.body))
       return .next([
-        .init(witness: w, queried: b, environment: thread.environment, tail: thread.tail)
+        .init(matching: w, to: b, in: thread.environment, then: thread.tail)
       ])
     }
 
@@ -1900,7 +2104,7 @@ public struct Typer {
         value: .termApplication(thread.witness, v),
         type: program.types.dropFirstRequirement(.init(uncheckedFrom: a)))
       return .next([
-        .init(witness: w, queried: b, environment: e, tail: thread.tail)
+        .init(matching: w, to: b, in: e, then: thread.tail)
       ])
     }
 
@@ -1941,7 +2145,7 @@ public struct Typer {
       value: .termApplication(.init(builtin: .coercion, type: t), thread.witness),
       type: b)
     return .next([
-      .init(witness: w, queried: b, environment: e, tail: thread.tail)
+      .init(matching: w, to: b, in: e, then: thread.tail)
     ])
   }
 
@@ -2029,6 +2233,7 @@ public struct Typer {
 
     var gs: [Given] = []
     appendGivens(in: program[m].topLevelDeclarations, to: &gs)
+
     cache.moduleToGivens[m] = gs
     return gs
   }
@@ -2051,14 +2256,34 @@ public struct Typer {
   }
 
   /// Appends the declarations of compile-time givens in `ds` to `gs`.
-  private func appendGivens<S: Sequence<DeclarationIdentity>>(in ds: S, to gs: inout [Given]) {
+  private mutating func appendGivens<S: Sequence<DeclarationIdentity>>(
+    in ds: S, to gs: inout [Given]
+  ) {
     for d in ds {
-      switch program.tag(of: d) {
-      case ConformanceDeclaration.self, UsingDeclaration.self:
-        gs.append(.user(d))
-      default:
-        continue
+      if program.isGiven(d) { gs.append(.user(d)) }
+
+      if let t = program.cast(d, to: TraitDeclaration.self) {
+        for n in givens(lexicallyIn: .init(node: t)) where !n.isAbstract {
+          gs.append(.nested(t, n))
+        }
       }
+    }
+  }
+
+  /// Returns the expression of a witness referring directly to `g`.
+  private mutating func expression(referringTo g: Given) -> WitnessExpression {
+    let t = declaredType(of: g)
+    switch g {
+    case .coercion:
+      return .init(value: .reference(.builtin(.coercion)), type: t)
+    case .abstract:
+      return .init(value: .abstract, type: t)
+    case .assumed(let i, _):
+      return .init(value: .assumed(i), type: t)
+    case .user(let d):
+      return .init(value: .reference(.direct(d)), type: t)
+    case .nested(_, let h):
+      return .init(value: .nested(expression(referringTo: h)), type: t)
     }
   }
 
@@ -2072,8 +2297,7 @@ public struct Typer {
     }
 
     // Slow path: compute an elaboration.
-    var main = ResolutionThread(
-      witness: .init(value: .identity(e), type: a), queried: b, environment: .empty, tail: [])
+    var main = ResolutionThread(matching: .init(value: .identity(e), type: a), to: b, in: .empty)
 
     // Apply the rules of the matching judgement until we get a simple type. For example, if `a`
     // is a universal type `<T> X ==> A<T>`, we want a witness of type `A<%0>` in an environment
@@ -2091,7 +2315,7 @@ public struct Typer {
     let (e, f) = main.environment.assuming(
       given: demand(EqualityWitness(lhs: main.witness.type, rhs: b)).erased)
     let w = WitnessExpression(value: .termApplication(f, main.witness), type: b)
-    let withCoercion = ResolutionThread(witness: w, queried: b, environment: e, tail: main.tail)
+    let withCoercion = ResolutionThread(matching: w, to: b, in: e, then: main.tail)
     return takeSummonResults(from: [main, withCoercion], in: scopeOfUse)
   }
 
@@ -2495,7 +2719,7 @@ public struct Typer {
     // "how" the type matches the extension.
     let (body, context) = program.types.bodyAndContext(t)
     assert(context.usings.isEmpty)
-    let thread = ResolutionThread(witness: w, queried: body, environment: .empty, tail: [])
+    let thread = ResolutionThread(matching: w, to: body, in: .empty)
     return takeSummonResults(from: [thread], in: s).uniqueElement
   }
 

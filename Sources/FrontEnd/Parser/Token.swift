@@ -103,21 +103,21 @@ public struct Token: Hashable {
   /// `true` iff `self` may be at the beginning of a declaration.
   public var isDeclarationHead: Bool {
     switch tag {
-    case .given, .inout, .let, .sink, .var:
+    case .given:
       return true
     case .import, .struct, .trait, .type, .typealias:
       return true
     case .fun, .subscript:
       return true
     default:
-      return isDeclarationModifier
+      return isBindingIntroducer || isDeclarationModifier
     }
   }
 
   /// `true` iff `self` is a declaration modifier.
   public var isDeclarationModifier: Bool {
     switch tag {
-    case .private, .public, .internal:
+    case .static, .private, .internal, .public:
       return true
     default:
       return false

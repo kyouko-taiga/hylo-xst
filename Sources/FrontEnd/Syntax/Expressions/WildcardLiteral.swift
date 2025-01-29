@@ -1,14 +1,14 @@
 import Archivist
 
 /// A wildcard literal.
-public struct WildcardTypeLiteral: Expression {
+public struct WildcardLiteral: Expression {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
 }
 
-extension WildcardTypeLiteral: Showable {
+extension WildcardLiteral: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
@@ -17,7 +17,7 @@ extension WildcardTypeLiteral: Showable {
 
 }
 
-extension WildcardTypeLiteral: Archivable {
+extension WildcardLiteral: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self.site = try archive.read(SourceSpan.self, in: &context)

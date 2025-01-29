@@ -94,7 +94,7 @@ extension Program {
       traverse(castUnchecked(n, to: TupleLiteral.self), calling: &v)
     case TupleTypeExpression.self:
       traverse(castUnchecked(n, to: TupleTypeExpression.self), calling: &v)
-    case WildcardTypeLiteral.self:
+    case WildcardLiteral.self:
       break
 
     case BindingPattern.self:

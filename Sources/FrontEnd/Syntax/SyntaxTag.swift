@@ -53,7 +53,7 @@ public struct SyntaxTag {
     SynthethicExpression.self,
     TupleLiteral.self,
     TupleTypeExpression.self,
-    WildcardTypeLiteral.self,
+    WildcardLiteral.self,
 
     // Patterns
     BindingPattern.self,

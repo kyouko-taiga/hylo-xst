@@ -22,6 +22,9 @@ public struct WitnessExpression: Hashable {
     /// A type abstraction applied to type arguments.
     case typeApplication(WitnessExpression, TypeApplication.Arguments)
 
+    /// The selection of a nested witness.
+    case nested(WitnessExpression)
+
     /// Returns a copy of `self` in which occurrences of assumed given identified by `i` have been
     /// substituted for `new`.
     public func substituting(assumed i: Int, for new: Value) -> Self {
@@ -38,6 +41,9 @@ public struct WitnessExpression: Hashable {
       case .typeApplication(let w, let ts):
         return .typeApplication(
           w.substituting(assumed: i, for: new), ts)
+      case .nested(let w):
+        return .nested(
+          w.substituting(assumed: i, for: new))
       }
     }
 
@@ -74,6 +80,8 @@ public struct WitnessExpression: Hashable {
       return w.hasVariable || a.hasVariable
     case .typeApplication(let w, let a):
       return w.hasVariable || a.values.contains(where: { (t) in t[.hasVariable] })
+    case .nested(let w):
+      return w.hasVariable
     }
   }
 
@@ -86,6 +94,8 @@ public struct WitnessExpression: Hashable {
       return 1 + w.elaborationCost + a.elaborationCost
     case .typeApplication(let w, _):
       return w.elaborationCost
+    case .nested(let w):
+      return 1 + w.elaborationCost
     }
   }
 
@@ -97,6 +107,8 @@ public struct WitnessExpression: Hashable {
     case .reference(let r):
       return r.target
     case .termApplication(let w, _), .typeApplication(let w, _):
+      return w.declaration
+    case .nested(let w):
       return w.declaration
     }
   }
@@ -135,6 +147,8 @@ extension WitnessExpression.Value: Showable {
       return "\(printer.show(w))(\(printer.show(a)))"
     case .typeApplication(let w, let ts):
       return "\(printer.show(w))<\(printer.show(ts.values))>"
+    case .nested(let w):
+      return "$<nested given>(\(printer.show(w))"
     }
   }
 

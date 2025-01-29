@@ -302,6 +302,10 @@ public struct TypeStore {
       let u = self.map(a, transform)
       let v = b.mapValues({ (n) in self.map(n, transform) })
       return .init(value: .typeApplication(u, v), type: t)
+
+    case .nested(let a):
+      let u = self.map(a, transform)
+      return .init(value: .nested(u), type: t)
     }
   }
 
@@ -372,22 +376,28 @@ public struct TypeStore {
   public mutating func substitute(
     _ old: AnyTypeIdentity, for new: AnyTypeIdentity, in n: AnyTypeIdentity
   ) -> AnyTypeIdentity {
-    self.map(n, { (s, t) in .stepInto((t == old) ? new : t) })
+    self.map(n) { (s, t) in
+      t == old ? .stepOver(new) : .stepInto(t)
+    }
   }
 
   /// Returns `n` with the keys in `substitutions` substituted for their corresponding values.
   public mutating func substitute(
     _ substitutions: [AnyTypeIdentity: AnyTypeIdentity], in n: AnyTypeIdentity
   ) -> AnyTypeIdentity {
-    self.map(n) { (s, t) in .stepInto(substitutions[t] ?? t) }
+    self.map(n) { (s, t) in
+      if let u = substitutions[t] { .stepOver(u) } else { .stepInto(t) }
+    }
   }
 
   /// Returns `n` with the keys in `substitutions` substituted for their corresponding values.
   public mutating func substitute(
     _ substitutions: TypeApplication.Arguments, in n: AnyTypeIdentity
   ) -> AnyTypeIdentity {
-    // The uncheked cast is okay because type of an identity is irrelevant to `Hashable`.
-    self.map(n) { (s, t) in .stepInto(substitutions[.init(uncheckedFrom: t)] ?? t) }
+    self.map(n) { (s, t) in
+      // The uncheked cast is okay because type of an identity is irrelevant to `Hashable`.
+      if let u = substitutions[.init(uncheckedFrom: t)] { .stepOver(u) } else { .stepInto(t) }
+    }
   }
 
   /// Returns `n` with unification variables substituted for an error.

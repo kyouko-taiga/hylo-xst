@@ -1,0 +1,21 @@
+trait Base {
+  fun f()
+}
+
+trait Derived {
+  static given let _: Base<Self>
+  fun g() { self.f() }
+}
+
+struct S<T> {}
+
+given <T> S<T>: Base {
+  fun f() {}
+}
+
+given <T> S<T>: Derived {}
+
+fun ghi<T where T: Derived>(_ x: T) {
+  x.g()
+  x.f()
+}

@@ -6,6 +6,9 @@ public struct BindingDeclaration: Declaration {
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]
 
+  /// `true` iff `self` introduces values into the implicit scope.
+  public let isGiven: Bool
+
   /// A pattern introducing the declared bindings.
   public let pattern: BindingPattern.ID
 
@@ -22,8 +25,10 @@ extension BindingDeclaration: Showable {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     var result = ""
-
     for m in modifiers { result.append("\(m) ") }
+    if isGiven {
+      result.append("given ")
+    }
     result.append(printer.show(pattern))
 
     if let i = initializer {
@@ -39,6 +44,7 @@ extension BindingDeclaration: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     self.modifiers = try archive.read([Parsed<DeclarationModifier>].self, in: &context)
+    self.isGiven = try archive.read(Bool.self, in: &context)
     self.pattern = try archive.read(BindingPattern.ID.self, in: &context)
     self.initializer = try archive.read(ExpressionIdentity?.self, in: &context)
     self.site = try archive.read(SourceSpan.self, in: &context)
@@ -46,6 +52,7 @@ extension BindingDeclaration: Archivable {
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
     try archive.write(modifiers, in: &context)
+    try archive.write(isGiven, in: &context)
     try archive.write(pattern, in: &context)
     try archive.write(initializer, in: &context)
     try archive.write(site, in: &context)
