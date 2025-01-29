@@ -1651,44 +1651,6 @@ public struct Typer {
     }
   }
 
-  /// Returns the context parameters of the type of an instance of `Self` in `s`, or `nil` if `s`
-  /// isn’t notionally in the scope of a type declaration.
-  private mutating func contextOfSelf(in s: ScopeIdentity) -> ContextClause? {
-    guard let n = s.node else { return nil }
-
-    switch program.tag(of: n) {
-    case ConformanceDeclaration.self:
-      return contextOfSelf(in: program.castUnchecked(n, to: ConformanceDeclaration.self))
-    case ExtensionDeclaration.self:
-      return contextOfSelf(in: program.castUnchecked(n, to: ExtensionDeclaration.self))
-    case StructDeclaration.self:
-      return .empty
-    case TraitDeclaration.self:
-      return contextOfSelf(in: program.castUnchecked(n, to: TraitDeclaration.self))
-    default:
-      return contextOfSelf(in: program.parent(containing: n))
-    }
-  }
-
-  /// Returns the context parameters of the type of an instance of `Self` in `s`.
-  private mutating func contextOfSelf(in s: ConformanceDeclaration.ID) -> ContextClause {
-    let t = declaredType(of: s)
-    return program.types.bodyAndContext(t).context
-  }
-
-  /// Returns the context parameters of the type of an instance of `Self` in `s`.
-  private mutating func contextOfSelf(in s: ExtensionDeclaration.ID) -> ContextClause {
-    let t = extendeeType(s)
-    return program.types.bodyAndContext(t).context
-  }
-
-  /// Returns the context parameters of the type of an instance of `Self` in `s`.
-  private mutating func contextOfSelf(in s: TraitDeclaration.ID) -> ContextClause {
-    let p = demand(GenericParameter.trait(s))
-    let w = typeOfModel(of: p.erased, conformingTo: s)
-    return .init(parameters: [p], usings: [w])
-  }
-
   // MARK: Compile-time evaluation
 
   /// Returns the value of `e` evaluated as a type ascription.
