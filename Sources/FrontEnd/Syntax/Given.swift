@@ -21,9 +21,4 @@ public enum Given: Hashable {
     if case .abstract = self { true } else { false }
   }
 
-  /// If declaration of this given if `self` is `.user`. Otherwise, `nil`.
-  public var declaration: DeclarationIdentity? {
-    if case .user(let d) = self { d } else { nil }
-  }
-
 }

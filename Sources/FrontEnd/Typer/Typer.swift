@@ -2040,13 +2040,13 @@ public struct Typer {
 
     // Givens visible from `scopeOfUse`.
     for s in program.scopes(from: scopeOfUse) {
-      gs.append(givens(lexicallyIn: s).filter({ (g) in !isOnStack(g) }))
+      gs.append(givens(lexicallyIn: s).filter(notOnStack(_:)))
     }
     for f in program[scopeOfUse.module].sourceFileIdentities where f != scopeOfUse.file {
-      gs.append(givens(lexicallyIn: .init(file: f)).filter({ (g) in !isOnStack(g) }))
+      gs.append(givens(lexicallyIn: .init(file: f)).filter(notOnStack(_:)))
     }
     for i in imports(of: scopeOfUse.file) {
-      gs.append(givens(atTopLevelOf: i).filter({ (g) in !isOnStack(g) }))
+      gs.append(givens(atTopLevelOf: i).filter(notOnStack(_:)))
     }
 
     // Built-in givens.
@@ -2807,11 +2807,6 @@ public struct Typer {
     return demand(Metatype(inhabitant: n))
   }
 
-  /// Returns `true` iff the type of `g`'s declaration is being computed.
-  private func isOnStack(_ g: Given) -> Bool {
-    g.declaration.map(declarationsOnStack.contains(_:)) ?? false
-  }
-
   /// Returns the type of values expected to be returned or projected in `s`, or `nil` if `s` is
   /// not in the body of a function or subscript.
   private mutating func expectedOutputType(in s: ScopeIdentity) -> AnyTypeIdentity? {
@@ -2876,6 +2871,18 @@ public struct Typer {
     declarationsOnStack.insert(.init(d))
     defer { declarationsOnStack.remove(.init(d)) }
     return action(&self)
+  }
+
+  /// Returns `true` iff the type of `g`'s declaration is not being computed.
+  private func notOnStack(_ g: Given) -> Bool {
+    switch g {
+    case .user(let d):
+      return !declarationsOnStack.contains(d)
+    case .nested(_, let h):
+      return notOnStack(h)
+    default:
+      return true
+    }
   }
 
 }
