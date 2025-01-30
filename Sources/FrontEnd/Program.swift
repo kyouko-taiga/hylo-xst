@@ -129,17 +129,21 @@ public struct Program {
     ns.compactMap({ (n) in cast(n, to: t) })
   }
 
-  /// Returns a textual representation of `item`.
-  public func show<T: Showable>(_ item: T) -> String {
-    var printer = TreePrinter(program: self)
+  /// Returns a textual representation of `item` using the given configuration.
+  public func show<T: Showable>(
+    _ item: T, configuration: TreePrinter.Configuration = .default
+  ) -> String {
+    var printer = TreePrinter(program: self, configuration: configuration)
     return printer.show(item)
   }
 
-  /// Returns a textual representation of `items`, separating each element by `separator`.
+  /// Returns a textual representation of `items` using the given configuration and separating each
+  /// element by `separator`.
   public func show<T: Sequence>(
-    _ items: T, separatedBy separator: String = ", "
+    _ items: T, configuration: TreePrinter.Configuration = .default,
+    separatedBy separator: String = ", "
   ) -> String where T.Element: Showable {
-    var printer = TreePrinter(program: self)
+    var printer = TreePrinter(program: self, configuration: configuration)
     return printer.show(items, separatedBy: separator)
   }
 

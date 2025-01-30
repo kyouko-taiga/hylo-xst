@@ -26,10 +26,14 @@ extension AssociatedType: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    let (c, t) = printer.program.types.castToTraitApplication(qualification.type)!
-    let m = printer.program[printer.program.types[c].declaration].identifier.value
     let n = printer.program[declaration].identifier.value
-    return "(\(printer.show(t))::\(m)).\(n)"
+    if printer.configuration.useVerboseTypes {
+      return "\(printer.show(qualification)).\(n)"
+    } else {
+      let (c, t) = printer.program.types.castToTraitApplication(qualification.type)!
+      let m = printer.program[printer.program.types[c].declaration].identifier.value
+      return "(\(printer.show(t))::\(m)).\(n)"
+    }
   }
 
 }

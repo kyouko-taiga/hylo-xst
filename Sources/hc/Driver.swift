@@ -17,6 +17,10 @@ import Utilities
       valueName: "output-type"))
   private var outputType: OutputType = .typedAST
 
+  /// The configuration of the tree printer.
+  @Flag(help: "Tree printer configuration")
+  private var treePrinterFlags: [TreePrinterFlag] = []
+
   /// `true` iff verbose information about compilation should be printed to the standard output.
   @Flag(
     name: [.short, .long],
@@ -39,8 +43,9 @@ import Utilities
     await assignScopes(of: module, in: &program)
     assignTypes(of: module, in: &program)
 
+    let c = treePrinterConfiguration(for: treePrinterFlags)
     for d in program.select(.and(.from(module), .topLevel)) {
-      print(program.show(d))
+      print(program.show(d, configuration: c))
     }
   }
 
@@ -98,6 +103,13 @@ import Utilities
     }
   }
 
+  /// Returns the configuration corresponding to the given `flags`.
+  private func treePrinterConfiguration(
+    for flags: [TreePrinterFlag]
+  ) -> TreePrinter.Configuration {
+    .init(useVerboseTypes: flags.contains(.verboseTypes))
+  }
+
   /// If `inputs` contains a single URL `u` whose path is non-empty, returns the last component of
   /// `u` without any path extension and stripping all leading dots. Otherwise, returns "Main".
   private func productName(_ inputs: [URL]) -> String {
@@ -128,6 +140,18 @@ import Utilities
 
     /// Abstract syntax tree after typing.
     case typedAST = "typed-ast"
+
+  }
+
+  /// Tree printing flags.
+  private enum TreePrinterFlag: String, EnumerableFlag {
+
+    /// Prints a verbose representation of type trees.
+    case verboseTypes = "print-verbose-types"
+
+    static func name(for value: TreePrinterFlag) -> NameSpecification {
+      .customLong(value.rawValue)
+    }
 
   }
 

@@ -10,19 +10,40 @@ public protocol Showable {
 /// State for printing the textual representations of syntax and type trees.
 public struct TreePrinter {
 
+  /// Settings used for printing syntax and type trees.
+  public struct Configuration {
+
+    /// `true` if types shouls be printed with a verbose representation.
+    public let useVerboseTypes: Bool
+
+    /// Creates an instance with the given properties.
+    public init(useVerboseTypes: Bool) {
+      self.useVerboseTypes = useVerboseTypes
+    }
+
+    /// The default configuration.
+    public static let `default` = Configuration(
+      useVerboseTypes: false)
+
+  }
+
+  /// The configuration of the printer.
+  public let configuration: Configuration
+
   /// A reference to the program containing the items to show.
   public let program: Program
 
   /// A map from identifier to keys items having that identifier.
   private var identifiers: [String: [AnyHashable]]
 
-  /// Creates an instance from printing contents in `program`.
-  public init(program: Program) {
+  /// Creates an instance from printing contents in `program` using the given configuration.
+  public init(program: Program, configuration: Configuration = .default) {
+    self.configuration = configuration
     self.program = program
     self.identifiers = [:]
   }
 
-  /// Returns a textual representation of `item`.
+  /// Returns a textual representation of `item` using the given configuration.
   public mutating func show<T: Showable>(_ item: T) -> String {
     item.show(using: &self)
   }
