@@ -74,6 +74,14 @@ public struct Module {
       return T.ID(uncheckedFrom: .init(file: identity, offset: d))
     }
 
+    /// Replaces the node identified by `n` by `newTree`.
+    internal mutating func replace<T: Expression>(_ n: ExpressionIdentity, for newTree: T) -> T.ID {
+      assert(n.file == identity)
+      syntax[n.offset] = .init(newTree)
+      syntaxToTag[n.offset] = .init(T.self)
+      return .init(uncheckedFrom: n.erased)
+    }
+
     /// Adds a diagnostic to this file.
     ///
     /// - requires: The diagnostic is anchored at a position in `self`.
@@ -171,12 +179,7 @@ public struct Module {
   /// `newTree` are notionally removed from the tree after this method returns.
   @discardableResult
   public mutating func replace<T: Expression>(_ n: ExpressionIdentity, for newTree: T) -> T.ID {
-    assert(n.module == identity)
-    modify(&sources.values[n.file.offset]) { (f) in
-      f.syntax[n.offset] = .init(newTree)
-      f.syntaxToTag[n.offset] = .init(T.self)
-    }
-    return .init(uncheckedFrom: n.erased)
+    sources.values[n.file.offset].replace(n, for: newTree)
   }
 
   /// The nodes in `self`'s abstract syntax tree.

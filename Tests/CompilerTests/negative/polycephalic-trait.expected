@@ -1,0 +1,6 @@
+negative/polycephalic-trait.hylo:21.3-10: error: no given instance of 'P<A, A>' in this scope
+  g<A, A>(A())
+  ~~~~~~~
+negative/polycephalic-trait.hylo:22.8-9: error: not enough context to infer a type
+  g<A, _>(A())
+       ^

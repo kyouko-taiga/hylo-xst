@@ -217,17 +217,18 @@ public struct Parser {
     // Expect a conformance declaration.
     else {
       let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
-      let extendee = try parseExpression(in: &file)
+      let conformer = try parseExpression(in: &file)
       _ = try take(.colon) ?? expected("':'")
       let concept = try parseExpression(in: &file)
+      let witness = desugaredConformance(of: conformer, to: concept, in: &file)
+
       let members = try parseTypeBody(in: &file)
 
       let d = file.insert(
         ConformanceDeclaration(
           introducer: head,
           staticParameters: staticParameters,
-          extendee: extendee,
-          concept: concept,
+          witness: witness,
           members: members,
           site: span(from: head)))
       return .init(d)
@@ -373,11 +374,16 @@ public struct Parser {
     let s = try take(.colon) ?? take(.equal) ?? expected("':' or '=='")
     let r = try parseCompoundExpression(in: &file)
 
-    let d = file.insert(
-      UsingDeclaration(
-        lhs: l, rhs: r,
-        semantics: .init((s.tag == .colon) ? .conformance : .equality, at: s.site),
-        site: file[l].site.extended(toCover: file[r].site)))
+    let witness: ExpressionIdentity
+    if s.tag == .colon {
+      witness = .init(desugaredConformance(of: l, to: r, in: &file))
+    } else {
+      let w = EqualityWitnessExpression(
+        lhs: l, rhs: r, site: file[l].site.extended(toCover: file[r].site))
+      witness = .init(file.insert(w))
+    }
+
+    let d = file.insert(UsingDeclaration(witness: witness, site: file[witness].site))
     return .init(d)
   }
 
@@ -485,14 +491,19 @@ public struct Parser {
   ) throws -> TraitDeclaration.ID {
     let introducer = try take(.trait) ?? expected("'trait'")
     let identifier = parseSimpleIdentifier()
+    let parameters = try parseOptionalCompileTimeParameters(in: &file)
     let members = try parseTypeBody(in: &file)
+
+    if let p = parameters.implicit.first {
+      report(.init("constraints on trait parameters are not supported yet", at: file[p].site))
+    }
 
     return file.insert(
       TraitDeclaration(
         modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
-        parameters: [],
+        parameters: parameters.explicit,
         members: members,
         site: span(from: introducer)))
   }
@@ -1197,6 +1208,29 @@ public struct Parser {
     } else {
       report(expected("identifier"))
       return .init("$!", at: .empty(at: position))
+    }
+  }
+
+  // MARK: Desugarings
+
+  /// Returns the desugaring of a sugared conformance type.
+  ///
+  /// A sugared conformance type is parsed as `expression ':' expression`. If the RHS is a static
+  /// call, this method modifies it in-place to add the LHS as its first argument. Otherwise, a new
+  /// static call is created to apply the RHS on the LHS.
+  private func desugaredConformance(
+    of conformer: ExpressionIdentity, to concept: ExpressionIdentity,
+    in file: inout Module.SourceContainer
+  ) -> StaticCall.ID {
+    let witnessSite = file[conformer].site.extended(toCover: file[concept].site)
+    if let rhs = file[concept] as? StaticCall {
+      let desugared = StaticCall(
+        callee: rhs.callee, arguments: [conformer] + rhs.arguments,
+        site: witnessSite)
+      return file.replace(concept, for: desugared)
+    } else {
+      return file.insert(
+        StaticCall(callee: concept, arguments: [conformer], site: witnessSite))
     }
   }
 

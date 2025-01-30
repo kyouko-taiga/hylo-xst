@@ -192,16 +192,19 @@ public struct Typer {
     // The type of the declaration has the form `<T...> A... ==> P<B...>` where `P<B...>` is the
     // type of the declared witness and the rest forms a context. Requirements are resolved as
     // members of the type `B` where type parameters occur as skolems.
-    let (witness, _) = program.types.bodyAndContext(t)
-    guard let (c, conformer) = program.types.castToTraitApplication(witness) else {
+    let witnessSansContext = program.types.bodyAndContext(t).body
+    guard let witness = program.types.seenAsTraitApplication(witnessSansContext) else {
       assert(t == .error)
       return
     }
 
+    let concept = program.types[witness.concept].declaration
+    let conformer = witness.arguments.values[0]
+
     // The expected types of implementations satisfying the concept's requirements are computed by
-    // substituting  the abstract types of the concept by their corresponding assignment.
-    let concept = program.types[c].declaration
-    var substitutions = [typeOfSelf(in: concept): conformer]
+    // substituting the abstract types of the concept by their corresponding assignment.
+    var substitutions = Dictionary(
+      uniqueKeysWithValues: witness.arguments.map({ (k, v) in (k.erased, v) }))
 
     let (requirements, associatedTypes) = program[concept].members.partitioned { (r) in
       program.tag(of: r) == AssociatedTypeDeclaration.self
@@ -274,7 +277,8 @@ public struct Typer {
       return nil
     }
 
-    func anonymousImplementation(of requirement: DeclarationIdentity) -> Any {
+    /// Returns the declarations implementing `requirement`.
+    func anonymousImplementation(of requirement: DeclarationIdentity) -> [SummonResult] {
       let requiredType = expectedImplementationType(of: requirement)
       let summonings = summon(requiredType, in: .init(node: d))
       return summonings
@@ -623,8 +627,7 @@ public struct Typer {
     assert(d.module == module, "dependency is not typed")
 
     let c = program.parent(containing: d, as: TraitDeclaration.self)!
-    let s = typeOfSelf(in: c)
-    let t = typeOfModel(of: s, conformingTo: c)
+    let t = typeOfTraitSelf(in: c).erased
     let w = WitnessExpression(value: .abstract, type: t)
 
     let u = metatype(of: AssociatedType(declaration: d, qualification: w)).erased
@@ -669,7 +672,7 @@ public struct Typer {
       defer { declarationsOnStack.remove(.init(d)) }
 
       initializeContext(program[d].staticParameters)
-      let t = declaredConformanceType(program[d].extendee, program[d].concept)
+      let t = evaluateTypeAscription(.init(program[d].witness))
       let u = introduce(program[d].staticParameters, into: t)
       program[module].setType(u, for: d)
       return u
@@ -848,13 +851,7 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    let t: AnyTypeIdentity
-    switch program[d].semantics.value {
-    case .conformance:
-      t = declaredConformanceType(program[d].lhs, program[d].rhs)
-    case .equality:
-      t = declaredEqualityType(program[d].lhs, program[d].rhs)
-    }
+    let t = evaluateTypeAscription(program[d].witness)
     program[module].setType(t, for: d)
     return t
   }
@@ -880,53 +877,6 @@ public struct Typer {
       return program.types
         .select(\Metatype.inhabitant, on: t)
         .flatMap({ (m) in program.types.cast(m, to: GenericParameter.self) })
-    }
-  }
-
-  /// Returns the type of a value witnessing the conformance of `conformer` to `concept`.
-  private mutating func declaredConformanceType(
-    _ conformer: ExpressionIdentity, _ concept: ExpressionIdentity
-  ) -> AnyTypeIdentity {
-    // Left-hand side represents the conformer.
-    guard let lhs = evaluateTypeAscription(conformer).unlessError else { return .error }
-
-    // Right-hand side should have the form `<T> P<T>`.
-    var context = InferenceContext()
-    let rhs = context.withSubcontext(role: .ascription) { (ctx) in
-      inferredType(of: concept, in: &ctx)
-    }
-    let s = discharge(context.obligations, relatedTo: concept)
-    let f = program.types.reify(rhs, applying: s.substitutions)
-
-    guard
-      let u = program.types[f] as? UniversalType,
-      let m = program.types[u.body] as? Metatype,
-      let (p, _) = program.types.castToTraitApplication(m.inhabitant)
-    else {
-      let m = program.format("'%T' is not a trait", [f])
-      let s = program[concept].site
-      report(.init(.error, m, at: s))
-      return .error
-    }
-
-    return typeOfModel(of: lhs, conformingTo: program.types[p].declaration)
-  }
-
-  /// Returns the type of a value witnessing the conformance of `lhs` to `rhs`.
-  private mutating func declaredEqualityType(
-    _ lhs: ExpressionIdentity, _ rhs: ExpressionIdentity
-  ) -> AnyTypeIdentity {
-    let l = evaluateTypeAscription(lhs)
-    let r = evaluateTypeAscription(rhs)
-
-    // Was there an error?
-    if (l == .error) || (r == .error) {
-      return .error
-    }
-
-    // All is well.
-    else {
-      return demand(EqualityWitness(lhs: l, rhs: r)).erased
     }
   }
 
@@ -986,10 +936,10 @@ public struct Typer {
   private mutating func declaredType(
     of requirement: DeclarationIdentity, seenThrough witness: WitnessExpression
   ) -> AnyTypeIdentity {
-    let subs = aliasesInConformance(seenThrough: witness)
+    let substitutions = aliasesInConformance(seenThrough: witness)
     let member = declaredType(of: requirement)
     let (memberSansContext, _) = program.types.bodyAndContext(member)
-    return program.types.substitute(subs, in: memberSansContext)
+    return program.types.substitute(substitutions, in: memberSansContext)
   }
 
   /// Returns a table mapping the abstract types to their implementations in the conformance
@@ -999,24 +949,24 @@ public struct Typer {
   ) -> [AnyTypeIdentity: AnyTypeIdentity] {
     if let memoized = cache.witnessToAliases[witness] { return memoized }
 
-    let (c, conformer) = program.types.castToTraitApplication(witness.type)!
-    let concept = program.types[c].declaration
-    var subs = [typeOfSelf(in: concept): conformer]
+    let w = program.types.seenAsTraitApplication(witness.type)!
+    var substitutions = Dictionary(
+      uniqueKeysWithValues: w.arguments.map({ (k, v) in (k.erased, v) }))
 
-    for r in program[concept].members {
+    for r in program[program.types[w.concept].declaration].members {
       if let a = program.cast(r, to: AssociatedTypeDeclaration.self) {
         let i = typeOfImplementation(satisfying: a, in: witness)
         if let m = program.types[i] as? Metatype {
           let k0 = declaredType(of: r)
           let k1 = program.types[k0] as! Metatype
-          subs[k1.inhabitant] = m.inhabitant
+          substitutions[k1.inhabitant] = m.inhabitant
         }
       }
     }
 
     assert(!witness.hasVariable)
-    cache.witnessToAliases[witness] = subs
-    return subs
+    cache.witnessToAliases[witness] = substitutions
+    return substitutions
   }
 
   /// Returns the type that `d` extends.
@@ -1154,6 +1104,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: Call.self), in: &context)
     case Conversion.self:
       return inferredType(of: castUnchecked(e, to: Conversion.self), in: &context)
+    case EqualityWitnessExpression.self:
+      return inferredType(of: castUnchecked(e, to: EqualityWitnessExpression.self), in: &context)
     case NameExpression.self:
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case New.self:
@@ -1287,6 +1239,24 @@ public struct Typer {
     } else {
       report(program.doesNotDenoteType(program[e].target))
       return context.obligations.assume(e, hasType: .error, at: program[e].site)
+    }
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: EqualityWitnessExpression.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let l = evaluateTypeAscription(program[e].lhs)
+    let r = evaluateTypeAscription(program[e].rhs)
+
+    // Was there an error?
+    if (l == .error) || (r == .error) {
+      return .error
+    }
+
+    // All is well.
+    else {
+      return metatype(of: EqualityWitness(lhs: l, rhs: r)).erased
     }
   }
 
@@ -1662,7 +1632,8 @@ public struct Typer {
   /// Returns the type of an instance of `Self` in `s`.
   private mutating func typeOfSelf(in d: ConformanceDeclaration.ID) -> AnyTypeIdentity {
     let t = declaredType(of: d)
-    return program.types.castToTraitApplication(program.types.head(t))?.subject ?? .error
+    let w = program.types.seenAsTraitApplication(program.types.head(t))
+    return w?.arguments.values[0] ?? .error
   }
 
   /// Returns the type of an instance of `Self` in `s`.
@@ -1682,13 +1653,36 @@ public struct Typer {
     demand(GenericParameter.trait(d)).erased
   }
 
-  /// Returns the type of a model witnessing the conformance of `conformer` to `concept`.
+  /// Returns the type of `P.self` in `d`, which declares a trait `P`.
+  private mutating func typeOfTraitSelf(in d: TraitDeclaration.ID) -> TypeApplication.ID {
+    let f = demand(Trait(declaration: d)).erased
+    let s = demand(GenericParameter.trait(d))
+
+    var a: TypeApplication.Arguments = [s: s.erased]
+    for p in program[d].parameters {
+      let t = demand(GenericParameter.user(p))
+      a[t] = t.erased
+    }
+
+    return demand(TypeApplication(abstraction: f, arguments: a))
+  }
+
+  /// Returns the type of a model witnessing the conformance of `conformer` to `concept` with the
+  /// given `arguments`.
   private mutating func typeOfModel(
-    of conformer: AnyTypeIdentity, conformingTo concept: TraitDeclaration.ID
-  ) -> AnyTypeIdentity {
+    of conformer: AnyTypeIdentity, conformingTo concept: TraitDeclaration.ID,
+    with arguments: [AnyTypeIdentity]
+  ) -> TypeApplication.ID {
+    assert(arguments.count == program[concept].parameters.count, "not enough arguments")
     let f = demand(Trait(declaration: concept)).erased
-    let p = demand(GenericParameter.trait(concept))
-    return demand(TypeApplication(abstraction: f, arguments: [p: conformer])).erased
+    let s = demand(GenericParameter.trait(concept))
+
+    var a: TypeApplication.Arguments = [s: conformer]
+    for (p, t) in zip(program[concept].parameters, arguments) {
+      a[demand(GenericParameter.user(p))] = t
+    }
+
+    return demand(TypeApplication(abstraction: f, arguments: a))
   }
 
   /// Returns the type of the implementation satisfying `requirement` in the result of `witness`.
@@ -1710,7 +1704,7 @@ public struct Typer {
   private mutating func typeOfImplementation(
     satisfying requirement: AssociatedTypeDeclaration.ID, in witness: WitnessExpression
   ) -> AnyTypeIdentity {
-    assert(program.types.castToTraitApplication(witness.type) != nil)
+    assert(program.types.seenAsTraitApplication(witness.type) != nil)
 
     // The witness is the result of a coercion?
     if let (_, b) = asCoercionApplication(witness) {
@@ -1733,42 +1727,10 @@ public struct Typer {
     }
   }
 
-//  -  /// Returns the context parameters of the type of an instance of `Self` in `s`, or `nil` if `s`
-//  -  /// isn’t notionally in the scope of a type declaration.
-//  -  private mutating func contextOfSelf(in s: ScopeIdentity) -> ContextClause? {
-//  -    guard let n = s.node else { return nil }
-//  -
-//  -    switch program.tag(of: n) {
-//  -    case ConformanceDeclaration.self:
-//  -      return contextOfSelf(in: program.castUnchecked(n, to: ConformanceDeclaration.self))
-//  -    case ExtensionDeclaration.self:
-//  -      return contextOfSelf(in: program.castUnchecked(n, to: ExtensionDeclaration.self))
-//  -    case StructDeclaration.self:
-//  -      return .empty
-//  -    case TraitDeclaration.self:
-//  -      return contextOfSelf(in: program.castUnchecked(n, to: TraitDeclaration.self))
-//  -    default:
-//  -      return contextOfSelf(in: program.parent(containing: n))
-//  -    }
-//  -  }
-//  -
-//  -  /// Returns the context parameters of the type of an instance of `Self` in `s`.
-//  -  private mutating func contextOfSelf(in s: ConformanceDeclaration.ID) -> ContextClause {
-//  -    let t = declaredType(of: s)
-//  -    return program.types.bodyAndContext(t).context
-//  -  }
-//  -
-//  -  /// Returns the context parameters of the type of an instance of `Self` in `s`.
-//  -  private mutating func contextOfSelf(in s: ExtensionDeclaration.ID) -> ContextClause {
-//  -    let t = extendeeType(s)
-//  -    return program.types.bodyAndContext(t).context
-//  -  }
-
   /// Returns the context parameters of the type of an instance of `Self` in `s`.
   private mutating func contextOfSelf(in s: TraitDeclaration.ID) -> ContextClause {
-    let p = demand(GenericParameter.trait(s))
-    let w = typeOfModel(of: p.erased, conformingTo: s)
-    return .init(parameters: [p], usings: [w])
+    let w = typeOfTraitSelf(in: s)
+    return .init(parameters: .init(program.types[w].arguments.keys), usings: [w.erased])
   }
 
   // MARK: Compile-time evaluation
@@ -1956,7 +1918,7 @@ public struct Typer {
     }
 
     // Do not memoize the result if it has been computed while givens were on stack.
-    if !declarationsOnStack.contains(where: program.isGiven) {
+    if !t[.hasVariable] && !declarationsOnStack.contains(where: program.isGiven) {
       cache.scopeToSummoned[scopeOfUse, default: [:]][t] = result
     }
 
@@ -2067,7 +2029,7 @@ public struct Typer {
       let s = thread.environment.substitutions.union(subs)
       let w = program.types.reify(thread.witness, applying: s, withVariables: .kept)
       if w.type[.hasError] { return .next([]) }
-      assert(!w.type[.hasError])
+
       let r = SummonResult(witness: w, substitutions: s)
       return threadContinuation(appending: r, to: thread, in: scopeOfUse)
     }
@@ -2192,9 +2154,7 @@ public struct Typer {
     appendGivens(in: program.declarations(lexicallyIn: s), to: &gs)
 
     if let d = s.node, let c = program.cast(d, to: TraitDeclaration.self) {
-      let s = typeOfSelf(in: c)
-      let t = typeOfModel(of: s, conformingTo: c)
-      gs.append(.abstract(t))
+      gs.append(.abstract(typeOfTraitSelf(in: c).erased))
     }
 
     cache.scopeToGivens[s] = gs
@@ -2440,8 +2400,9 @@ public struct Typer {
     candidates.append(contentsOf: resolve(n, memberInExtensionOf: q.type, visibleFrom: scopeOfUse))
 
     for (concept, ms) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
-      let w = typeOfModel(of: q.type, conformingTo: concept)
-      let summonings = summon(w, in: scopeOfUse)
+      let vs = program[concept].parameters.map({ _ in fresh().erased })
+      let model = typeOfModel(of: q.type, conformingTo: concept, with: vs)
+      let summonings = summon(model.erased, in: scopeOfUse)
 
       // TODO: report ambiguous resolution results in the candidate's diagnostics
       assert(summonings.count <= 1)

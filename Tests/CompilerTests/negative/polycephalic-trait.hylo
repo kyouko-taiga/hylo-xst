@@ -1,0 +1,23 @@
+trait P<T> {
+  fun f() -> T
+}
+
+struct A {
+  public memberwise init
+}
+
+fun check<T>(_ x: T) {}
+
+fun g<X, Y where X: P<Y>>(_ x: X) {
+  check<Y>(x.f())
+}
+
+given A: P<Void> {
+  public fun f() -> Void { () }
+}
+
+public fun main() {
+  g<A, Void>(A())
+  g<A, A>(A())
+  g<A, _>(A())
+}

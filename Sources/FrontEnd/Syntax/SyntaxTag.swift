@@ -45,6 +45,7 @@ public struct SyntaxTag {
     // Expressions
     BooleanLiteral.self,
     Call.self,
+    EqualityWitnessExpression.self,
     ImplicitQualification.self,
     NameExpression.self,
     New.self,

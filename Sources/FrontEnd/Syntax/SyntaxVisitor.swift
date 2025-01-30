@@ -80,6 +80,8 @@ extension Program {
       traverse(castUnchecked(n, to: Conversion.self), calling: &v)
     case ImplicitQualification.self:
       break
+    case EqualityWitnessExpression.self:
+      traverse(castUnchecked(n, to: EqualityWitnessExpression.self), calling: &v)
     case NameExpression.self:
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
     case New.self:
@@ -145,8 +147,7 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ConformanceDeclaration.ID, calling v: inout T) {
     visit(self[n].staticParameters, calling: &v)
-    visit(self[n].extendee, calling: &v)
-    visit(self[n].concept, calling: &v)
+    visit(self[n].witness, calling: &v)
     visit(self[n].members, calling: &v)
   }
 
@@ -190,14 +191,19 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: UsingDeclaration.ID, calling v: inout T) {
-    visit(self[n].lhs, calling: &v)
-    visit(self[n].rhs, calling: &v)
+    visit(self[n].witness, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: Call.ID, calling v: inout T) {
     visit(self[n].callee, calling: &v)
     for a in self[n].arguments { visit(a.value, calling: &v) }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: EqualityWitnessExpression.ID, calling v: inout T) {
+    visit(self[n].lhs, calling: &v)
+    visit(self[n].rhs, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

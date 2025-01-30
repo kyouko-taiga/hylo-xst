@@ -32,6 +32,10 @@ extension TraitDeclaration: Showable {
     for m in modifiers { result.append("\(m) ") }
     result.append("trait \(identifier)")
 
+    if !parameters.isEmpty {
+      result.append("<\(printer.show(parameters))>")
+    }
+
     result.append(" {\n")
     for m in members { result.append(printer.show(m).indented + "\n") }
     result.append("}")

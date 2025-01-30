@@ -319,6 +319,11 @@ public struct Program {
     }
   }
 
+  /// Returns `w` if it is the desugared form of a conformance type. Otherwise, returns `nil`.
+  public func seenAsConformanceTypeExpression(_ w: StaticCall.ID) -> ConformanceTypeSugar? {
+    Utilities.read(self[w], { (tree) in tree.arguments.isEmpty ? nil : .init(tree) })
+  }
+
   /// Returns the innermost scope that strictly contains `n`.
   ///
   /// - Requires: The module containing `s` is scoped.

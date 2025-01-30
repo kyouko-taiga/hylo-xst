@@ -178,24 +178,23 @@ public struct TypeStore {
     return .init(uncheckedFrom: n.erased)
   }
 
-  /// Returns `n` if it identifies a trait application; otherwise, returns `nil`.
-  public func castToTraitApplication<T: TypeIdentity>(
+  /// Returns `(P, [A...])` iff `n` has the form `P<A...>`.
+  public func seenAsTraitApplication<T: TypeIdentity>(
     _ n: T
-  ) -> (concept: Trait.ID, subject: AnyTypeIdentity)? {
+  ) -> (concept: Trait.ID, arguments: TypeApplication.Arguments)? {
     if
       let t = cast(n, to: TypeApplication.self),
       let u = cast(self[t].abstraction, to: Trait.self),
-      let v = self[t].arguments.values.first
+      !self[t].arguments.isEmpty
     {
-      assert(self[t].arguments.count == 1)
-      return (concept: u, subject: v)
+      return (concept: u, arguments: self[t].arguments)
     } else {
       return nil
     }
   }
 
   /// Returns `([A...], T)` iff `n` has the form `[{self: set T}](A...) -> Void`.
-  public func castToConstructor<T: TypeIdentity>(
+  public func seenAsConstructor<T: TypeIdentity>(
     _ n: T
   ) -> (inputs: [Parameter], output: AnyTypeIdentity)? {
     guard

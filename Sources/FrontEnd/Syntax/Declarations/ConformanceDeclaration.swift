@@ -9,11 +9,8 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   /// The compile-time parameters of the conformance.
   public let staticParameters: StaticParameters
 
-  /// The type for which the conformance is declared.
-  public let extendee: ExpressionIdentity
-
-  /// The trait to which the conformance is declared.
-  public let concept: ExpressionIdentity
+  /// The expression of the witness defined by the declaration.
+  public let witness: StaticCall.ID
 
   /// The members of the declaration.
   public let members: [DeclarationIdentity]
@@ -27,15 +24,23 @@ extension ConformanceDeclaration: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    let e = printer.show(extendee)
-    let c = printer.show(concept)
-    let w = staticParameters.isEmpty ? "" : " \(printer.show(staticParameters))"
-    let m = members.map({ (m) in printer.show(m).indented }).joined(separator: "\n")
-    return """
-    given\(w) \(e): \(c) {
-    \(m)
+    let sugared = printer.program.seenAsConformanceTypeExpression(witness)!
+
+    var result = "given"
+    if !staticParameters.isEmpty {
+      result.append(" " + printer.show(staticParameters))
     }
-    """
+
+    result.append(" \(printer.show(sugared.conformer)): \(printer.show(sugared.concept))")
+    if !sugared.arguments.isEmpty {
+      result.append("<\(printer.show(sugared.arguments))>")
+    }
+
+    result.append(" {\n")
+    for m in members { result.append(printer.show(m).indented + "\n") }
+    result.append("}")
+
+    return result
   }
 
 }
@@ -43,11 +48,19 @@ extension ConformanceDeclaration: Showable {
 extension ConformanceDeclaration: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    fatalError()
+    self.introducer = try archive.read(Token.self, in: &context)
+    self.staticParameters = try archive.read(StaticParameters.self, in: &context)
+    self.witness = try archive.read(StaticCall.ID.self, in: &context)
+    self.members = try archive.read([DeclarationIdentity].self, in: &context)
+    self.site = try archive.read(SourceSpan.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    fatalError()
+    try archive.write(introducer, in: &context)
+    try archive.write(staticParameters, in: &context)
+    try archive.write(witness, in: &context)
+    try archive.write(members, in: &context)
+    try archive.write(site, in: &context)
   }
 
 }

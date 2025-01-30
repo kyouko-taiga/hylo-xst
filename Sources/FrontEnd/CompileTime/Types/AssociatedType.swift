@@ -30,9 +30,9 @@ extension AssociatedType: Showable {
     if printer.configuration.useVerboseTypes {
       return "\(printer.show(qualification)).\(n)"
     } else {
-      let (c, t) = printer.program.types.castToTraitApplication(qualification.type)!
+      let (c, a) = printer.program.types.seenAsTraitApplication(qualification.type)!
       let m = printer.program[printer.program.types[c].declaration].identifier.value
-      return "(\(printer.show(t))::\(m)).\(n)"
+      return "(\(printer.show(a.values[0]))::\(m)).\(n)"
     }
   }
 

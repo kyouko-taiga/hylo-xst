@@ -239,7 +239,7 @@ internal struct Solver {
     }
 
     // Is the source an initializer?
-    else if let (i, o) = typer.program.types.castToConstructor(k.lhs) {
+    else if let (i, o) = typer.program.types.seenAsConstructor(k.lhs) {
       let f = typer.program.types.demand(Arrow(inputs: i, output: o)).erased
       let s = schedule(EqualityConstraint(lhs: k.rhs, rhs: f, site: k.site))
       return delegate([s])
