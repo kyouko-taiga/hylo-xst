@@ -436,60 +436,6 @@ public struct Typer {
     lookup(program[requirement].identifier.value, lexicallyIn: .init(node: d)).uniqueElement
   }
 
-  /// Returns the declarations implementing the requirement `r` of the concept `c` for the
-  /// conformance of `conformer`, which is declared by `d`.
-  ///
-  /// The type of the implementations that may satisfy the requirement is computed by substituting
-  /// the abstract types of the concept by their corresponding assignment in `subs`, and then
-  /// introducing the generic parameters in the context of `conformer`, which are in `parameters`.
-  private mutating func implementation(
-    of r: FunctionDeclaration.ID, in c: TraitDeclaration.ID,
-    for conformer: AnyTypeIdentity,
-    applying subs: [AnyTypeIdentity: AnyTypeIdentity], in d: ConformanceDeclaration.ID
-  ) -> DeclarationReference? {
-    let requiredName = program.name(of: r)
-    let requiredType = expectedImplementationType(of: r, applying: subs)
-    let scopeOfUse = ScopeIdentity(node: d)
-    var viable: [DeclarationReference] = []
-
-    // Is there a unique implementation in the conformance declaration?
-    for d in lookup(requiredName.identifier, lexicallyIn: .init(node: d)) {
-      let candidateType = declaredType(of: d)
-      if unifiable(candidateType, requiredType) { viable.append(.direct(d)) }
-    }
-
-    if let pick = viable.uniqueElement {
-      return pick
-    } else if !viable.isEmpty {
-      reportAmbiguousImplementation(of: r, in: d)
-      return nil
-    }
-
-    // Is there an implementation that is already member of the conforming type?
-    let q = TypedQualification(value: .virtual, type: conformer)
-    for c in resolve(requiredName, memberOf: q, visibleFrom: scopeOfUse) {
-      if !unifiable(c.type, requiredType) { continue }
-
-      switch c.reference {
-      case .inherited(_, .init(r)) where program[r].body == nil:
-        continue
-      default:
-        viable.append(c.reference)
-      }
-    }
-
-    if let pick = viable.uniqueElement {
-      return pick
-    } else {
-      if viable.isEmpty {
-        reportMissingImplementation(of: r, in: d)
-      } else {
-        reportAmbiguousImplementation(of: r, in: d)
-      }
-      return nil
-    }
-  }
-
   /// Returns the expected type of an implementation of `requirement` substituting abstract types
   /// of with the assignments in `subs`.
   private mutating func expectedImplementationType(
