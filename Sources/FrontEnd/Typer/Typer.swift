@@ -1869,26 +1869,34 @@ public struct Typer {
     /// Extra weight added to the resolution of the witness.
     ///
     /// - Invariant: This property is greater than or equal to 0.
-    let penalties: Int
+    let delay: Int
 
     /// Creates an instance with the given properties.
     init(
       matching witness: WitnessExpression, to queried: AnyTypeIdentity,
       in environment: Environment,
       then tail: [ContinuationItem] = [],
-      delayedBy penalties: Int = 0
+      delayedBy delay: Int
     ) {
-      assert(penalties >= 0)
+      assert(delay >= 0)
       self.witness = witness
       self.queried = queried
       self.environment = environment
       self.tail = tail
-      self.penalties = penalties
+      self.delay = delay
+    }
+
+    /// Returns a copy of `self` with the given properties reassigned.
+    consuming func copy(
+      matching witness: WitnessExpression, to queried: AnyTypeIdentity,
+      in environment: Environment
+    ) -> Self {
+      .init(matching: witness, to: queried, in: environment, then: tail, delayedBy: delay)
     }
 
     /// Returns a copy of `self` with one less penalty.
     consuming func removingPenalty() -> ResolutionThread {
-      .init(matching: witness, to: queried, in: environment, then: tail, delayedBy: penalties - 1)
+      .init(matching: witness, to: queried, in: environment, then: tail, delayedBy: delay - 1)
     }
 
   }
@@ -1967,54 +1975,81 @@ public struct Typer {
     return gs.enumerated().reduce(into: []) { (result, grouping) in
       for g in grouping.element {
         let w = expression(referringTo: g)
-        let t = ResolutionThread(
+        let t = formThread(
           matching: w, to: t, in: environment, then: continuation, delayedBy: grouping.offset)
         result.append(t)
       }
     }
   }
 
+  /// Returns a resolution thread for matching `witness` to `queried`.
+  ///
+  /// - Parameters:
+  ///   - environment: Assignments of open variables and assumed givens.
+  ///   - tail: The operations to perform after matching succeeds.
+  ///   - delay: Extra weight added to the result of this thread.
+  private mutating func formThread(
+    matching witness: WitnessExpression, to queried: AnyTypeIdentity,
+    in environment: ResolutionThread.Environment,
+    then tail: [ResolutionThread.ContinuationItem] = [],
+    delayedBy delay: Int
+  ) -> ResolutionThread {
+    var witness = witness
+    var queried = queried
+    var environment = environment
+
+    while true {
+      // Weak-head normal forms.
+      witness = program.types.reify(
+        witness, applying: environment.substitutions, withVariables: .kept)
+      queried = program.types.reify(
+        queried, applying: environment.substitutions, withVariables: .kept)
+
+      // The witness has a universal type?
+      if let u = program.types[witness.type] as? UniversalType {
+        var vs = TypeApplication.Arguments(minimumCapacity: u.parameters.count)
+        for p in u.parameters {
+          vs[p] = fresh().erased
+        }
+
+        witness = WitnessExpression(
+          value: .typeApplication(witness, vs),
+          type: program.types.substitute(vs, in: u.body))
+        continue
+      }
+
+      // The witness is an implication?
+      if let i = program.types[witness.type] as? Implication {
+        // Assume that the implication has a non-empty context.
+        let h = i.context.first!
+        let (e, v) = environment.assuming(given: h)
+        witness = WitnessExpression(
+          value: .termApplication(witness, v),
+          type: program.types.dropFirstRequirement(.init(uncheckedFrom: witness.type)))
+        environment = e
+        continue
+      }
+
+      // The witness already has a simple type.
+      return .init(matching: witness, to: queried, in: environment, then: tail, delayedBy: delay)
+    }
+  }
+
   /// Returns the result of taking a step in `thread`, which resolves a witness in `scopeOfUse`.
+  ///
+  /// `thread` should be the result of `formThread`, which introduces the necessary assumptions in
+  /// the thread's environment to ensure that its witness has a simple type.
+  ///
+  /// - Requires: `thread.witness` is has no context (i.e., it's a simple type).
   private mutating func match(
     _ thread: ResolutionThread, in scopeOfUse: ScopeIdentity
   ) -> ResolutionThread.Advanced {
-    if thread.penalties > 0 {
+    if thread.delay > 0 {
       return .next([thread.removingPenalty()])
     }
 
-    // Weak-head normal forms.
-    let a = program.types.reify(
-      thread.witness.type, applying: thread.environment.substitutions, withVariables: .kept)
-    let b = program.types.reify(
-      thread.queried, applying: thread.environment.substitutions, withVariables: .kept)
-
-    // The witness has a universal type?
-    if let u = program.types[a] as? UniversalType {
-      var vs = TypeApplication.Arguments(minimumCapacity: u.parameters.count)
-      for p in u.parameters {
-        vs[p] = fresh().erased
-      }
-
-      let w = WitnessExpression(
-        value: .typeApplication(thread.witness, vs),
-        type: program.types.substitute(vs, in: u.body))
-      return .next([
-        .init(matching: w, to: b, in: thread.environment, then: thread.tail)
-      ])
-    }
-
-    // The witness is an implication?
-    else if let i = program.types[a] as? Implication {
-      // Assume that the implication has a non-empty context.
-      let h = i.context.first!
-      let (e, v) = thread.environment.assuming(given: h)
-      let w = WitnessExpression(
-        value: .termApplication(thread.witness, v),
-        type: program.types.dropFirstRequirement(.init(uncheckedFrom: a)))
-      return .next([
-        .init(matching: w, to: b, in: e, then: thread.tail)
-      ])
-    }
+    assert(!program.types.hasContext(thread.witness.type))
+    let (a, b) = (thread.witness.type, thread.queried)
 
     // The witness has a simple type; attempt a match.
     var subs = SubstitutionTable()
@@ -2052,9 +2087,7 @@ public struct Typer {
     let w = WitnessExpression(
       value: .termApplication(.init(builtin: .coercion, type: t), thread.witness),
       type: b)
-    return .next([
-      .init(matching: w, to: b, in: e, then: thread.tail)
-    ])
+    return .next([thread.copy(matching: w, to: b, in: e)])
   }
 
   /// Returns the continuation of `thread` after having resolved `operand` in `scopeOfUse`.
@@ -2113,6 +2146,8 @@ public struct Typer {
   }
 
   /// Returns the results of `threads`, which are defined in `scopeOfUse`.
+  ///
+  /// - Requires: The types of the witnesses in `threads` have no context.
   private mutating func takeSummonResults(
     from threads: [ResolutionThread], in scopeOfUse: ScopeIdentity
   ) -> [SummonResult] {
@@ -2198,31 +2233,23 @@ public struct Typer {
     _ e: ExpressionIdentity, withType a: AnyTypeIdentity, toMatch b: AnyTypeIdentity
   ) -> [SummonResult] {
     // Fast path: types are unifiable without any coercion.
-    if let subs = program.types.unifiable(a, b) {
+    if !b.isVariable, let subs = program.types.unifiable(a, b) {
       return [SummonResult(witness: .init(value: .identity(e), type: a), substitutions: subs)]
     }
 
     // Slow path: compute an elaboration.
-    var main = ResolutionThread(matching: .init(value: .identity(e), type: a), to: b, in: .empty)
-
-    // Apply the rules of the matching judgement until we get a simple type. For example, if `a`
-    // is a universal type `<T> X ==> A<T>`, we want a witness of type `A<%0>` in an environment
-    // where `%0` is a unification variable and `X` is assumed.
-    let scopeOfUse = program.parent(containing: e)
-    while program.types.hasContext(main.witness.type) {
-      switch match(main, in: scopeOfUse) {
-      case .next(let s): main = s.uniqueElement!
-      case .done: unreachable()
-      }
-    }
+    let sansCoercion = formThread(
+      matching: .init(value: .identity(e), type: a), to: b, in: .empty, delayedBy: 0)
 
     // Either the type of the elaborated witness is unifiable with the queried type or we need to
     // assume a coercion. Implicit resolution will figure out the "cheapest" alternative.
-    let (e, f) = main.environment.assuming(
-      given: demand(EqualityWitness(lhs: main.witness.type, rhs: b)).erased)
-    let w = WitnessExpression(value: .termApplication(f, main.witness), type: b)
-    let withCoercion = ResolutionThread(matching: w, to: b, in: e, then: main.tail)
-    return takeSummonResults(from: [main, withCoercion], in: scopeOfUse)
+    let (environment, coercion) = sansCoercion.environment.assuming(
+      given: demand(EqualityWitness(lhs: sansCoercion.witness.type, rhs: b)).erased)
+    let w = WitnessExpression(value: .termApplication(coercion, sansCoercion.witness), type: b)
+    let withCoercion = sansCoercion.copy(matching: w, to: b, in: environment)
+
+    let scopeOfUse = program.parent(containing: e)
+    return takeSummonResults(from: [sansCoercion, withCoercion], in: scopeOfUse)
   }
 
   // MARK: Name resolution
@@ -2626,7 +2653,7 @@ public struct Typer {
     // "how" the type matches the extension.
     let (body, context) = program.types.bodyAndContext(t)
     assert(context.usings.isEmpty)
-    let thread = ResolutionThread(matching: w, to: body, in: .empty)
+    let thread = formThread(matching: w, to: body, in: .empty, delayedBy: 0)
     return takeSummonResults(from: [thread], in: s).uniqueElement
   }
 
