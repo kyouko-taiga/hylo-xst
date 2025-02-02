@@ -1,17 +1,6 @@
 /// The way in which an entity is referred to.
 public indirect enum DeclarationReference: Hashable {
 
-  /// The qualification of a reference to a member declaration.
-  public enum Qualification: Hashable {
-
-    /// Virtual, for the purpose of applying name resolution.
-    case virtual
-
-    /// Explicit, as `foo.` in `foo.bar` or `.foo.` in `.foo.bar`.
-    case explicit(ExpressionIdentity)
-
-  }
-
   /// A reference to a built-in entity.
   case builtin(BuiltinEntity)
 
@@ -19,7 +8,7 @@ public indirect enum DeclarationReference: Hashable {
   case direct(DeclarationIdentity)
 
   /// A reference to a member declaration.
-  case member(Qualification, DeclarationIdentity)
+  case member(DeclarationIdentity)
 
   /// A reference to a member inherited by conformance or extension.
   case inherited(WitnessExpression, DeclarationIdentity)
@@ -37,7 +26,7 @@ public indirect enum DeclarationReference: Hashable {
   /// The referred declaration, unless it is predefined.
   public var target: DeclarationIdentity? {
     switch self {
-    case .direct(let d), .member(_, let d), .inherited(_, let d):
+    case .direct(let d), .member(let d), .inherited(_, let d):
       return d
     default:
       return nil
@@ -63,26 +52,8 @@ extension DeclarationReference: Showable {
     switch self {
     case .builtin(let e):
       return "$<builtin \(e)>"
-    case .direct(let d):
+    case .direct(let d), .member(let d), .inherited(_, let d):
       return printer.program.nameOrTag(of: d)
-    case .member(let q, let d):
-      return printer.show(q) + "." + printer.program.nameOrTag(of: d)
-    case .inherited(_, let d):
-      return printer.program.nameOrTag(of: d)
-    }
-  }
-
-}
-
-extension DeclarationReference.Qualification: Showable {
-
-  /// Returns a textual representation of `self` using `printer`.
-  public func show(using printer: inout TreePrinter) -> String {
-    switch self {
-    case .virtual:
-      return "$virtual"
-    case .explicit(let e):
-      return printer.show(e)
     }
   }
 

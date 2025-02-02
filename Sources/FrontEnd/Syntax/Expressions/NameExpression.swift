@@ -19,11 +19,7 @@ extension NameExpression: Showable {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     if let q = qualification {
-      if printer.program.tag(of: q) == ImplicitQualification.self {
-        return "." + name.description
-      } else {
-        return printer.show(q) + "." + name.description
-      }
+      return printer.show(q) + "." + name.description
     } else {
       return name.description
     }

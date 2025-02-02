@@ -252,8 +252,7 @@ public struct Typer {
 
       if viable.isEmpty {
         // Is there an implementation that is already member of the conforming type?
-        let q = TypedQualification(value: .virtual, type: conformer)
-        for c in resolve(requiredName, memberOf: q, visibleFrom: .init(node: d)) {
+        for c in resolve(requiredName, memberOf: conformer, visibleFrom: .init(node: d)) {
           if !unifiable(c.type, requiredType) { continue }
 
           // If we resolved the requirement, make sure it has a default implementation.
@@ -1301,9 +1300,8 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let site = program.spanForDiagnostic(about: e)
 
-    let t = resolveQualification(of: e, in: &context)
+    let q = resolveQualification(of: e, in: &context)
     let u = fresh().erased
-    let q = TypedQualification(value: .virtual, type: t)
     context.obligations.assume(
       MemberConstraint(
         member: program[e].target, role: context.role, qualification: q, type: u, site: site))
@@ -2276,19 +2274,19 @@ public struct Typer {
 
     // Is the name qualified?
     if let q = resolveQualification(of: e, in: &context) {
-      if q.type.isVariable {
+      if q.isVariable {
         let t = context.expectedType ?? fresh().erased
         let k = MemberConstraint(
           member: e, role: context.role, qualification: q, type: t, site: site)
         context.obligations.assume(k)
         return context.obligations.assume(e, hasType: t, at: site)
-      } else if q.type == .error {
+      } else if q == .error {
         return context.obligations.assume(e, hasType: .error, at: site)
       }
 
       cs = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
       if cs.isEmpty {
-        report(program.undefinedSymbol(program[e].name, memberOf: q.type))
+        report(program.undefinedSymbol(program[e].name, memberOf: q))
         return context.obligations.assume(e, hasType: .error, at: site)
       }
     }
@@ -2314,22 +2312,22 @@ public struct Typer {
   /// Resolves and returns the qualification of `e`, which occurs in `context`.
   private mutating func resolveQualification(
     of e: NameExpression.ID, in context: inout InferenceContext
-  ) -> TypedQualification? {
+  ) -> AnyTypeIdentity? {
     // No qualification?
     guard let q = program[e].qualification else { return nil }
 
     if program.tag(of: q) == ImplicitQualification.self {
       if let t = context.expectedType {
         context.obligations.assume(q, hasType: t, at: program[q].site)
-        return qualificationForSelectionOn(.explicit(q), withType: t)
+        return qualificationForSelection(on: t)
       } else {
         let n = program[e].name
         report(.init(.error, "no context to resolve '\(n)'", at: n.site))
-        return .init(value: .explicit(q), type: .error)
+        return .error
       }
     } else {
       let t = inferredType(of: q, in: &context)
-      return qualificationForSelectionOn(.explicit(q), withType: t)
+      return qualificationForSelection(on: t)
     }
   }
 
@@ -2353,14 +2351,12 @@ public struct Typer {
     }
   }
 
-  /// Returns the type in which qualified name lookup should be performed to select a member on a
-  /// qualification `q` of type `t`.
-  internal mutating func qualificationForSelectionOn(
-    _ q: DeclarationReference.Qualification, withType t: AnyTypeIdentity
-  ) -> TypedQualification {
+  /// Returns the type in which qualified name lookup is performed to select a member of a value
+  /// having type `t`.
+  internal mutating func qualificationForSelection(on t: AnyTypeIdentity) -> AnyTypeIdentity {
     // If the qualification has a remote type, name resolution proceeds with the projectee.
     if let u = program.types[t] as? RemoteType {
-      return .init(value: q, type: u.projectee)
+      return u.projectee
     }
 
     // If the qualification has a metatype, name resolution proceeds with the inhabitant so that
@@ -2370,9 +2366,9 @@ public struct Typer {
     let (context, head) = program.types.contextAndHead(t)
     if let m = program.types[head] as? Metatype {
       let u = program.types.introduce(context, into: m.inhabitant)
-      return .init(value: q, type: u)
+      return u
     } else {
-      return .init(value: q, type: t)
+      return t
     }
   }
 
@@ -2432,15 +2428,15 @@ public struct Typer {
   ///
   /// - Requires: `q.type` is not a unification variable.
   internal mutating func resolve(
-    _ n: Name, memberOf q: TypedQualification, visibleFrom scopeOfUse: ScopeIdentity
+    _ n: Name, memberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
     var candidates = resolve(n, nativeMemberOf: q)
 
-    candidates.append(contentsOf: resolve(n, memberInExtensionOf: q.type, visibleFrom: scopeOfUse))
+    candidates.append(contentsOf: resolve(n, memberInExtensionOf: q, visibleFrom: scopeOfUse))
 
     for (concept, ms) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
       let vs = program[concept].parameters.map({ _ in fresh().erased })
-      let model = typeOfModel(of: q.type, conformingTo: concept, with: vs)
+      let model = typeOfModel(of: q, conformingTo: concept, with: vs)
       let summonings = summon(model.erased, in: scopeOfUse)
 
       // TODO: report ambiguous resolution results in the candidate's diagnostics
@@ -2464,19 +2460,19 @@ public struct Typer {
   ///
   /// - Requires: `q.type` is not a unification variable.
   private mutating func resolve(
-    _ n: Name, nativeMemberOf q: TypedQualification
+    _ n: Name, nativeMemberOf q: AnyTypeIdentity
   ) -> [NameResolutionCandidate] {
-    assert(!q.type.isVariable)
-    let (context, receiver) = program.types.contextAndHead(q.type)
+    assert(!q.isVariable)
+    let (context, receiver) = program.types.contextAndHead(q)
     var candidates: [NameResolutionCandidate] = []
 
-    for m in declarations(nativeMembersOf: q.type)[n.identifier] ?? [] {
+    for m in declarations(nativeMembersOf: q)[n.identifier] ?? [] {
       var member = declaredType(of: m)
       if let a = program.types[receiver] as? TypeApplication {
         member = program.types.substitute(a.arguments, in: member)
       }
       member = program.types.introduce(context, into: member)
-      candidates.append(.init(reference: .member(q.value, m), type: member))
+      candidates.append(.init(reference: .member(m), type: member))
     }
 
     return candidates

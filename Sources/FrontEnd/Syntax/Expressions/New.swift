@@ -18,11 +18,7 @@ extension New: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    if printer.program.tag(of: qualification) == ImplicitQualification.self {
-      return ".new"
-    } else {
-      return printer.show(qualification) + ".new"
-    }
+    printer.show(qualification) + ".new"
   }
 
 }

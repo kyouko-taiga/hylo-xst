@@ -396,7 +396,7 @@ internal struct MemberConstraint: Constraint {
   internal let role: SyntaxRole
 
   /// The qualification of the member.
-  internal private(set) var qualification: TypedQualification
+  internal private(set) var qualification: AnyTypeIdentity
 
   /// The type of the member.
   internal private(set) var type: AnyTypeIdentity
@@ -406,7 +406,7 @@ internal struct MemberConstraint: Constraint {
 
   /// Applies `transform` on constituent types of `self`.
   internal mutating func update(_ transform: (AnyTypeIdentity) -> AnyTypeIdentity) {
-    qualification = .init(value: qualification.value, type: transform(qualification.type))
+    qualification = transform(qualification)
     type = transform(type)
   }
 
@@ -416,7 +416,7 @@ extension MemberConstraint: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   internal func show(using printer: inout TreePrinter) -> String {
-    "\(printer.show(qualification.type)).\(printer.program[member].name) =:= \(printer.show(type))"
+    "\(printer.show(qualification)).\(printer.program[member].name) =:= \(printer.show(type))"
   }
 
 }

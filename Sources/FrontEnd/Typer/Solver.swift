@@ -478,19 +478,18 @@ internal struct Solver {
     let k = goals[g] as! MemberConstraint
 
     // Can't do anything before we've inferred the type of the qualification.
-    if k.qualification.type.isVariable {
+    if k.qualification.isVariable {
       return postpone(g)
     }
 
     let n = program[k.member].name
-    let q = typer.qualificationForSelectionOn(
-      k.qualification.value, withType: k.qualification.type)
+    let q = typer.qualificationForSelection(on: k.qualification)
     let cs = typer.resolve(
       n.value, memberOf: q, visibleFrom: program.parent(containing: k.member))
 
     if cs.isEmpty {
       return .failure { (ss, _, tp, ds) in
-        let q = tp.program.types.reify(k.qualification.type, applying: ss)
+        let q = tp.program.types.reify(k.qualification, applying: ss)
         ds.insert(tp.program.undefinedSymbol(tp.program[k.member].name, memberOf: q))
       }
     }

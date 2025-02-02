@@ -1,6 +1,6 @@
 import Archivist
 
-/// The implicit qualification of a name expression, e.g., the `.` in `.bar`.
+/// The implicit qualification of a name expression prefixed by a dot (e.g., `.bar`).
 public struct ImplicitQualification: Expression {
 
   /// The site from which `self` was parsed.
@@ -13,7 +13,7 @@ extension ImplicitQualification: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    "."
+    ""
   }
 
 }
