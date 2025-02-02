@@ -102,8 +102,6 @@ internal struct Solver {
             o = me.solve(constructorConversion: g)
           case is CallConstraint:
             o = me.solve(call: g)
-          case is ArgumentConstraint:
-            o = me.solve(argument: g)
           case is StaticCallConstraint:
             o = me.solve(staticCall: g)
           case is Summonable:
@@ -147,11 +145,11 @@ internal struct Solver {
       for (t, u) in s.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
       return .success
     } else {
-      return .failure { (s, _, p, d) in
-        let t = p.types.reify(k.lhs, applying: s)
-        let u = p.types.reify(k.rhs, applying: s)
-        let m = p.format("type '%T' is not compatible with '%T'", [t, u])
-        d.insert(.init(.error, m, at: k.site))
+      return .failure { (ss, _, tp, ds) in
+        let t = tp.program.types.reify(k.lhs, applying: ss)
+        let u = tp.program.types.reify(k.rhs, applying: ss)
+        let m = tp.program.format("type '%T' is not compatible with '%T'", [t, u])
+        ds.insert(.init(.error, m, at: k.site))
       }
     }
   }
@@ -162,23 +160,16 @@ internal struct Solver {
 
     if k.isTrivial {
       return .success
-    } else if k.lhs.isVariable || k.rhs.isVariable {
+    } else if k.lhs.isVariable {
       return postpone(g)
     }
 
-    // Fast path: types are unifiable without any coercion.
-    if let subs = typer.program.types.unifiable(k.lhs, k.rhs) {
-      for (t, u) in subs.types { assume(t, equals: u) }
-      return .success
-    }
-
-    // Slow path: applies the matching judgement of implicit resolution.
     let es = typer.coerced(k.origin, withType: k.lhs, toMatch: k.rhs)
     if let pick = es.uniqueElement {
       // TODO: Store elaboration
       for (t, u) in pick.substitutions.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
       return .success
-    } else if k.lhs[.hasVariable] || k.rhs[.hasVariable] {
+    } else if k.rhs[.hasVariable] {
       return postpone(g)
     } else {
       return .failure(diagnoseInvalidCoercion(k))
@@ -194,14 +185,37 @@ internal struct Solver {
 
   /// Returns a function diagnosing a failure to solve a `k` due to an invalid coercion.
   private func diagnoseInvalidCoercion(_ k: CoercionConstraint) -> DiagnoseFailure {
-    { (s, _, p, d) in
-      let t = p.types.reify(k.lhs, applying: s)
-      let u = p.types.reify(k.rhs, applying: s)
+    { (ss, _, tp, ds) in
+      let t = tp.program.types.reify(k.lhs, applying: ss)
+      let u = tp.program.types.reify(k.rhs, applying: ss)
+
       switch k.reason {
+      case .argument:
+        ds.insert(tp.program.cannotPass(argument: t, to: u, at: k.site))
+
       case .ascription:
-        d.insert(p.doesNotDenoteType(k.origin))
+        ds.insert(tp.program.doesNotDenoteType(k.origin))
+
       default:
-        d.insert(p.noCoercion(from: t, to: u, at: k.site))
+        let scopeOfUse = tp.program.parent(containing: k.origin)
+        let (_, usings, lhs) = tp.program.types.open(t)
+        var notes: [Diagnostic] = []
+
+        if let s = tp.program.types.unifiable(lhs, u) {
+          for using in usings {
+            let x = tp.program.types.reify(using, applying: s)
+            if x[.hasError] { continue }
+
+            let n = tp.summon(x, in: scopeOfUse).count
+            if n == 0 {
+              notes.append(tp.program.noGivenInstance(of: x, at: k.site).as(.note))
+            } else if n > 1 {
+              notes.append(tp.program.multipleGivenInstances(of: x, at: k.site).as(.note))
+            }
+          }
+        }
+
+        ds.insert(tp.program.noCoercion(from: t, to: u, at: k.site, because: notes))
       }
     }
   }
@@ -247,10 +261,10 @@ internal struct Solver {
 
     // The source isn't an initializer.
     else {
-      return .failure { (s, _, p, d) in
-        let t = p.types.reify(k.lhs, applying: s)
-        let m = p.format("cannot use value of type '%T' as a constructor", [t])
-        d.insert(.init(.error, m, at: k.site))
+      return .failure { (s, _, typer, ds) in
+        let t = typer.program.types.reify(k.lhs, applying: s)
+        let m = typer.program.format("cannot use value of type '%T' as a constructor", [t])
+        ds.insert(.init(.error, m, at: k.site))
       }
     }
   }
@@ -259,10 +273,10 @@ internal struct Solver {
   private mutating func simplify(_ k: WideningConstraint) -> GoalOutcome {
     let e = EqualityConstraint(lhs: k.lhs, rhs: k.rhs, site: k.site)
     let s = schedule(e)
-    return .forward([s]) { (s, _, p, d) in
-      let t = p.types.reify(e.lhs, applying: s)
-      let u = p.types.reify(e.rhs, applying: s)
-      d.insert(p.noConversion(from: t, to: u, at: e.site))
+    return .forward([s]) { (ss, _, tp, ds) in
+      let t = tp.program.types.reify(e.lhs, applying: ss)
+      let u = tp.program.types.reify(e.rhs, applying: ss)
+      ds.insert(tp.program.noConversion(from: t, to: u, at: e.site))
     }
   }
 
@@ -271,80 +285,69 @@ internal struct Solver {
     let k = goals[g] as! CallConstraint
 
     // Can't do anything before we've inferred the type of the callee.
-    let callee = typer.program.types.head(k.callee)
-    if callee.isVariable {
+    let (body, context) = typer.program.types.bodyAndContext(k.callee)
+    if body.isVariable {
       return postpone(g)
     }
 
-    // Check that the callee has the right shape.
-    switch typer.program[k.origin].style {
-    case .parenthesized where !typer.program.types.isArrowLike(callee):
+    // Callee doesn't have the right shape?
+    else if !typer.program.isCallable(headOf: body, typer.program[k.origin].style) {
       return invalidCallee(k)
-    case .bracketed where !typer.program.types.isSubscriptLike(callee):
-      return invalidCallee(k)
-    default:
-      break
     }
 
-    // Insert compile-time implicits.
-    let scopeOfUse = typer.program.parent(containing: k.origin)
-    let calleeSite = typer.program[typer.program[k.origin].callee].site
-    var subgoals: [any Constraint] = []
-    let adaptedCallee = adaptCalleeType(
-      k.callee, in: scopeOfUse, at: calleeSite, addingSubgoalsInto: &subgoals)
+    var subgoals: [GoalIdentity] = []
+    let coercion: GoalIdentity
+    let callee: any Callable
 
-    // Check that the argument list has the right shape.
-    guard let bs = matches(k, inputsOf: adaptedCallee, addingSubgoalsInto: &subgoals) else {
-      return .failure { (_, _, p, d) in
-        d.insert(p.incompatibleLabels(found: k.labels, expected: adaptedCallee.labels, at: k.site))
+    // Compile-time implicits missing?
+    if context.isEmpty {
+      coercion = -1
+      callee = typer.program.types[body] as! any Callable
+    } else {
+      let f = typer.program[k.origin].callee
+      let opened = typer.program.types.openedHead(k.callee)
+      coercion = schedule(
+        CoercionConstraint(on: f, from: k.callee, to: opened, at: typer.program[f].site))
+      subgoals.append(coercion)
+      callee = typer.program.types[opened] as! any Callable
+    }
+
+    // The callee's been fixed; next are the arguments and the output type.
+    let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
+    let o = callee.output(calleeIsMutating: m)
+    subgoals.append(schedule(EqualityConstraint(lhs: o, rhs: k.output, site: k.site)))
+
+    guard let (bs, ss) = matches(k, inputsOf: callee) else {
+      return .failure { (_, _, typer, ds) in
+        ds.insert(
+          typer.program.incompatibleLabels(found: k.labels, expected: callee.labels, at: k.site))
       }
     }
+
     if bs.hasDefaulted {
       elaborations.append((k.origin, bs))
     }
 
-    // Constrain the return type.
-    let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
-    let o = adaptedCallee.output(calleeIsMutating: m)
-    subgoals.append(EqualityConstraint(lhs: o, rhs: k.output, site: k.site))
+    for s in ss {
+      subgoals.append(schedule(s))
+    }
 
-    // Simplify the constraint.
-    let cs = subgoals.map({ (s) in schedule(s) })
-    return delegate(cs)
-  }
-
-  /// Adds constraints to resolve the arguments to the compile-time context parameters of a callee
-  /// of type `t` in `scopeOfUse` at `site` at the end of `subgoals`.
-  private mutating func adaptCalleeType(
-    _ t: AnyTypeIdentity, in scopeOfUse: ScopeIdentity, at site: SourceSpan,
-    addingSubgoalsInto subgoals: inout [any Constraint]
-  ) -> any Callable {
-    switch typer.program.types[t] {
-    case let u as UniversalType:
-      let subs = Dictionary(
-        uniqueKeysWithValues: u.parameters.map({ (p) in
-          (p.erased, typer.program.types.fresh().erased)
-        }))
-      let open = typer.program.types.substitute(subs, in: u.body)
-      return adaptCalleeType(open, in: scopeOfUse, at: site, addingSubgoalsInto: &subgoals)
-
-    case let u as Implication:
-      for t in u.context {
-        subgoals.append(Summonable(type: t, scope: scopeOfUse, site: site))
+    return .forward(subgoals) { (substitutions, outcomes, typer, ds) in
+      // Diagnose failures to coerce callees first.
+      if coercion >= 0, let f = outcomes.diagnosticBuilder(coercion) {
+        f(substitutions, outcomes, &typer, &ds)
+      } else {
+        outcomes.diagnoseFailures(in: subgoals, into: &ds, using: substitutions, &typer)
       }
-      return adaptCalleeType(u.head, in: scopeOfUse, at: site, addingSubgoalsInto: &subgoals)
-
-    case let u:
-      return u as! any Callable
     }
   }
 
   /// Returns how the types of the arguments in `k` match the parameters of `f`.
   private mutating func matches(
-    _ k: CallConstraint, inputsOf f: any Callable,
-    addingSubgoalsInto subgoals: inout [any Constraint]
-  ) -> ParameterBindings? {
+    _ k: CallConstraint, inputsOf f: any Callable
+  ) -> (bingings: ParameterBindings, subgoals: [CoercionConstraint])? {
     var bindings = ParameterBindings()
+    var subgoals: [CoercionConstraint] = []
 
     var i = 0
     for p in f.inputs {
@@ -354,7 +357,8 @@ internal struct Solver {
         let a = k.arguments[i]
         bindings.append(.explicit(i))
         subgoals.append(
-          ArgumentConstraint(origin: v, lhs: a.type, rhs: p.type, site: typer.program[v].site))
+          CoercionConstraint(
+            on: v, from: a.type, to: p.type, reason: .argument, at: typer.program[v].site))
         i += 1
       }
 
@@ -371,42 +375,16 @@ internal struct Solver {
     }
 
     assert(bindings.elements.count == f.inputs.count)
-    return i == k.arguments.count ? bindings : nil
+    return i == k.arguments.count ? (bindings, subgoals) : nil
   }
 
   /// Returns a failure to solve a `k` due to an invalid callee type.
   private func invalidCallee(_ k: CallConstraint) -> GoalOutcome {
-    .failure { (s, o, p, d) in
-      let t = p.types.reify(k.callee, applying: s)
-      d.insert(p.cannotCall(t, p[k.origin].style, at: p[k.origin].site))
-    }
-  }
-
-  /// Discharges `g`, which is an argument constraint.
-  private mutating func solve(argument g: GoalIdentity) -> GoalOutcome {
-    let k = goals[g] as! ArgumentConstraint
-
-    switch typer.program.types[k.rhs] {
-    case is TypeVariable:
-      return postpone(g)
-
-    case let p as RemoteType:
-      let s = schedule(
-        CoercionConstraint(
-          on: k.origin, from: k.lhs, to: p.projectee, reason: .unspecified, at: k.site))
-      return .forward([s]) { (s, _, p, d) in
-        let t = p.types.reify(k.lhs, applying: s)
-        let u = p.types.reify(k.rhs, applying: s)
-        let m = p.format("cannot pass value of type '%T' to parameter '%T'", [t, u])
-        d.insert(.init(.error, m, at: k.site))
-      }
-
-    default:
-      return .failure { (s, _, p, d) in
-        let t = p.types.reify(k.rhs, applying: s)
-        let m = p.format("invalid parameter type '%T' ", [t])
-        d.insert(.init(.error, m, at: k.site))
-      }
+    .failure { (s, _, typer, ds) in
+      let t = typer.program.types.reify(k.callee, applying: s)
+      let e = typer.program.cannotCall(
+        t, typer.program[k.origin].style, at: typer.program[k.origin].site)
+      ds.insert(e)
     }
   }
 
@@ -442,11 +420,11 @@ internal struct Solver {
   private func invalidArgumentCount(
     _ k: StaticCallConstraint, expected: Int
   ) -> GoalOutcome {
-    .failure { (s, _, p, d) in
-      let f = if let n = p.cast(p[k.origin].callee, to: NameExpression.self) {
-        "'\(p[n].name)'"
+    .failure { (ss, _, tp, ds) in
+      let f = if let n = tp.program.cast(tp.program[k.origin].callee, to: NameExpression.self) {
+        "'\(tp.program[n].name)'"
       } else {
-        p.format("value of type '%T'", [p.types.reify(k.callee, applying: s)])
+        tp.program.format("value of type '%T'", [tp.program.types.reify(k.callee, applying: ss)])
       }
 
       let m = if expected == 0 {
@@ -455,7 +433,8 @@ internal struct Solver {
         "\(f) takes \(expected) compile-time argument(s); found \(k.arguments.count)"
       }
 
-      d.insert(.init(.error, m, at: p.spanForDiagnostic(about: p[k.origin].callee)))
+      ds.insert(
+        .init(.error, m, at: tp.program.spanForDiagnostic(about: tp.program[k.origin].callee)))
     }
   }
 
@@ -474,17 +453,17 @@ internal struct Solver {
       return .success
 
     case 0:
-      return .failure { (s, o, p, d) in
-        let t = p.types.reify(k.type, applying: s)
-        let m = p.format("no given instance of '%T' in this scope", [t])
-        d.insert(.init(.error, m, at: k.site))
+      return .failure { (ss, _, tp, ds) in
+        let t = tp.program.types.reify(k.type, applying: ss)
+        let m = tp.program.format("no given instance of '%T' in this scope", [t])
+        ds.insert(.init(.error, m, at: k.site))
       }
 
     default:
-      return .failure { (s, o, p, d) in
-        let t = p.types.reify(k.type, applying: s)
-        let m = p.format("ambiguous given instance of '%T'", [t])
-        d.insert(.init(.error, m, at: k.site))
+      return .failure { (ss, _, tp, ds) in
+        let t = tp.program.types.reify(k.type, applying: ss)
+        let m = tp.program.format("ambiguous given instance of '%T'", [t])
+        ds.insert(.init(.error, m, at: k.site))
       }
     }
   }
@@ -505,9 +484,9 @@ internal struct Solver {
       n.value, memberOf: q, visibleFrom: typer.program.parent(containing: k.member))
 
     if cs.isEmpty {
-      return .failure { (s, _, p, d) in
-        let q = p.types.reify(k.qualification.type, applying: s)
-        d.insert(p.undefinedSymbol(p[k.member].name, memberOf: q))
+      return .failure { (ss, _, tp, ds) in
+        let q = tp.program.types.reify(k.qualification.type, applying: ss)
+        ds.insert(tp.program.undefinedSymbol(tp.program[k.member].name, memberOf: q))
       }
     }
 
@@ -580,7 +559,7 @@ internal struct Solver {
 
     for g in 0 ..< rootCount {
       if let f = outcomes.diagnosticBuilder(g) {
-        f(ss, outcomes, &typer.program, &ds)
+        f(ss, outcomes, &typer, &ds)
       }
     }
 
@@ -650,8 +629,8 @@ internal struct Solver {
 
   /// Inserts `gs` into the fresh set and return their identities.
   @discardableResult
-  private mutating func insert<S: Sequence<any Constraint>>(fresh gs: S) -> [GoalIdentity] {
-    gs.map({ (g) in insert(fresh: g) })
+  private mutating func insert<T: Collection<any Constraint>>(fresh gs: T) -> [GoalIdentity] {
+    gs.reversed().map({ (g) in insert(fresh: g) })
   }
 
   /// Inserts `k` into the fresh set and returns its identity.
@@ -682,10 +661,8 @@ internal struct Solver {
 
   /// Returns the splitting of a goal into sub-goals `gs`, reporting each of failure individually.
   private func delegate(_ gs: [GoalIdentity]) -> GoalOutcome {
-    .forward(gs) { (m, o, p, d) in
-      for g in gs {
-        if let f = o.diagnosticBuilder(g) { f(m, o, &p, &d) }
-      }
+    .forward(gs) { (substitutions, outcomes, typer, diagnostics) in
+      outcomes.diagnoseFailures(in: gs, into: &diagnostics, using: substitutions, &typer)
     }
   }
 
@@ -721,13 +698,13 @@ internal struct Solver {
 
 }
 
-/// A closure reporting the diagnostics of a goal's failure into `d`, using `s` to reify types that
-/// are defined in `p`, and reading the outcome of other goals from `o`.
+/// A closure reporting diagnostics of a goal's failure into `ds`, using `ss` to reify types that
+/// are defined in the program typed by `tp`, and reading the outcome of other goals from `os`.
 private typealias DiagnoseFailure = (
-  _ s: SubstitutionTable,
-  _ o: [GoalOutcome],
-  _ p: inout Program,
-  _ d: inout DiagnosticSet
+  _ ss: SubstitutionTable,
+  _ os: [GoalOutcome],
+  _ tp: inout Typer,
+  _ ds: inout DiagnosticSet
 ) -> Void
 
 /// The identity of a goal.
@@ -783,6 +760,18 @@ extension [GoalOutcome] {
       return f
     case .forward(let gs, let f):
       return gs.contains(where: failed(_:)) ? f : nil
+    }
+  }
+
+  /// Calls the diagnostic builder of all the failed goals in `gs` with the given arguments.
+  fileprivate func diagnoseFailures<S: Sequence<GoalIdentity>>(
+    in gs: S, into ds: inout DiagnosticSet,
+    using substitutions: SubstitutionTable, _ typer: inout Typer
+  ) {
+    for g in gs {
+      if let f = diagnosticBuilder(g) {
+        f(substitutions, self, &typer, &ds)
+      }
     }
   }
 

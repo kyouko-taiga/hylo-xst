@@ -705,11 +705,10 @@ public struct Typer {
         _ = declaredType(of: b)
         program.forEachVariable(introducedBy: b) { (v, _) in
           let t = program[module].type(assignedTo: b) ?? .error
-          let u = demand(RemoteType(projectee: t, access: .sink)).erased
           inputs.append(
             Parameter(
               declaration: nil,
-              label: program[v].identifier.value, type: u,
+              label: program[v].identifier.value, access: .sink, type: t,
               isImplicit: false))
         }
       }
@@ -860,9 +859,21 @@ public struct Typer {
   private mutating func declaredTypes(of ps: [ParameterDeclaration.ID]) -> [Parameter] {
     var result: [Parameter] = []
     for p in ps {
+      let t = declaredType(of: p)
+
+      let access: AccessEffect
+      let projectee: AnyTypeIdentity
+      if let u = program.types[t] as? RemoteType {
+        access = u.access
+        projectee = u.projectee
+      } else {
+        access = .let
+        projectee = .error
+      }
+
       result.append(
         Parameter(
-          declaration: p, label: program[p].label?.value, type: declaredType(of: p),
+          declaration: p, label: program[p].label?.value, access: access, type: projectee,
           isImplicit: false))
     }
     return result
@@ -1508,7 +1519,7 @@ public struct Typer {
   ) -> Diagnostic? {
     // Non-viable candidates moved at the end.
     let i = cs.stablePartition { (c) in
-      !program.types.isCallable(headOf: c.type, style, withLabels: labels)
+      !program.isCallable(headOf: c.type, style, withLabels: labels)
     }
     defer { cs.removeSubrange(i...) }
 
@@ -1895,7 +1906,7 @@ public struct Typer {
     }
 
     /// Returns a copy of `self` with one less penalty.
-    consuming func removingPenalty() -> ResolutionThread {
+    consuming func removingPenalty() -> Self {
       .init(matching: witness, to: queried, in: environment, then: tail, delayedBy: delay - 1)
     }
 
@@ -1972,12 +1983,13 @@ public struct Typer {
       .coercion(.transitivity),
     ])
 
+    let u = program.types.reify(t, applying: environment.substitutions, withVariables: .kept)
     return gs.enumerated().reduce(into: []) { (result, grouping) in
       for g in grouping.element {
         let w = expression(referringTo: g)
-        let t = formThread(
-          matching: w, to: t, in: environment, then: continuation, delayedBy: grouping.offset)
-        result.append(t)
+        let r = formThread(
+          matching: w, to: u, in: environment, then: continuation, delayedBy: grouping.offset)
+        result.append(r)
       }
     }
   }

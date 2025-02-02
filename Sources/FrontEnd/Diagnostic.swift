@@ -42,6 +42,11 @@ public struct Diagnostic: Hashable {
     self.notes = notes
   }
 
+  /// Returns a copy of `self` with the given level.
+  public func `as`(_ level: Level) -> Self {
+    .init(level, message, at: site, notes: notes)
+  }
+
 }
 
 extension Diagnostic: Comparable {
@@ -89,6 +94,14 @@ extension Program {
     }
   }
 
+  /// Returns an error diagnosing an invalid argument to a call.
+  internal func cannotPass(
+    argument t: AnyTypeIdentity, to u: AnyTypeIdentity, at site: SourceSpan
+  ) -> Diagnostic {
+    let m = format("cannot pass value of type '%T' to parameter '%T'", [t, u])
+    return .init(.error, m, at: site)
+  }
+
   /// Returns an error diagnosing an invalid type expression.
   internal func doesNotDenoteType(_ e: ExpressionIdentity) -> Diagnostic {
     .init(.error, "expression does not denote a type", at: spanForDiagnostic(about: e))
@@ -115,11 +128,19 @@ extension Program {
     return .init(.error, "invalid redeclaration of '\(n)'", at: site, notes: notes)
   }
 
+  /// Returns an error diagnosing ambiguous implicit search results.
+  internal func multipleGivenInstances(
+    of t: AnyTypeIdentity, at site: SourceSpan
+  ) -> Diagnostic {
+    .init(.error, format("multiple given instance of '%T' in this scope", [t]), at: site)
+  }
+
   /// Returns an error diagnosing an invalid coercion.
   internal func noCoercion(
-    from t: AnyTypeIdentity, to u: AnyTypeIdentity, at site: SourceSpan
+    from t: AnyTypeIdentity, to u: AnyTypeIdentity, at site: SourceSpan,
+    because notes: [Diagnostic] = []
   ) -> Diagnostic {
-    .init(.error, format("no coercion from '%T' to '%T'", [t, u]), at: site)
+    .init(.error, format("no coercion from '%T' to '%T'", [t, u]), at: site, notes: notes)
   }
 
   /// Returns an error diagnosing an invalid conversion.
@@ -127,6 +148,13 @@ extension Program {
     from t: AnyTypeIdentity, to u: AnyTypeIdentity, at site: SourceSpan
   ) -> Diagnostic {
     .init(.error, format("no conversion from '%T' to '%T'", [t, u]), at: site)
+  }
+
+  /// Returns an error diagnosing a missing given instance.
+  internal func noGivenInstance(
+    of t: AnyTypeIdentity, at site: SourceSpan
+  ) -> Diagnostic {
+    .init(.error, format("no given instance of '%T' in this scope", [t]), at: site)
   }
 
   /// Returns an error diagnosing a failure to infer a type due to lacking context.

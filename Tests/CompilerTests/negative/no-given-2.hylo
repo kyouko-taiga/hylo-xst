@@ -1,0 +1,13 @@
+trait P {}
+
+struct A { memberwise init }
+struct B { memberwise init }
+
+given A: P {}
+
+fun f<T where T: P, A: P>(x: T) {}
+
+fun main() {
+  f(x: B())
+}
+

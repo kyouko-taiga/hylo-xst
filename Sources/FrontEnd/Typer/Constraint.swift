@@ -84,6 +84,9 @@ internal struct CoercionConstraint: Constraint {
   /// The reason for a coercion constraint.
   internal enum Reason {
 
+    /// An argument.
+    case argument
+
     /// A type ascription.
     case ascription
 

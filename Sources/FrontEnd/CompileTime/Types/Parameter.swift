@@ -7,7 +7,10 @@ public struct Parameter: Hashable {
   /// The label of the parameter.
   public let label: String?
 
-  /// The type of the parameter.
+  /// The capabilities of the parameter on its argument.
+  public let access: AccessEffect
+
+  /// The type of the values that can be passed to the parameter.
   public let type: AnyTypeIdentity
 
   /// `true` if arguments to the parameter can be passed implicitly.
@@ -19,7 +22,8 @@ public struct Parameter: Hashable {
     by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
   ) -> Parameter {
     let t = store.map(type, transform)
-    return .init(declaration: declaration, label: label, type: t, isImplicit: isImplicit)
+    return .init(
+      declaration: declaration, label: label, access: access, type: t, isImplicit: isImplicit)
   }
 
 }
@@ -29,7 +33,7 @@ extension Parameter: Showable {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     let t = printer.show(type)
-    return if let l = label { "\(l): \(t)" } else { t }
+    return if let l = label { "\(l): \(access) \(t)" } else { t }
   }
 
 }

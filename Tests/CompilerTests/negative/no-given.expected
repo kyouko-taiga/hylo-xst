@@ -1,9 +1,0 @@
-negative/no-given.hylo:12.3-4: error: no given instance of 'Q<A>' in this scope
-  f()
-  ^
-negative/no-given.hylo:17.3-4: error: no given instance of 'Q<A>' in this scope
-  f()
-  ^
-negative/no-given.hylo:21.3-4: error: no given instance of 'P<Void>' in this scope
-  i(x: ())
-  ^

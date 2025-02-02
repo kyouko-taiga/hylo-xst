@@ -79,18 +79,6 @@ public struct TypeStore {
     return false
   }
 
-  /// Returns `true` iff `n` sans context clause identifies the type of an entity callable with the
-  /// given style and argument labels.
-  public func isCallable<S: Sequence<String?>>(
-    headOf n: AnyTypeIdentity, _ style: Call.Style, withLabels labels: S
-  ) -> Bool {
-    if let t = self[head(n)] as? any Callable {
-      return (t.style == style) && t.labels.elementsEqual(labels)
-    } else {
-      return false
-    }
-  }
-
   /// Returns `true` iff `n` is a universal type or an implication.
   public func hasContext<T: TypeIdentity>(_ n: T) -> Bool {
     (tag(of: n) == UniversalType.self) || (tag(of: n) == Implication.self)
@@ -128,6 +116,49 @@ public struct TypeStore {
     } else {
       return (b, .init(parameters: p, usings: []))
     }
+  }
+
+  /// Returns `n` sans context clause, substituting type parameters for unification variables.
+  public mutating func openedHead(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
+    var result = n
+    while true {
+      switch self[result] {
+      case let t as UniversalType:
+        result = substitute(open(t.parameters), in: t.body)
+      case let t as Implication:
+        result = t.head
+      default:
+        return result
+      }
+    }
+  }
+
+  /// Returns `(a, c, h)` where `h` is the head of `n` opened for unification, `c` is the context
+  /// of `n` opened for unification, and `a` maps the parameters of `n` to unification variables.
+  public mutating func open(
+    _ n: AnyTypeIdentity
+  ) -> (TypeApplication.Arguments, [AnyTypeIdentity], AnyTypeIdentity) {
+    let a: TypeApplication.Arguments
+    var h: AnyTypeIdentity
+
+    if let u = self[n] as? UniversalType {
+      a = open(u.parameters)
+      h = substitute(a, in: u.body)
+    } else {
+      a = [:]
+      h = n
+    }
+
+    if let i = self[h] as? Implication {
+      return (a, i.context, i.head)
+    } else {
+      return (a, [], h)
+    }
+  }
+
+  /// Returns a table mapping each parameter in `ps` to a fresh unification variable.
+  public mutating func open(_ ps: [GenericParameter.ID]) -> TypeApplication.Arguments {
+    .init(uniqueKeysWithValues: ps.map({ (p) in (p, fresh().erased) }))
   }
 
   /// Returns `body` as the head of a universal type and/or implication introducing `c`.

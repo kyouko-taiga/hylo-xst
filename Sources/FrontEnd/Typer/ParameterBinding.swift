@@ -24,7 +24,7 @@ internal struct ParameterBindings {
   /// Creates an empty instance.
   internal init() {
     self.elements = []
-    self.hasDefaulted = true
+    self.hasDefaulted = false
   }
 
   /// Adds `b` at the end of `self`.
