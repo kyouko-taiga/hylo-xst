@@ -62,6 +62,12 @@ internal struct Solver {
     self.typer = nil
   }
 
+  /// The program containing the module being typed.
+  internal var program: Program {
+    _read { yield typer.program }
+    _modify { yield &typer.program }
+  }
+
   /// Returns a solution discharging the goals in `self` using `typer` for querying type relations
   /// and resolve names.
   internal mutating func solution(using typer: inout Typer) -> Solution {
@@ -141,7 +147,7 @@ internal struct Solver {
   private mutating func solve(equality g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! EqualityConstraint
 
-    if let s = typer.program.types.unifiable(k.lhs, k.rhs) {
+    if let s = program.types.unifiable(k.lhs, k.rhs) {
       for (t, u) in s.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
       return .success
     } else {
@@ -225,7 +231,7 @@ internal struct Solver {
     let k = goals[g] as! WideningConstraint
 
     // Otherwise, check that the left-hand side can be widened to the right-hand side.
-    switch typer.program.types[k.rhs] {
+    switch program.types[k.rhs] {
     case is TypeVariable:
       return postpone(g)
 
@@ -253,17 +259,17 @@ internal struct Solver {
     }
 
     // Is the source an initializer?
-    else if let (i, o) = typer.program.types.seenAsConstructor(k.lhs) {
-      let f = typer.program.types.demand(Arrow(inputs: i, output: o)).erased
+    else if let (i, o) = program.types.seenAsConstructor(k.lhs) {
+      let f = program.types.demand(Arrow(inputs: i, output: o)).erased
       let s = schedule(EqualityConstraint(lhs: k.rhs, rhs: f, site: k.site))
       return delegate([s])
     }
 
     // The source isn't an initializer.
     else {
-      return .failure { (s, _, typer, ds) in
-        let t = typer.program.types.reify(k.lhs, applying: s)
-        let m = typer.program.format("cannot use value of type '%T' as a constructor", [t])
+      return .failure { (ss, _, tp, ds) in
+        let t = tp.program.types.reify(k.lhs, applying: ss)
+        let m = tp.program.format("cannot use value of type '%T' as a constructor", [t])
         ds.insert(.init(.error, m, at: k.site))
       }
     }
@@ -285,13 +291,13 @@ internal struct Solver {
     let k = goals[g] as! CallConstraint
 
     // Can't do anything before we've inferred the type of the callee.
-    let (context, head) = typer.program.types.contextAndHead(k.callee)
+    let (context, head) = program.types.contextAndHead(k.callee)
     if head.isVariable {
       return postpone(g)
     }
 
     // Callee doesn't have the right shape?
-    else if !typer.program.isCallable(headOf: head, typer.program[k.origin].style) {
+    else if !program.isCallable(headOf: head, program[k.origin].style) {
       return invalidCallee(k)
     }
 
@@ -302,25 +308,25 @@ internal struct Solver {
     // Compile-time implicits missing?
     if context.isEmpty {
       coercion = -1
-      callee = typer.program.types[head] as! any Callable
+      callee = program.types[head] as! any Callable
     } else {
-      let f = typer.program[k.origin].callee
-      let (_, opened) = typer.program.types.open(k.callee)
+      let f = program[k.origin].callee
+      let (_, opened) = program.types.open(k.callee)
       coercion = schedule(
-        CoercionConstraint(on: f, from: k.callee, to: opened, at: typer.program[f].site))
+        CoercionConstraint(on: f, from: k.callee, to: opened, at: program[f].site))
       subgoals.append(coercion)
-      callee = typer.program.types[opened] as! any Callable
+      callee = program.types[opened] as! any Callable
     }
 
     // The callee's been fixed; next are the arguments and the output type.
-    let m = typer.program.isMarkedMutating(typer.program[k.origin].callee)
+    let m = program.isMarkedMutating(program[k.origin].callee)
     let o = callee.output(calleeIsMutating: m)
     subgoals.append(schedule(EqualityConstraint(lhs: o, rhs: k.output, site: k.site)))
 
     guard let (bs, ss) = matches(k, inputsOf: callee) else {
-      return .failure { (_, _, typer, ds) in
+      return .failure { (_, _, tp, ds) in
         ds.insert(
-          typer.program.incompatibleLabels(found: k.labels, expected: callee.labels, at: k.site))
+          tp.program.incompatibleLabels(found: k.labels, expected: callee.labels, at: k.site))
       }
     }
 
@@ -353,17 +359,17 @@ internal struct Solver {
     for p in f.inputs {
       // Is there's an explicit argument with the right label?
       if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
-        let v = typer.program[k.origin].arguments[i].value
+        let v = program[k.origin].arguments[i].value
         let a = k.arguments[i]
         bindings.append(.explicit(i))
         subgoals.append(
           CoercionConstraint(
-            on: v, from: a.type, to: p.type, reason: .argument, at: typer.program[v].site))
+            on: v, from: a.type, to: p.type, reason: .argument, at: program[v].site))
         i += 1
       }
 
       // The parameter has a default value?
-      else if let d = p.declaration, typer.program[d].default != nil {
+      else if let d = p.declaration, program[d].default != nil {
         bindings.append(.defaulted(d))
         continue
       }
@@ -380,10 +386,9 @@ internal struct Solver {
 
   /// Returns a failure to solve a `k` due to an invalid callee type.
   private func invalidCallee(_ k: CallConstraint) -> GoalOutcome {
-    .failure { (s, _, typer, ds) in
-      let t = typer.program.types.reify(k.callee, applying: s)
-      let e = typer.program.cannotCall(
-        t, typer.program[k.origin].style, at: typer.program[k.origin].site)
+    .failure { (ss, _, tp, ds) in
+      let t = tp.program.types.reify(k.callee, applying: ss)
+      let e = tp.program.cannotCall(t, tp.program[k.origin].style, at: tp.program[k.origin].site)
       ds.insert(e)
     }
   }
@@ -391,7 +396,7 @@ internal struct Solver {
   /// Discharges `g`, which is a static call constraint.
   private mutating func solve(staticCall g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! StaticCallConstraint
-    assert(k.arguments.count == typer.program[k.origin].arguments.count)
+    assert(k.arguments.count == program[k.origin].arguments.count)
 
     // Can't do anything before we've inferred the type of the callee.
     if k.callee.isVariable {
@@ -399,7 +404,7 @@ internal struct Solver {
     }
 
     // Is the callee applicable?
-    guard let f = typer.program.types[k.callee] as? UniversalType else {
+    guard let f = program.types[k.callee] as? UniversalType else {
       return invalidArgumentCount(k, expected: 0)
     }
     if f.parameters.count != k.arguments.count {
@@ -411,7 +416,7 @@ internal struct Solver {
       ss[p.erased] = a
     }
 
-    let body = typer.program.types.substitute(ss, in: f.body)
+    let body = program.types.substitute(ss, in: f.body)
     let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: body, site: k.site))
     return delegate([subgoal])
   }
@@ -477,11 +482,11 @@ internal struct Solver {
       return postpone(g)
     }
 
-    let n = typer.program[k.member].name
+    let n = program[k.member].name
     let q = typer.qualificationForSelectionOn(
       k.qualification.value, withType: k.qualification.type)
     let cs = typer.resolve(
-      n.value, memberOf: q, visibleFrom: typer.program.parent(containing: k.member))
+      n.value, memberOf: q, visibleFrom: program.parent(containing: k.member))
 
     if cs.isEmpty {
       return .failure { (ss, _, tp, ds) in
@@ -510,7 +515,7 @@ internal struct Solver {
     var viable: [(choice: NameResolutionCandidate, solution: Solution)] = []
     for choice in k.candidates {
       let equality = EqualityConstraint(lhs: k.type, rhs: choice.type, site: k.site)
-      log("- pick: \(typer.program.show(equality))")
+      log("- pick: \(program.show(equality))")
 
       let s = indenting { (me) in
         var fork = Self(forking: me)
@@ -533,9 +538,9 @@ internal struct Solver {
       }
     }
 
-    let scopeOfUse = typer.program.parent(containing: k.name)
+    let scopeOfUse = program.parent(containing: k.name)
     let least = viable.least { (a, b) in
-      typer.program.isPreferred(a.choice, other: b.choice, in: scopeOfUse)
+      program.isPreferred(a.choice, other: b.choice, in: scopeOfUse)
     }
 
     if let (_, s) = least {
@@ -543,9 +548,7 @@ internal struct Solver {
     } else {
       // There must be at least one solution.
       var s = viable[0].solution
-      let d = Diagnostic(
-        .error, "ambiguous use of '\(typer.program[k.name].name.value)'", at: k.site)
-      s.add(d)
+      s.add(.init(.error, "ambiguous use of '\(program[k.name].name.value)'", at: k.site))
       return s
     }
   }
@@ -575,7 +578,7 @@ internal struct Solver {
 
   /// Assumes that `t` is assigned to `u`.
   private mutating func assume(_ t: TypeVariable.ID, equals u: AnyTypeIdentity) {
-    log("- assume: " + typer.program.format("%T = %T", [t.erased, u]))
+    log("- assume: " + program.format("%T = %T", [t.erased, u]))
     substitutions.assign(u, to: t)
     refresh()
   }
@@ -595,7 +598,7 @@ internal struct Solver {
       }
 
       if changed {
-        log("- refresh: " + typer.program.show(goals[stale[i]]))
+        log("- refresh: " + program.show(goals[stale[i]]))
         fresh.append(stale[i])
         stale.swapAt(i, end - 1)
         end -= 1
@@ -648,7 +651,7 @@ internal struct Solver {
 
   /// Schedules `k` to be solved in the future and returns its identity.
   private mutating func schedule(_ k: Constraint) -> GoalIdentity {
-    log("- schedule: \(typer.program.show(k))")
+    log("- schedule: \(program.show(k))")
     return insert(fresh: k)
   }
 
