@@ -1,3 +1,5 @@
+import Archivist
+
 /// The expression of a witness produced by implicit resolution.
 public struct WitnessExpression: Hashable {
 
@@ -130,6 +132,20 @@ extension WitnessExpression: Showable {
 
 }
 
+extension WitnessExpression: Archivable {
+
+  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
+    self.value = try archive.read(Value.self, in: &context)
+    self.type = try archive.read(AnyTypeIdentity.self, in: &context)
+  }
+
+  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
+    try archive.write(self.value)
+    try archive.write(self.type)
+  }
+
+}
+
 extension WitnessExpression.Value: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
@@ -150,6 +166,18 @@ extension WitnessExpression.Value: Showable {
     case .nested(let w):
       return "$<nested given>(\(printer.show(w))"
     }
+  }
+
+}
+
+extension WitnessExpression.Value: Archivable {
+
+  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
+    fatalError()
+  }
+
+  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
+    fatalError()
   }
 
 }

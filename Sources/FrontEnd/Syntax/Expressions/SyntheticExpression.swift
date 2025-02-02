@@ -6,8 +6,8 @@ public struct SynthethicExpression: Expression {
   /// The value of a synthetic expression.
   public enum Value: Equatable {
 
-    /// The receiver an eta-expanded initializer.
-    case temporary(AnyTypeIdentity)
+    /// A witness inferred by implicit resolution.
+    case witness(WitnessExpression)
 
     /// A default argument.
     case defaultArgument(ParameterDeclaration.ID)
@@ -27,8 +27,8 @@ extension SynthethicExpression: Showable {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     switch value {
-    case .temporary:
-      return "$x"
+    case .witness(let w):
+      return printer.show(w)
     case .defaultArgument(let n):
       return "$default \(printer.show(printer.program[n].default!))"
     }
@@ -55,7 +55,7 @@ extension SynthethicExpression.Value: Archivable {
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     switch try archive.readByte() {
     case 0:
-      self = .temporary(.error) // TODO
+      self = try .witness(archive.read(WitnessExpression.self, in: &context))
     case 1:
       self = try .defaultArgument(archive.read(ParameterDeclaration.ID.self, in: &context))
     default:
@@ -65,8 +65,9 @@ extension SynthethicExpression.Value: Archivable {
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
     switch self {
-    case .temporary:
+    case .witness(let w):
       archive.write(byte: 0)
+      try archive.write(w, in: &context)
     case .defaultArgument(let n):
       archive.write(byte: 1)
       try archive.write(n, in: &context)

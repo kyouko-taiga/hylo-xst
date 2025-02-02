@@ -1,5 +1,7 @@
+import Archivist
+
 /// A type denoting the identity of type tree.
-public protocol TypeIdentity: Hashable, Showable {
+public protocol TypeIdentity: Hashable, Showable, Archivable {
 
   /// The type-erased value of this identity.
   var erased: AnyTypeIdentity { get }
@@ -19,6 +21,14 @@ extension TypeIdentity {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     printer.program.types[self].show(using: &printer)
+  }
+
+  public init<A>(from archive: inout ReadableArchive<A>, in context: inout Any) throws {
+    self.init(uncheckedFrom: try archive.read(AnyTypeIdentity.self, in: &context))
+  }
+
+  public func write<A>(to archive: inout WriteableArchive<A>, in context: inout Any) throws {
+    try archive.write(erased, in: &context)
   }
 
 }
@@ -129,6 +139,19 @@ extension AnyTypeIdentity: ExpressibleByIntegerLiteral {
   }
 
 }
+
+extension AnyTypeIdentity: Archivable {
+
+  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
+    fatalError()
+  }
+
+  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
+    fatalError()
+  }
+
+}
+
 
 extension AnyTypeIdentity: CustomStringConvertible {
 

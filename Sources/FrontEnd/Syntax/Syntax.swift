@@ -1,7 +1,7 @@
 import Archivist
 
 /// A node in an abstract syntax tree.
-public protocol Syntax: Equatable, Archivable, Showable {
+public protocol Syntax: Equatable, Showable, Archivable {
 
   /// The site from which `self` was parsed.
   var site: SourceSpan { get }
