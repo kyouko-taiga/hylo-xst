@@ -153,14 +153,7 @@ public struct Module {
 
   /// Inserts `child` into `self` in the bucket of `file`.
   public mutating func insert<T: Syntax>(_ child: T, in file: Program.SourceFileIdentity) -> T.ID {
-    assert(file.module == identity)
-    return modify(&sources.values[file.offset]) { (f) in
-      let d = f.syntax.count
-      f.syntax.append(.init(child))
-      f.syntaxToTag.append(.init(T.self))
-      f.syntaxToParent.append(-1)
-      return T.ID(uncheckedFrom: .init(file: file, offset: d))
-    }
+    sources.values[file.offset].insert(child)
   }
 
   /// Inserts `child` into `self` in the scope of `parent`.
