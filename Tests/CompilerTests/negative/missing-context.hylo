@@ -2,6 +2,9 @@ struct A<T> {
   memberwise init
 }
 
+fun g<T, U>(_ x: T) {}
+
 fun main() {
   _ = A()
+  g(())
 }

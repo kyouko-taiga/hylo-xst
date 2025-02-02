@@ -100,6 +100,11 @@ public struct Program {
     self = typer.release()
   }
 
+  /// Inserts a copy of `n` into `self`.
+  public mutating func clone(_ n: ExpressionIdentity) -> ExpressionIdentity {
+    modules.values[n.module].clone(n)
+  }
+
   /// Projects the module identified by `m`.
   public subscript(m: ModuleIdentity) -> Module {
     _read { yield modules.values[m] }

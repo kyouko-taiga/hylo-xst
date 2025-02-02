@@ -49,6 +49,24 @@ public struct WitnessExpression: Hashable {
       }
     }
 
+    /// Returns a copy of `self` in which occurrences of `m` have been substituted for `n`.
+    internal func substituting(_ m: ExpressionIdentity, for n: ExpressionIdentity) -> Self {
+      switch self {
+      case .identity(let x):
+        return .identity(x == m ? n : m)
+      case .abstract, .assumed:
+        return self
+      case .reference(let d):
+        return .reference(d.substituting(m, for: n))
+      case .termApplication(let w, let a):
+        return .termApplication(w.substituting(m, for: n), a.substituting(m, for: n))
+      case .typeApplication(let w, let a):
+        return .typeApplication(w.substituting(m, for: n), a)
+      case .nested(let w):
+        return .nested(w.substituting(m, for: n))
+      }
+    }
+
   }
 
   /// The (synthesized) syntax of the witness.
@@ -115,10 +133,15 @@ public struct WitnessExpression: Hashable {
     }
   }
 
+  /// Returns a copy of `self` in which occurrences of `m` have been substituted for `n`.
+  internal func substituting(_ m: ExpressionIdentity, for n: ExpressionIdentity) -> Self {
+    .init(value: value.substituting(m, for: n), type: type)
+  }
+
   /// Returns a copy of `self` in which occurrences of assumed given identified by `i` have been
   /// substituted for `new`.
   internal func substituting(assumed i: Int, for new: Value) -> Self {
-    .init(value: self.value.substituting(assumed: i, for: new), type: self.type)
+    .init(value: value.substituting(assumed: i, for: new), type: type)
   }
 
 }

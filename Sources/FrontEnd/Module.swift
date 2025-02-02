@@ -82,6 +82,17 @@ public struct Module {
       return .init(uncheckedFrom: n.erased)
     }
 
+    /// Inserts a copy of `n` into `self`.
+    fileprivate mutating func clone(_ n: ExpressionIdentity) -> ExpressionIdentity {
+      assert(n.file == identity)
+      let d = syntax.count
+      syntax.append(syntax[n.offset])
+      syntaxToTag.append(syntaxToTag[n.offset])
+      syntaxToParent.append(syntaxToParent[n.offset])
+      syntaxToType[d] = syntaxToType[n.offset]
+      return .init(uncheckedFrom: .init(file: identity, offset: d))
+    }
+
     /// Adds a diagnostic to this file.
     ///
     /// - requires: The diagnostic is anchored at a position in `self`.
@@ -165,6 +176,11 @@ public struct Module {
     return i
   }
 
+  /// Inserts a copy of `n` into `self`.
+  public mutating func clone(_ n: ExpressionIdentity) -> ExpressionIdentity {
+    sources.values[n.file.offset].clone(n)
+  }
+
   /// Replaces the node identified by `n` by `newTree`.
   ///
   /// The result of `tag(of: n)` denotes `T` after this method returns. No other property of `n`
@@ -233,6 +249,13 @@ public struct Module {
     assert(!t[.hasVariable])
     let u = sources.values[n.file.offset].syntaxToType[n.offset].wrapIfEmpty(t)
     assert(t == u, "inconsistent property assignment")
+  }
+
+  /// Assigns a type to `n`, overriding any prior assignment.
+  internal mutating func updateType<T: SyntaxIdentity>(_ t: AnyTypeIdentity, for n: T) {
+    assert(n.module == identity)
+    assert(!t[.hasVariable])
+    sources.values[n.file.offset].syntaxToType[n.offset] = t
   }
 
   /// Sets the declaration to which `n` refers.

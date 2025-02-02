@@ -12,8 +12,10 @@ internal struct Solution {
   /// The name binding assumptions made by the solver.
   internal let bindings: BindingTable
 
+  internal let elaborations: [(ExpressionIdentity, WitnessExpression)]
+
   /// A table from call expression to its arguments after elaboration.
-  internal let elaborations: [(Call.ID, ParameterBindings)]
+  internal let argumentElaborations: [(Call.ID, ParameterBindings)]
 
   /// The diagnostics associated with the solution.
   internal private(set) var diagnostics: DiagnosticSet
@@ -22,12 +24,14 @@ internal struct Solution {
   internal init(
     substitutions: SubstitutionTable = .init(),
     bindings: BindingTable = .init(),
-    elaborations: [(Call.ID, ParameterBindings)] = .init(),
+    elaborations: [(ExpressionIdentity, WitnessExpression)] = .init(),
+    argumentElaborations: [(Call.ID, ParameterBindings)] = .init(),
     diagnostics: DiagnosticSet = .init()
   ) {
     self.substitutions = substitutions
     self.bindings = bindings
     self.elaborations = elaborations
+    self.argumentElaborations = argumentElaborations
     self.diagnostics = diagnostics
   }
 

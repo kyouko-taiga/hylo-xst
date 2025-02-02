@@ -16,6 +16,11 @@ public struct SubstitutionTable {
     types.isEmpty
   }
 
+  /// The key/value pairs in this table, orderd by keys.
+  internal var assignments: [(key: TypeVariable.ID, value: AnyTypeIdentity)] {
+    types.sorted(by: \.key.erased.bits)
+  }
+
   /// Returns the representative of the equivalence class containing `t` in `self`.
   internal subscript(t: AnyTypeIdentity) -> AnyTypeIdentity {
     var a = t

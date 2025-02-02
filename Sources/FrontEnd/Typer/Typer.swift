@@ -1561,30 +1561,43 @@ public struct Typer {
 
   /// Stores the assignments made in `s` to solve `o` into the program.
   private mutating func commit(_ s: Solution, to o: Obligations) {
+    // Failures to assign unification variables are diagnosed only once and only if no other
+    // diagnostic was reported by the solver.
+    var inferenceFailureDiagnosed = s.diagnostics.containsError
+
     for d in s.diagnostics.elements { report(d) }
 
-    // Incomplete inference results are diagnosed only once and only if no other diagnostic was
-    // reported by the solver.
-    var inferenceFailureDiagnosed = s.diagnostics.containsError
     for (n, t) in o.syntaxToType {
       var u = program.types.reify(t, applying: s.substitutions, withVariables: .kept)
-      if u[.hasVariable] {
-        u = program.types.substituteVariableForError(in: u)
-        if !inferenceFailureDiagnosed {
-          report(program.notEnoughContext(n))
-          inferenceFailureDiagnosed = true
-        }
+      if u[.hasVariable] && !inferenceFailureDiagnosed {
+        report(program.notEnoughContext(n))
+        inferenceFailureDiagnosed = true
       }
-      program[module].setType(u, for: n)
+      u = program.types.substituteVariableForError(in: u)
+      program[n.module].setType(u, for: n)
     }
 
     for (n, r) in s.bindings {
-      program[module].bind(n, to: r)
+      program[n.module].bind(n, to: r)
     }
 
     for (n, e) in s.elaborations {
+      var w = program.types.reify(e, applying: s.substitutions, withVariables: .kept)
+      if w.hasVariable && !inferenceFailureDiagnosed {
+        report(program.notEnoughContext(n.erased))
+        inferenceFailureDiagnosed = true
+      }
+
+      w = w.substituting(n, for: program.clone(n))
+      program[n.module].replace(
+        n, for: SynthethicExpression(value: .witness(w), site: program[n].site))
+      let u = program.types.substituteVariableForError(in: w.type)
+      program[n.module].updateType(u, for: n)
+    }
+
+    for (n, e) in s.argumentElaborations {
       let arguments = e.elements.map({ (b) in elaborate(b, in: n) })
-      program[module].replace(.init(n), for: program[n].replacing(arguments: arguments))
+      program[n.module].replace(.init(n), for: program[n].replacing(arguments: arguments))
     }
   }
 
@@ -1598,11 +1611,11 @@ public struct Typer {
       fatalError("TODO")
 
     case .defaulted(let d):
-      let t = program[module].type(assignedTo: program[d].default!) ?? .error
-      let n = program[module].insert(
+      let t = program[n.module].type(assignedTo: program[d].default!) ?? .error
+      let n = program[n.module].insert(
         SynthethicExpression(value: .defaultArgument(d), site: program[n].site),
         in: program.parent(containing: n))
-      program[module].setType(t, for: n)
+      program[n.module].setType(t, for: n)
       return .init(label: program[d].label, value: .init(n))
     }
   }

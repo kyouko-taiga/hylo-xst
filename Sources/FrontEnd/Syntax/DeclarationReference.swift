@@ -1,5 +1,5 @@
 /// The way in which an entity is referred to.
-public indirect enum DeclarationReference: Hashable {
+public enum DeclarationReference: Hashable {
 
   /// A reference to a built-in entity.
   case builtin(BuiltinEntity)
@@ -40,6 +40,15 @@ public indirect enum DeclarationReference: Hashable {
       return 0
     case .inherited(let w, _):
       return 1 + w.elaborationCost
+    }
+  }
+
+  /// Returns a copy of `self` in which occurrences of `m` have been substituted for `n`.
+  internal func substituting(_ m: ExpressionIdentity, for n: ExpressionIdentity) -> Self {
+    if case .inherited(let w, let d) = self {
+      return .inherited(w.substituting(m, for: n), d)
+    } else {
+      return self
     }
   }
 

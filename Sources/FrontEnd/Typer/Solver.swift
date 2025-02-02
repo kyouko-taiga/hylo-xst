@@ -41,8 +41,10 @@ internal struct Solver {
   /// to derive a complete name binding map w.r.t. its unresolved name expressions.
   private var bindings: BindingTable
 
+  private var elaborations: [(ExpressionIdentity, WitnessExpression)] = []
+
   /// A table from call expression to its arguments after elaboration.
-  private var elaborations: [(Call.ID, ParameterBindings)] = []
+  private var argumentElaborations: [(Call.ID, ParameterBindings)] = []
 
   /// The current identation level for logging message, or `-1` if logging is disabled.
   private var indentation: Int
@@ -148,7 +150,7 @@ internal struct Solver {
     let k = goals[g] as! EqualityConstraint
 
     if let s = program.types.unifiable(k.lhs, k.rhs) {
-      for (t, u) in s.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
+      for (t, u) in s.assignments { assume(t, equals: u) }
       return .success
     } else {
       return .failure { (ss, _, tp, ds) in
@@ -171,15 +173,25 @@ internal struct Solver {
     }
 
     let es = typer.coerced(k.origin, withType: k.lhs, toMatch: k.rhs)
+
+    // Coercion succeeded?
     if let pick = es.uniqueElement {
-      // TODO: Store elaboration
-      for (t, u) in pick.substitutions.types.sorted(by: \.key.erased.bits) { assume(t, equals: u) }
+      for (t, u) in pick.substitutions.assignments { assume(t, equals: u) }
+      if pick.witness.value != .identity(k.origin) {
+        let w = program.types.reify(
+          pick.witness, applying: pick.substitutions, withVariables: .kept)
+        elaborations.append((k.origin, w))
+      }
       return .success
-    } else if k.rhs[.hasVariable] {
-      return postpone(g)
-    } else {
-      return .failure(diagnoseInvalidCoercion(k))
     }
+
+    // Coercion failed but it may succeeded with more context?
+    else if k.rhs[.hasVariable] {
+      return postpone(g)
+    }
+
+    // Coercion failed.
+    else { return .failure(diagnoseInvalidCoercion(k)) }
   }
 
   /// Returns the simplification of `k` as an equality between its operands.
@@ -331,7 +343,7 @@ internal struct Solver {
     }
 
     if bs.hasDefaulted {
-      elaborations.append((k.origin, bs))
+      argumentElaborations.append((k.origin, bs))
     }
 
     for s in ss {
@@ -566,7 +578,10 @@ internal struct Solver {
     }
 
     return Solution(
-      substitutions: ss, bindings: bindings, elaborations: elaborations,
+      substitutions: ss,
+      bindings: bindings,
+      elaborations: elaborations,
+      argumentElaborations: argumentElaborations,
       diagnostics: ds)
   }
 
