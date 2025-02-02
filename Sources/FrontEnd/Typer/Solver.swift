@@ -198,7 +198,7 @@ internal struct Solver {
 
       default:
         let scopeOfUse = tp.program.parent(containing: k.origin)
-        let (_, usings, lhs) = tp.program.types.open(t)
+        let (usings, lhs) = tp.program.types.open(t)
         var notes: [Diagnostic] = []
 
         if let s = tp.program.types.unifiable(lhs, u) {
@@ -285,13 +285,13 @@ internal struct Solver {
     let k = goals[g] as! CallConstraint
 
     // Can't do anything before we've inferred the type of the callee.
-    let (body, context) = typer.program.types.bodyAndContext(k.callee)
-    if body.isVariable {
+    let (context, head) = typer.program.types.contextAndHead(k.callee)
+    if head.isVariable {
       return postpone(g)
     }
 
     // Callee doesn't have the right shape?
-    else if !typer.program.isCallable(headOf: body, typer.program[k.origin].style) {
+    else if !typer.program.isCallable(headOf: head, typer.program[k.origin].style) {
       return invalidCallee(k)
     }
 
@@ -302,10 +302,10 @@ internal struct Solver {
     // Compile-time implicits missing?
     if context.isEmpty {
       coercion = -1
-      callee = typer.program.types[body] as! any Callable
+      callee = typer.program.types[head] as! any Callable
     } else {
       let f = typer.program[k.origin].callee
-      let opened = typer.program.types.openedHead(k.callee)
+      let (_, opened) = typer.program.types.open(k.callee)
       coercion = schedule(
         CoercionConstraint(on: f, from: k.callee, to: opened, at: typer.program[f].site))
       subgoals.append(coercion)

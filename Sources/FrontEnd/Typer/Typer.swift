@@ -192,7 +192,7 @@ public struct Typer {
     // The type of the declaration has the form `<T...> A... ==> P<B...>` where `P<B...>` is the
     // type of the declared witness and the rest forms a context. Requirements are resolved as
     // members of the type `B` where type parameters occur as skolems.
-    let witnessSansContext = program.types.bodyAndContext(t).body
+    let witnessSansContext = program.types.contextAndHead(t).body
     guard let witness = program.types.seenAsTraitApplication(witnessSansContext) else {
       assert(t == .error)
       return
@@ -287,7 +287,7 @@ public struct Typer {
     /// Returns the expected type of an implementation of `requirement`.
     func expectedImplementationType(of requirement: DeclarationIdentity) -> AnyTypeIdentity {
       let t = declaredType(of: requirement)
-      return program.types.substitute(substitutions, in: program.types.bodyAndContext(t).body)
+      return program.types.substitute(substitutions, in: program.types.contextAndHead(t).body)
     }
   }
 
@@ -446,7 +446,7 @@ public struct Typer {
     of requirement: FunctionDeclaration.ID, applying subs: [AnyTypeIdentity: AnyTypeIdentity]
   ) -> AnyTypeIdentity {
     let t = declaredType(of: requirement)
-    return program.types.substitute(subs, in: program.types.bodyAndContext(t).body)
+    return program.types.substitute(subs, in: program.types.contextAndHead(t).body)
   }
 
   /// Reports that `requirement` has no implementation.
@@ -949,7 +949,7 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let substitutions = aliasesInConformance(seenThrough: witness)
     let member = declaredType(of: requirement)
-    let (memberSansContext, _) = program.types.bodyAndContext(member)
+    let memberSansContext = program.types.head(member)
     return program.types.substitute(substitutions, in: memberSansContext)
   }
 
@@ -2033,7 +2033,7 @@ public struct Typer {
       // The witness is an implication?
       if let i = program.types[witness.type] as? Implication {
         // Assume that the implication has a non-empty context.
-        let h = i.context.first!
+        let h = i.usings.first!
         let (e, v) = environment.assuming(given: h)
         witness = WitnessExpression(
           value: .termApplication(witness, v),
@@ -2367,8 +2367,8 @@ public struct Typer {
     // expressions of the form `T.m` can denote entities introduced as members of `T` (rather
     // than `Metatype<T>`). If context clause of the qualification is preserved to support member
     // selection on unapplied type constructors (e.g., `Array.new`).
-    let (body, context) = program.types.bodyAndContext(t)
-    if let m = program.types[body] as? Metatype {
+    let (context, head) = program.types.contextAndHead(t)
+    if let m = program.types[head] as? Metatype {
       let u = program.types.introduce(context, into: m.inhabitant)
       return .init(value: q, type: u)
     } else {
@@ -2467,7 +2467,7 @@ public struct Typer {
     _ n: Name, nativeMemberOf q: TypedQualification
   ) -> [NameResolutionCandidate] {
     assert(!q.type.isVariable)
-    let (receiver, context) = program.types.bodyAndContext(q.type)
+    let (context, receiver) = program.types.contextAndHead(q.type)
     var candidates: [NameResolutionCandidate] = []
 
     for m in declarations(nativeMembersOf: q.type)[n.identifier] ?? [] {
@@ -2663,9 +2663,9 @@ public struct Typer {
 
     // Slow path: use the match judgement of implicit resolution to create a witness describing
     // "how" the type matches the extension.
-    let (body, context) = program.types.bodyAndContext(t)
+    let (context, head) = program.types.contextAndHead(t)
     assert(context.usings.isEmpty)
-    let thread = formThread(matching: w, to: body, in: .empty, delayedBy: 0)
+    let thread = formThread(matching: w, to: head, in: .empty, delayedBy: 0)
     return takeSummonResults(from: [thread], in: s).uniqueElement
   }
 

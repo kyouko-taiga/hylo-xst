@@ -86,73 +86,59 @@ public struct TypeStore {
 
   /// Returns `n` sans context clause.
   public func head(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
-    switch self[n] {
-    case let i as Implication:
-      return head(i.head)
-    case let u as UniversalType:
-      return head(u.body)
-    default:
-      return n
-    }
-  }
-
-  /// Returns the head and context clause of `n`.
-  public func bodyAndContext(
-    _ n: AnyTypeIdentity
-  ) -> (body: AnyTypeIdentity, context: ContextClause) {
-    let p: [GenericParameter.ID]
-    let b: AnyTypeIdentity
-
-    if let u = self[n] as? UniversalType {
-      p = u.parameters
-      b = u.body
-    } else {
-      p = []
-      b = n
-    }
-
-    if let i = self[b] as? Implication {
-      return (i.head, .init(parameters: p, usings: i.context))
-    } else {
-      return (b, .init(parameters: p, usings: []))
-    }
-  }
-
-  /// Returns `n` sans context clause, substituting type parameters for unification variables.
-  public mutating func openedHead(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
-    var result = n
+    var h = n
     while true {
-      switch self[result] {
+      switch self[h] {
       case let t as UniversalType:
-        result = substitute(open(t.parameters), in: t.body)
+        h = t.body
       case let t as Implication:
-        result = t.head
+        h = t.body
       default:
-        return result
+        return h
       }
     }
   }
 
-  /// Returns `(a, c, h)` where `h` is the head of `n` opened for unification, `c` is the context
-  /// of `n` opened for unification, and `a` maps the parameters of `n` to unification variables.
+  /// Returns the head and context clause of `n`.
+  public func contextAndHead(
+    _ n: AnyTypeIdentity
+  ) -> (context: ContextClause, body: AnyTypeIdentity) {
+    var p: [GenericParameter.ID] = []
+    var u: [AnyTypeIdentity] = []
+    var h = n
+
+    while true {
+      switch self[h] {
+      case let t as UniversalType:
+        p.append(contentsOf: t.parameters)
+        h = t.body
+      case let t as Implication:
+        u.append(contentsOf: t.usings)
+        h = t.body
+      default:
+        return (.init(parameters: p, usings: u), h)
+      }
+    }
+  }
+
+  /// Returns the implement parameters and head of `n` opened for unification.
   public mutating func open(
     _ n: AnyTypeIdentity
-  ) -> (TypeApplication.Arguments, [AnyTypeIdentity], AnyTypeIdentity) {
-    let a: TypeApplication.Arguments
-    var h: AnyTypeIdentity
+  ) -> (usings: [AnyTypeIdentity], head: AnyTypeIdentity) {
+    var u: [AnyTypeIdentity] = []
+    var h = n
 
-    if let u = self[n] as? UniversalType {
-      a = open(u.parameters)
-      h = substitute(a, in: u.body)
-    } else {
-      a = [:]
-      h = n
-    }
-
-    if let i = self[h] as? Implication {
-      return (a, i.context, i.head)
-    } else {
-      return (a, [], h)
+    while true {
+      switch self[h] {
+      case let t as UniversalType:
+        let a = open(t.parameters)
+        h = substitute(a, in: t.body)
+      case let t as Implication:
+        u.append(contentsOf: t.usings)
+        h = t.body
+      default:
+        return (u, h)
+      }
     }
   }
 
@@ -187,10 +173,10 @@ public struct TypeStore {
   /// Returns `n` without its first requirement.
   public mutating func dropFirstRequirement(_ n: Implication.ID) -> AnyTypeIdentity {
     let i = self[n]
-    if i.context.count == 1 {
-      return i.head
+    if i.usings.count == 1 {
+      return i.body
     } else {
-      return demand(Implication(context: .init(i.context.dropFirst()), head: i.head)).erased
+      return demand(Implication(context: .init(i.usings.dropFirst()), head: i.body)).erased
     }
   }
 
@@ -553,8 +539,8 @@ public struct TypeStore {
     _ lhs: Implication, _ rhs: Implication, extending subs: inout SubstitutionTable,
     handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    unifiable(lhs.context, rhs.context, extending: &subs, handlingCoercionsWith: areCoercible)
-      && unifiable(lhs.head, rhs.head, extending: &subs, handlingCoercionsWith: areCoercible)
+    unifiable(lhs.usings, rhs.usings, extending: &subs, handlingCoercionsWith: areCoercible)
+      && unifiable(lhs.body, rhs.body, extending: &subs, handlingCoercionsWith: areCoercible)
   }
 
   /// Returns `true` if `lhs` and `rhs` are unifiable.
