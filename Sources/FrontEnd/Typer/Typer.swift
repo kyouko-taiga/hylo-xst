@@ -913,14 +913,14 @@ public struct Typer {
 
     case .coercion(.reflexivity):
       // <T> T ~ T
-      let t0 = demand(GenericParameter.reflexivity)
+      let t0 = demand(GenericParameter.equality(.reflexivity, 0))
       let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t0.erased)).erased
       result = demand(UniversalType(parameters: [t0], body: x0)).erased
 
     case .coercion(.symmetry):
       // <T0, T1> T0 ~ T1 ==> T1 ~ T0
-      let t0 = demand(GenericParameter.symmetry(0))
-      let t1 = demand(GenericParameter.symmetry(1))
+      let t0 = demand(GenericParameter.equality(.symmetry, 0))
+      let t1 = demand(GenericParameter.equality(.symmetry, 1))
       let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t1.erased)).erased
       let x1 = demand(EqualityWitness(lhs: t1.erased, rhs: t0.erased)).erased
       let x2 = demand(Implication(context: [x0], head: x1)).erased
@@ -928,9 +928,9 @@ public struct Typer {
 
     case .coercion(.transitivity):
       // <T0, T1, T2> T0 ~ T1, T1 ~ T2 ==> T0 ~ T2
-      let t0 = demand(GenericParameter.transitivity(0))
-      let t1 = demand(GenericParameter.transitivity(1))
-      let t2 = demand(GenericParameter.transitivity(2))
+      let t0 = demand(GenericParameter.equality(.transitivity, 0))
+      let t1 = demand(GenericParameter.equality(.transitivity, 1))
+      let t2 = demand(GenericParameter.equality(.transitivity, 2))
       let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t1.erased)).erased
       let x1 = demand(EqualityWitness(lhs: t1.erased, rhs: t2.erased)).erased
       let x2 = demand(EqualityWitness(lhs: t0.erased, rhs: t2.erased)).erased
