@@ -4,7 +4,7 @@ import Archivist
 public struct SynthethicExpression: Expression {
 
   /// The value of a synthetic expression.
-  public enum Value: Equatable {
+  public enum Value: Equatable, Sendable {
 
     /// A witness inferred by implicit resolution.
     case witness(WitnessExpression)

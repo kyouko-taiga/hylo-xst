@@ -4,7 +4,7 @@ import Archivist
 public struct Conversion: Expression {
 
   /// A conversion operator.
-  public enum Operator: UInt8 {
+  public enum Operator: UInt8, Sendable {
 
     /// A guaranteed conversion into a type that can represent the source.
     case up

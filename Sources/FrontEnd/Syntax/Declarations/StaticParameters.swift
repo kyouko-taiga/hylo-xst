@@ -1,7 +1,7 @@
 import Archivist
 
 /// A clause describing contextual parameters and contextual constraints taken at compile-time.
-public struct StaticParameters: Equatable {
+public struct StaticParameters: Equatable, Sendable {
 
   /// The explicit parameters of the list.
   public let explicit: [GenericParameterDeclaration.ID]

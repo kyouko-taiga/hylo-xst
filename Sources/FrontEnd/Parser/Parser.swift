@@ -1481,7 +1481,7 @@ public struct Parser {
 }
 
 /// An error that occurred during parsing.
-public struct ParseError: Error, CustomStringConvertible {
+public struct ParseError: Error, CustomStringConvertible, Sendable {
 
   /// A description of the error that occurred.
   public let description: String

@@ -4,7 +4,7 @@ import Archivist
 public struct Call: Expression {
 
   /// The way in which an entity is being applied.
-  public enum Style: UInt8, Hashable {
+  public enum Style: UInt8, Hashable, Sendable {
 
     /// Entity called with parentheses.
     case parenthesized

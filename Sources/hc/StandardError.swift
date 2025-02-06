@@ -1,7 +1,7 @@
 import Foundation
 
 /// A handle to the standard error.
-internal struct StandardError: TextOutputStream {
+internal struct StandardError: TextOutputStream, Sendable {
 
   internal mutating func write(_ string: String) {
     for byte in string.utf8 { putc(numericCast(byte), stderr) }
@@ -12,6 +12,6 @@ internal struct StandardError: TextOutputStream {
 extension Driver {
 
   /// The standard error.
-  internal static var standardError = StandardError()
+  @MainActor internal static var standardError = StandardError()
 
 }

@@ -1,7 +1,7 @@
 import Archivist
 
 /// The declaration of a function or subscript parameter.
-public struct ParameterDeclaration: Declaration {
+public struct ParameterDeclaration: Declaration, Sendable {
 
   /// The label of the parameter.
   public let label: Parsed<String>?

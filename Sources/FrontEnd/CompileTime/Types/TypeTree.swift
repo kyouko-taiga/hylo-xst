@@ -1,5 +1,5 @@
 /// The tree representation of a Hylo type.
-public protocol TypeTree: Hashable, Showable {
+public protocol TypeTree: Hashable, Showable, Sendable {
 
   /// Properties about `self` and its children, which are types in `program`.
   var properties: ValueProperties { get }

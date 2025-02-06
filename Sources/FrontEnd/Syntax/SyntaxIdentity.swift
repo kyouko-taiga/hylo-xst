@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// A type denoting the identity of a node in an abstract syntax tree.
-public protocol SyntaxIdentity: Comparable, Hashable, Showable, Archivable {
+public protocol SyntaxIdentity: Comparable, Hashable, Showable, Archivable, Sendable {
 
   /// The type-erased value of this identity.
   var erased: AnySyntaxIdentity { get }

@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// An access effect, specifying how a parameter, receiver, or remote part is accessed.
-public enum AccessEffect: UInt8 {
+public enum AccessEffect: UInt8, Sendable {
 
   /// Value is accessed immutably.
   case `let` = 1

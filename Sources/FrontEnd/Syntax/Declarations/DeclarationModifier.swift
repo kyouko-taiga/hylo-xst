@@ -1,7 +1,7 @@
 import Archivist
 
 /// A member or access modifier on a declaration.
-public enum DeclarationModifier: UInt8 {
+public enum DeclarationModifier: UInt8, Sendable {
 
   /// The modifier for introducing a static member.
   case `static`

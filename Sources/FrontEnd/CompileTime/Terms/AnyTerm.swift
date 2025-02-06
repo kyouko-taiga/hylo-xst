@@ -15,7 +15,7 @@ public struct AnyTerm {
   }
 
   /// The error term.
-  public static let error = AnyTerm(ErrorTerm())
+  public static var error: AnyTerm { AnyTerm(ErrorTerm()) }
 
 }
 

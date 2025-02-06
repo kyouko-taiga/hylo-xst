@@ -1,5 +1,5 @@
 /// The way in which an entity is referred to.
-public enum DeclarationReference: Hashable {
+public enum DeclarationReference: Hashable, Sendable {
 
   /// A reference to a built-in entity.
   case builtin(BuiltinEntity)

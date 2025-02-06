@@ -2,7 +2,7 @@ import Archivist
 import Foundation
 
 /// The name of a file.
-public enum FileName: Hashable {
+public enum FileName: Hashable, Sendable {
 
   /// A local path to a file.
   case local(URL)

@@ -1,7 +1,7 @@
 import Archivist
 
 /// A type denoting the identity of type tree.
-public protocol TypeIdentity: Hashable, Showable, Archivable {
+public protocol TypeIdentity: Hashable, Showable, Archivable, Sendable {
 
   /// The type-erased value of this identity.
   var erased: AnyTypeIdentity { get }
@@ -43,7 +43,7 @@ extension TypeIdentity {
 /// act as a discriminator where:
 /// - `0b10` denotes a predefined type; and
 /// - `0b11` denotes a type variable.
-public struct AnyTypeIdentity: Hashable {
+public struct AnyTypeIdentity: Hashable, Sendable {
 
   /// The bit representation of `self`.
   public let bits: UInt64

@@ -4,7 +4,7 @@ import Archivist
 public struct BindingPattern: Pattern {
 
   /// The introducer of a binding pattern.
-  public enum Introducer: UInt8 {
+  public enum Introducer: UInt8, Sendable {
 
     case `let`, `var`, `inout`, sinklet
 

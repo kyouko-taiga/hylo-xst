@@ -2,10 +2,10 @@ import Archivist
 import Utilities
 
 /// A terminal symbol of the syntactic grammar.
-public struct Token: Hashable {
+public struct Token: Hashable, Sendable {
 
   /// The tag of a token.
-  public enum Tag: UInt8 {
+  public enum Tag: UInt8, Sendable {
 
     // Identifiers
     case name

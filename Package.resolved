@@ -1,5 +1,5 @@
 {
-  "originHash" : "0d638eb38dbffb96162737023b822ad67b26aa4e286bde4a874fe15a67df49c6",
+  "originHash" : "18d9ab90e24e5ff46a97b41ad1d57c416f0b98b7667c0297f91642595025f4cd",
   "pins" : [
     {
       "identity" : "archivist",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kyouko-taiga/more-swift-collections.git",
       "state" : {
-        "revision" : "2b11af6a3d8bec2dfb1acaccdb214b15a1cfafec",
-        "version" : "0.4.0"
+        "revision" : "514575a2c636502241a77bc210f171ad6e636586",
+        "version" : "0.5.1"
       }
     },
     {

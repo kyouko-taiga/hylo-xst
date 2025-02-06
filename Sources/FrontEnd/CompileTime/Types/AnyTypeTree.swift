@@ -1,5 +1,5 @@
 /// A type-erasing container for type trees.
-internal struct AnyTypeTree {
+internal struct AnyTypeTree: Sendable {
 
   /// The node wrapped in this container.
   internal let wrapped: any TypeTree

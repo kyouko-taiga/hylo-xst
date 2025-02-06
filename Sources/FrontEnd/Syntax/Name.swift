@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// An operator notation.
-public enum OperatorNotation: UInt8 {
+public enum OperatorNotation: UInt8, Sendable {
 
   /// No notation.
   case none = 0
@@ -19,7 +19,7 @@ public enum OperatorNotation: UInt8 {
 }
 
 /// The argument labels of a name.
-public struct ArgumentLabels {
+public struct ArgumentLabels: Sendable {
 
   /// The value of each label.
   public let values: [String?]
@@ -68,7 +68,7 @@ extension ArgumentLabels: CustomStringConvertible {
 }
 
 /// An unqualified name denoting an entity.
-public struct Name: Hashable {
+public struct Name: Hashable, Sendable {
 
   /// The identifier of the referred entity.
   public let identifier: String

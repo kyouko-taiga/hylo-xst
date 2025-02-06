@@ -33,7 +33,7 @@ public struct Scoper {
   }
 
   /// The computation of the scoping relationships in a single source file.
-  private struct Visitor: SyntaxVisitor {
+  private struct Visitor: SyntaxVisitor, Sendable {
 
     /// The top-level declarations in the file.
     var topLevelDeclarations: [DeclarationIdentity]

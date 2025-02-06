@@ -1,5 +1,5 @@
 /// A parameter of a callable abstraction.
-public struct Parameter: Hashable {
+public struct Parameter: Hashable, Sendable {
 
   /// The declaration of the parameter if it is not synthetic.
   public let declaration: ParameterDeclaration.ID?

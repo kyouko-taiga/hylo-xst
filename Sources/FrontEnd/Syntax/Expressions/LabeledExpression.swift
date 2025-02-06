@@ -1,7 +1,7 @@
 import Archivist
 
 /// An expression with an optional label.
-public struct LabeledExpression: Hashable {
+public struct LabeledExpression: Hashable, Sendable {
 
   /// The label of the expression, if any.
   public let label: Parsed<String>?

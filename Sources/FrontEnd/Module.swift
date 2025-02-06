@@ -3,13 +3,13 @@ import OrderedCollections
 import Utilities
 
 /// A collection of declarations in one or more source files.
-public struct Module {
+public struct Module: Sendable {
 
   /// The name of a module.
   public typealias Name = String
 
   /// A source file added to a module.
-  internal struct SourceContainer {
+  internal struct SourceContainer: Sendable {
 
     /// The position of `self` in the containing module.
     internal let identity: Program.SourceFileIdentity

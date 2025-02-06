@@ -1,5 +1,5 @@
 /// Properties about the representation of a type or term.
-public struct ValueProperties: Hashable, OptionSet {
+public struct ValueProperties: Hashable, OptionSet, Sendable {
 
   /// The raw value of these properties.
   public let rawValue: UInt8

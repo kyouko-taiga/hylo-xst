@@ -4,7 +4,7 @@ import Foundation
 import Utilities
 
 /// A source file.
-public struct SourceFile: Hashable {
+public struct SourceFile: Hashable, Sendable {
 
   /// The name of the file that the source came from.
   public let name: FileName

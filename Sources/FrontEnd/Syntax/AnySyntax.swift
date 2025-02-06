@@ -1,7 +1,7 @@
 import Archivist
 
 /// A type-erasing container for nodes in an abstract syntax tree.
-internal struct AnySyntax {
+internal struct AnySyntax: Sendable {
 
   /// The node wrapped in this container.
   internal let wrapped: any Syntax

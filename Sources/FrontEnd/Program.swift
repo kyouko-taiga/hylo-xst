@@ -3,13 +3,13 @@ import OrderedCollections
 import Utilities
 
 /// A Hylo program.
-public struct Program {
+public struct Program: Sendable {
 
   /// The identity of a module in loaded in a program.
   public typealias ModuleIdentity = Int
 
   /// The identity of a file added to a module.
-  public struct SourceFileIdentity: Hashable, RawRepresentable, Showable {
+  public struct SourceFileIdentity: Hashable, RawRepresentable, Showable, Sendable {
 
     /// The raw value of this identity.
     public let rawValue: UInt32

@@ -4,7 +4,7 @@ import Utilities
 public struct Tuple: TypeTree {
 
   /// An element in a tuple type.
-  public struct Element: Hashable {
+  public struct Element: Hashable, Sendable {
 
     /// The label of the element.
     public let label: String?

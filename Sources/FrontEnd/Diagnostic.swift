@@ -1,8 +1,8 @@
 /// A diagnostic related to a region of Hylo source code.
-public struct Diagnostic: Hashable {
+public struct Diagnostic: Hashable, Sendable {
 
   /// The severity of a diagnostic.
-  public enum Level: Hashable, Comparable {
+  public enum Level: Hashable, Comparable, Sendable {
 
     /// A note.
     case note

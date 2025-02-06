@@ -22,8 +22,9 @@ public struct TreePrinter {
     }
 
     /// The default configuration.
-    public static let `default` = Configuration(
-      useVerboseTypes: false)
+    public static var `default`: Configuration {
+      .init(useVerboseTypes: false)
+    }
 
   }
 

@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// A half-open range of textual positions in a source file.
-public struct SourceSpan: Hashable {
+public struct SourceSpan: Hashable, Sendable {
 
   /// The source file containing the region that `self` represents.
   public let source: SourceFile

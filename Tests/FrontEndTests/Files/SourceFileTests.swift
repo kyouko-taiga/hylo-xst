@@ -84,7 +84,7 @@ final class SourceFileTests: XCTestCase {
 
 extension SourceFile {
 
-  fileprivate static var helloWorld: Self = """
+  fileprivate static let helloWorld: Self = """
     Hello,
     World!
     """

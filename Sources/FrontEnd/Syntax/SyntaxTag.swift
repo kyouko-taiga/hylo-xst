@@ -1,7 +1,7 @@
 import Archivist
 
 /// The type of a node in an abstract syntax tree.
-public struct SyntaxTag {
+public struct SyntaxTag: Sendable {
 
   /// The underlying value of `self`.
   public let value: any Syntax.Type

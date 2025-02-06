@@ -5,7 +5,7 @@ import Utilities
 public struct FunctionDeclaration: Declaration, Scope {
 
   /// The introducer of an initializer declaration.
-  public enum Introducer: UInt8 {
+  public enum Introducer: UInt8, Sendable {
 
     /// The function introducer, `fun`.
     case fun
@@ -19,7 +19,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   }
 
   /// The identifier of a function.
-  public enum Identifier: Equatable {
+  public enum Identifier: Equatable, Sendable {
 
     /// A simple identifier.
     case simple(String)

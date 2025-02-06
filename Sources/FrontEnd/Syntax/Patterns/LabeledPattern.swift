@@ -1,7 +1,7 @@
 import Archivist
 
 /// A pattern with an optional label.
-public struct LabeledPattern: Hashable {
+public struct LabeledPattern: Hashable, Sendable {
 
   /// The label of the pattern, if any.
   public let label: Parsed<String>?

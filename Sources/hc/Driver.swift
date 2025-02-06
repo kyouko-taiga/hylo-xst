@@ -35,6 +35,7 @@ import Utilities
   public init() {}
 
   /// Executes the command.
+  @MainActor
   public mutating func run() async throws {
     var program = Program()
     let module = program.demandModule(productName(inputs))
@@ -51,6 +52,7 @@ import Utilities
 
   /// If `module` contains errors, renders all its diagnostics and exits with `ExitCode.failure`.
   /// Otherwise, does nothing.
+  @MainActor
   private func exitOnError(_ module: Module) {
     if module.containsError {
       render(module.diagnostics)
@@ -58,7 +60,19 @@ import Utilities
     }
   }
 
+  /// Renders the given diagnostics to the standard error.
+  @MainActor
+  private func render<T: Sequence<Diagnostic>>(_ ds: T) {
+    let s: Diagnostic.TextOutputStyle = ProcessInfo.ansiTerminalIsConnected ? .styled : .unstyled
+    var o = ""
+    for d in ds {
+      d.render(into: &o, showingPaths: .absolute, style: s)
+    }
+    print(o, to: &Driver.standardError)
+  }
+
   /// Parses the input files in `inputs` and adds them to `module`.
+  @MainActor
   private func parse(inputs: [URL], into module: inout Module) throws {
     let clock = ContinuousClock()
     let elapsed = try clock.measure {
@@ -77,6 +91,7 @@ import Utilities
   }
 
   /// Assignes the trees in `module` to their scopes, exiting if an error occurred.
+  @MainActor
   private func assignScopes(of module: Program.ModuleIdentity, in program: inout Program) async {
     let clock = ContinuousClock()
     let elapsed = await clock.measure {
@@ -87,6 +102,7 @@ import Utilities
   }
 
   /// Assigns the trees in `module` to their types, exiting if an error occured.
+  @MainActor
   private func assignTypes(of module: Program.ModuleIdentity, in program: inout Program) {
     let clock = ContinuousClock()
     let elapsed = clock.measure {
@@ -120,16 +136,6 @@ import Utilities
       }
     }
     return "Main"
-  }
-
-  /// Renders the given diagnostics to the standard error.
-  private func render<T: Sequence<Diagnostic>>(_ ds: T) {
-    let s: Diagnostic.TextOutputStyle = ProcessInfo.ansiTerminalIsConnected ? .styled : .unstyled
-    var o = ""
-    for d in ds {
-      d.render(into: &o, showingPaths: .absolute, style: s)
-    }
-    print(o, to: &Driver.standardError)
   }
 
   /// The type of the output files to generate.

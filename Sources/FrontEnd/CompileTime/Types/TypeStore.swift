@@ -2,7 +2,7 @@ import MoreCollections
 import Utilities
 
 /// A collection of types.
-public struct TypeStore {
+public struct TypeStore: Sendable {
 
   /// The index of a type in a store.
   public typealias Index = Int

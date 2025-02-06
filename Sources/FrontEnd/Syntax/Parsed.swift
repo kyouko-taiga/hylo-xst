@@ -21,6 +21,8 @@ extension Parsed: Equatable where T: Equatable {}
 
 extension Parsed: Hashable where T: Hashable {}
 
+extension Parsed: Sendable where T: Sendable {}
+
 extension Parsed: CustomStringConvertible {
 
   public var description: String {

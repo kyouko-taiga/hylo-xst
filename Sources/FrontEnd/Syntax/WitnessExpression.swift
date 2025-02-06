@@ -1,10 +1,10 @@
 import Archivist
 
 /// The expression of a witness produced by implicit resolution.
-public struct WitnessExpression: Hashable {
+public struct WitnessExpression: Hashable, Sendable {
 
   /// The expression of a witness.
-  public indirect enum Value: Hashable {
+  public indirect enum Value: Hashable, Sendable {
 
     /// An existing term.
     case identity(ExpressionIdentity)

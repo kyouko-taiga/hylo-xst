@@ -1,7 +1,7 @@
 import OrderedCollections
 
 /// A set of diagnostics.
-public struct DiagnosticSet: Hashable {
+public struct DiagnosticSet: Hashable, Sendable {
 
   /// The diagnostics in the set.
   public private(set) var elements: OrderedSet<Diagnostic>
