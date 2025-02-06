@@ -20,10 +20,7 @@ public struct ValueProperties: Hashable, OptionSet, Sendable {
   /// The value contains open variables.
   public static let hasVariable = ValueProperties(rawValue: 1 << 1)
 
-  /// The value contains skolems (aka rigid variables).
-  public static let hasSkolem = ValueProperties(rawValue: 1 << 2)
-
   /// The value contains type aliasess.
-  public static let hasAliases = ValueProperties(rawValue: 1 << 3)
+  public static let hasAliases = ValueProperties(rawValue: 1 << 2)
 
 }
