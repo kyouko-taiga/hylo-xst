@@ -628,7 +628,6 @@ public struct Typer {
     let c = program.parent(containing: d, as: TraitDeclaration.self)!
     let t = typeOfTraitSelf(in: c).erased
     let w = WitnessExpression(value: .abstract, type: t)
-
     let u = metatype(of: AssociatedType(declaration: d, qualification: w)).erased
     program[module].setType(u, for: d)
     return u
