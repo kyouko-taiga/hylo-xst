@@ -1,0 +1,5 @@
+fun check<T>(_ x: T) {}
+
+fun g(x: sink Void) {
+  let y: #exactly(x)
+}

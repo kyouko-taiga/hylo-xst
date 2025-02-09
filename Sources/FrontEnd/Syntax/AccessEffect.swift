@@ -19,6 +19,16 @@ public enum AccessEffect: UInt8, Sendable {
   /// Value may be accessed with any of the other effects, depending on the context.
   case yielded = 16
 
+  /// Creates an instance corresponding to the capability of a binding introduced by `i`.
+  public init(_ i: BindingPattern.Introducer) {
+    switch i {
+    case .let: self = .let
+    case .set: self = .set
+    case .inout: self = .inout
+    case .sinklet, .var: self = .sink
+    }
+  }
+
 }
 
 extension AccessEffect: Comparable {

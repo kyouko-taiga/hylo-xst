@@ -647,7 +647,7 @@ public struct Typer {
       let s = discharge(c.obligations, relatedTo: d)
       let u = program.types.reify(p, applying: s.substitutions)
 
-      ascribe(u, to: program[d].pattern)
+      ascribe(.let, u, to: program[d].pattern)
       program[module].setType(u, for: d)
       return u
     }
@@ -1009,30 +1009,41 @@ public struct Typer {
     return program.types.introduce(.init(parameters: ps, usings: us), into: t)
   }
 
-  /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
-  private mutating func ascribe(_ t: AnyTypeIdentity, to p: PatternIdentity) {
+  /// Configures `p` as a pattern of type `t` introducing variables with capability `k` or reports
+  /// an error if `t` doesn't match `p`'s shape.
+  ///
+  /// A variable declaration is considered "open" iff it does not occur as a child of a binding
+  /// pattern whose `p` is an ancestor. Bound variables are given a remote type whose capability
+  /// corresponds to the their introducer.
+  private mutating func ascribe(_ k: AccessEffect, _ t: AnyTypeIdentity, to p: PatternIdentity) {
     switch program.tag(of: p) {
     case BindingPattern.self:
-      ascribe(t, to: program.castUnchecked(p, to: BindingPattern.self))
+      ascribe(k, t, to: program.castUnchecked(p, to: BindingPattern.self))
     case TuplePattern.self:
-      ascribe(t, to: program.castUnchecked(p, to: TuplePattern.self))
+      ascribe(k, t, to: program.castUnchecked(p, to: TuplePattern.self))
     case VariableDeclaration.self:
-      ascribe(t, to: program.castUnchecked(p, to: VariableDeclaration.self))
+      ascribe(k, t, to: program.castUnchecked(p, to: VariableDeclaration.self))
     case WildcardLiteral.self:
-      ascribe(t, to: program.castUnchecked(p, to: WildcardLiteral.self))
+      ascribe(k, t, to: program.castUnchecked(p, to: WildcardLiteral.self))
     default:
       check(program.castToExpression(p)!, expecting: t)
     }
   }
 
-  /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
-  private mutating func ascribe(_ t: AnyTypeIdentity, to p: BindingPattern.ID) {
+  /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
+  /// reports an error if `t` doesn't match `p`'s shape.
+  private mutating func ascribe(
+    _ k: AccessEffect, _ t: AnyTypeIdentity, to p: BindingPattern.ID
+  ) {
     program[module].setType(t, for: p)
-    ascribe(t, to: program[p].pattern)
+    ascribe(.init(program[p].introducer.value), t, to: program[p].pattern)
   }
 
-  /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
-  private mutating func ascribe(_ t: AnyTypeIdentity, to p: TuplePattern.ID) {
+  /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
+  /// reports an error if `t` doesn't match `p`'s shape.
+  private mutating func ascribe(
+    _ k: AccessEffect, _ t: AnyTypeIdentity, to p: TuplePattern.ID
+  ) {
     guard let u = program.types[t] as? Tuple else {
       let m = program.format("tuple pattern cannot match values of type '%T'", [t])
       report(.init(.error, m, at: program[p].site))
@@ -1051,17 +1062,24 @@ public struct Typer {
 
     program[module].setType(t, for: p)
     for i in 0 ..< u.elements.count {
-      ascribe(u.elements[i].type, to: program[p].elements[i].value)
+      ascribe(k, u.elements[i].type, to: program[p].elements[i].value)
     }
   }
 
-  /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
-  private mutating func ascribe(_ t: AnyTypeIdentity, to p: VariableDeclaration.ID) {
-    program[module].setType(t, for: p)
+  /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
+  /// reports an error if `t` doesn't match `p`'s shape.
+  private mutating func ascribe(
+    _ k: AccessEffect, _ t: AnyTypeIdentity, to p: VariableDeclaration.ID
+  ) {
+    let u = demand(RemoteType(projectee: t, access: k)).erased
+    program[module].setType(u, for: p)
   }
 
-  /// Ascribes `t` to `p` and its children, reporting an error if `t` doesn't match `p`'s shape.
-  private mutating func ascribe(_ t: AnyTypeIdentity, to p: WildcardLiteral.ID) {
+  /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
+  /// reports an error if `t` doesn't match `p`'s shape.
+  private mutating func ascribe(
+    _ k: AccessEffect, _ t: AnyTypeIdentity, to p: WildcardLiteral.ID
+  ) {
     program[module].setType(t, for: p)
   }
 
@@ -1119,6 +1137,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: New.self), in: &context)
     case RemoteTypeExpression.self:
       return inferredType(of: castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
+    case SingletonTypeExpression.self:
+      return inferredType(of: castUnchecked(e, to: SingletonTypeExpression.self), in: &context)
     case StaticCall.self:
       return inferredType(of: castUnchecked(e, to: StaticCall.self), in: &context)
     case TupleLiteral.self:
@@ -1316,6 +1336,23 @@ public struct Typer {
     let t = evaluateTypeAscription(program[e].projectee)
     let u = metatype(of: RemoteType(projectee: t, access: program[e].access.value)).erased
     return context.obligations.assume(e, hasType: u, at: program[e].site)
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: SingletonTypeExpression.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    if let t = check(program[e].expression).unlessError {
+      if let v = stableDenotation(program[e].expression) {
+        let u = metatype(of: SingletonType(expression: v, label: t)).erased
+        return context.obligations.assume(e, hasType: u, at: program[e].site)
+      } else {
+        let s = program.spanForDiagnostic(about: program[e].expression)
+        report(.init(.error, "expression is not stable", at: s))
+      }
+    }
+
+    return context.obligations.assume(e, hasType: .error, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.
@@ -1792,6 +1829,54 @@ public struct Typer {
       context.obligations.assume(
         CoercionConstraint(on: e, from: t, to: u, reason: .ascription, at: program[e].site))
       return h
+    }
+  }
+
+  /// Returns a denotation of `e` iff `e` represents an immutable value.
+  ///
+  /// - Requires: `e` has been type checked.
+  private func stableDenotation(_ e: ExpressionIdentity) -> Denotation? {
+    assert(program[e.module].type(assignedTo: e) != nil, "expression is not type checked")
+    switch program.tag(of: e) {
+    case NameExpression.self:
+      return stableDenotation(program.castUnchecked(e, to: NameExpression.self))
+    default:
+      return nil
+    }
+  }
+
+  /// Returns a denotation of `e` iff `e` represents an immutable value.
+  ///
+  /// - Requires: `e` has been type checked.
+  private func stableDenotation(_ e: NameExpression.ID) -> Denotation? {
+    guard
+      let t = program[e.module].type(assignedTo: e),
+      let r = program[e.module].declaration(referredToBy: e)
+    else { return nil }
+
+    if let d = r.target {
+      if !isStable(d) { return nil }
+      if let q = program[e].qualification {
+        return stableDenotation(q).flatMap({ (a) in .reference(a, r, t) })
+      } else {
+        return .reference(nil, r, t)
+      }
+    }
+
+    return nil
+  }
+
+  /// Returns `true` iff `d` introduces an immutable entity.
+  ///
+  /// - Requires: `d` has been type checked.
+  private func isStable(_ d: DeclarationIdentity) -> Bool {
+    switch program.tag(of: d) {
+    case ParameterDeclaration.self, VariableDeclaration.self:
+      let t = program[d.module].type(assignedTo: d)!
+      return (program.types[t] as? RemoteType)?.access == .let
+
+    default:
+      return false
     }
   }
 

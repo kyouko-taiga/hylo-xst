@@ -502,6 +502,8 @@ public struct TypeStore: Sendable {
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (let t as RemoteType, let u as RemoteType):
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (_ as SingletonType, _ as SingletonType):
+      result = false
     case (_ as Struct, _ as Struct):
       result = false
     case (_ as Trait, _ as Trait):
