@@ -348,11 +348,17 @@ public struct Parser {
   }
 
   /// Parses a generic parameter declaration.
+  ///
+  ///     generic-parameter ::=
+  ///       identifier ('::' expression)?
+  ///
   private mutating func parseGenericParameterDeclaration(
     in file: inout Module.SourceContainer
   ) throws -> GenericParameterDeclaration.ID {
     let n = try take(.name) ?? expected("identifier")
-    return file.insert(GenericParameterDeclaration(identifier: .init(n), site: n.site))
+    let a = try parseOptionalKindAscription(in: &file)
+    return file.insert(
+      GenericParameterDeclaration(identifier: .init(n), ascription: a, site: n.site))
   }
 
   /// Parses a where clause iff the next token is `.where`. Otherwise, returns an empty clause.
@@ -428,7 +434,7 @@ public struct Parser {
       throw expected("parameter declaration")
     }
 
-    let ascription = try parseOptionalParameterTypeAscription(in: &file)
+    let ascription = try parseOptionalParameterAscription(in: &file)
     let defaultValue = try parseOptionalInitializerExpression(in: &file)
 
     return file.insert(
@@ -736,20 +742,13 @@ public struct Parser {
   ///
   ///     primary-expression ::=
   ///       boolean-literal
-  ///       buffer-literal
-  ///       integer-literal
-  ///       key-value-literal
-  ///       pragma-literal
-  ///       string-literal
   ///       tuple-literal
-  ///       name-expression
-  ///       lambda-expression
-  ///       conditional-expression
-  ///       match-expression
+  ///       wildcard-literal
+  ///       unqualified-name-expression
   ///       remote-type-expression
+  ///       singleton-type-expression
   ///       tuple-type-expression
-  ///       arrow-type-expression
-  ///       '_'
+  ///       '(' expression ')'
   ///
   private mutating func parsePrimaryExpression(
     in file: inout Module.SourceContainer
@@ -757,16 +756,18 @@ public struct Parser {
     switch peek()?.tag {
     case .true, .false:
       return .init(file.insert(BooleanLiteral(site: take()!.site)))
-    case .inout, .let, .set, .sink:
-      return try .init(parseRemoteTypeExpression(in: &file))
+    case .underscore:
+      return try .init(parseWildcardLiteral(in: &file))
     case .name:
       return try .init(parseUnqualifiedNameExpression(in: &file))
+    case .inout, .let, .set, .sink:
+      return try .init(parseRemoteTypeExpression(in: &file))
+    case .exactly:
+      return try .init(parseSingletonTypeExpression(in: &file))
     case .leftBrace:
       return try .init(parseTupleTypeExpression(in: &file))
     case .leftParenthesis:
       return try parseTupleLiteralOrParenthesizedExpression(in: &file)
-    case .underscore:
-      return try .init(parseWildcardLiteral(in: &file))
     default:
       throw expected("expression")
     }
@@ -831,6 +832,22 @@ public struct Parser {
   private mutating func parseNominalComponent() throws -> Parsed<Name> {
     let identifier = try take(.name) ?? expected("identifier")
     return .init(Name(identifier: String(identifier.text)), at: identifier.site)
+  }
+
+  /// Parses a singleton type expression.
+  ///
+  ///     singleton-type-expression ::=
+  ///       '#exactly' '(' expression ')'
+  ///
+  private mutating func parseSingletonTypeExpression(
+    in file: inout Module.SourceContainer
+  ) throws -> SingletonTypeExpression.ID {
+    let start = try take(.exactly) ?? expected("'#exactly'")
+    let e = try inParentheses { (me) in
+      try me.parseExpression(in: &file)
+    }
+    return file.insert(
+      SingletonTypeExpression(expression: e, site: start.site.extended(upTo: position.index)))
   }
 
   /// Parses a tuple type expression.
@@ -903,6 +920,21 @@ public struct Parser {
     }
   }
 
+  /// Parses a kind ascription iff the next token is a double colon.
+  ///
+  ///     kind-ascription ::=
+  ///       '::' expression
+  ///
+  private mutating func parseOptionalKindAscription(
+    in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity? {
+    if take(.doubleColon) != nil {
+      return try parseExpression(in: &file)
+    } else {
+      return nil
+    }
+  }
+
   /// Parses a return type ascription iff the next token is an arrow.
   ///
   ///     return-type-ascription ::=
@@ -919,7 +951,7 @@ public struct Parser {
   }
 
   /// Parses the type ascription of a parameter iff the next token is a colon.
-  private mutating func parseOptionalParameterTypeAscription(
+  private mutating func parseOptionalParameterAscription(
     in file: inout Module.SourceContainer
   ) throws -> RemoteTypeExpression.ID? {
     switch try parseOptionalTypeAscription(in: &file) {
