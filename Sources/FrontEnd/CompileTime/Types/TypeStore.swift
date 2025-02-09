@@ -235,6 +235,18 @@ public struct TypeStore: Sendable {
     }
   }
 
+  /// Returns the value at `p` on the type identified by `n` if that type is an instance of `T` and
+  /// the value at `p` identifies an instance of `U`. Otherwise, returns `nil`.
+  public func select<T: TypeTree, U: TypeTree>(
+    _ p: KeyPath<T, AnyTypeIdentity>, on n: AnyTypeIdentity, as: U.Type
+  ) -> U.ID? {
+    if let child = select(p, on: n) {
+      return cast(child, to: U.self)
+    } else {
+      return nil
+    }
+  }
+
   /// Projects the type identified by `n`.
   public subscript<T: TypeIdentity>(n: T) -> any TypeTree {
     _read { yield self[n.erased] }

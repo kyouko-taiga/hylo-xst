@@ -883,9 +883,7 @@ public struct Typer {
   ) -> [GenericParameter.ID] {
     ps.compactMap { (p) in
       let t = declaredType(of: p)
-      return program.types
-        .select(\Metatype.inhabitant, on: t)
-        .flatMap({ (m) in program.types.cast(m, to: GenericParameter.self) })
+      return program.types.select(\Metatype.inhabitant, on: t, as: GenericParameter.self)
     }
   }
 
@@ -1681,8 +1679,9 @@ public struct Typer {
 
     var a: TypeApplication.Arguments = [s: s.erased]
     for p in program[d].parameters {
-      let t = demand(GenericParameter.user(p))
-      a[t] = t.erased
+      let t = declaredType(of: p)
+      let u = program.types.select(\Metatype.inhabitant, on: t, as: GenericParameter.self)!
+      a[u] = t
     }
 
     return demand(TypeApplication(abstraction: f, arguments: a))
@@ -1699,8 +1698,10 @@ public struct Typer {
     let s = demand(GenericParameter.conformer(concept))
 
     var a: TypeApplication.Arguments = [s: conformer]
-    for (p, t) in zip(program[concept].parameters, arguments) {
-      a[demand(GenericParameter.user(p))] = t
+    for (p, v) in zip(program[concept].parameters, arguments) {
+      let t = declaredType(of: p)
+      let u = program.types.select(\Metatype.inhabitant, on: t, as: GenericParameter.self)!
+      a[u] = v
     }
 
     return demand(TypeApplication(abstraction: f, arguments: a))
