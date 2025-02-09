@@ -792,7 +792,7 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    var ps = [demand(GenericParameter.trait(d))]
+    var ps = [demand(GenericParameter.conformer(d))]
     ps.append(contentsOf: declaredTypes(of: program[d].parameters))
 
     let a = TypeApplication.Arguments(uniqueKeysWithValues: ps.map({ (p) in (p, p.erased) }))
@@ -1671,13 +1671,13 @@ public struct Typer {
 
   /// Returns the type of an instance of `Self` in `s`.
   private mutating func typeOfSelf(in d: TraitDeclaration.ID) -> AnyTypeIdentity {
-    demand(GenericParameter.trait(d)).erased
+    demand(GenericParameter.conformer(d)).erased
   }
 
   /// Returns the type of `P.self` in `d`, which declares a trait `P`.
   private mutating func typeOfTraitSelf(in d: TraitDeclaration.ID) -> TypeApplication.ID {
     let f = demand(Trait(declaration: d)).erased
-    let s = demand(GenericParameter.trait(d))
+    let s = demand(GenericParameter.conformer(d))
 
     var a: TypeApplication.Arguments = [s: s.erased]
     for p in program[d].parameters {
@@ -1696,7 +1696,7 @@ public struct Typer {
   ) -> TypeApplication.ID {
     assert(arguments.count == program[concept].parameters.count, "not enough arguments")
     let f = demand(Trait(declaration: concept)).erased
-    let s = demand(GenericParameter.trait(concept))
+    let s = demand(GenericParameter.conformer(concept))
 
     var a: TypeApplication.Arguments = [s: conformer]
     for (p, t) in zip(program[concept].parameters, arguments) {

@@ -7,19 +7,19 @@ public enum GenericParameter: TypeTree {
   case equality(EqualityProperty, UInt8)
 
   /// The generic parameter representing the conformer of a trait.
-  case trait(TraitDeclaration.ID)
+  case conformer(TraitDeclaration.ID)
 
   /// A generic parameter declared in sources.
   case user(GenericParameterDeclaration.ID)
 
-  /// Properties about `self`.
-  public var properties: ValueProperties {
-    .init()
-  }
-
   /// The declaration of the parameter, unless it is predefined.
   public var declaration: GenericParameterDeclaration.ID? {
     if case .user(let d) = self { d } else { nil }
+  }
+
+  /// Properties about `self`.
+  public var properties: ValueProperties {
+    .init()
   }
 
 }
@@ -31,7 +31,7 @@ extension GenericParameter: Showable {
     switch self {
     case .equality(_, let i):
       return printer.uniquized("T\(i)", for: self)
-    case .trait:
+    case .conformer:
       return printer.uniquized("Self", for: self)
     case .user(let d):
       return printer.uniquized(printer.program[d].identifier.value, for: self)
