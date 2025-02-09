@@ -1,7 +1,7 @@
 import Archivist
 import Utilities
 
-/// The expression of a tuple literal.
+/// The expression of a tuple type.
 public struct TupleTypeExpression: Expression {
 
   /// The elements of the literal.

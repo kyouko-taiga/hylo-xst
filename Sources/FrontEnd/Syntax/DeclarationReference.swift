@@ -23,12 +23,12 @@ public enum DeclarationReference: Hashable, Sendable {
     }
   }
 
-  /// The referred declaration, unless it is predefined.
+  /// The referred declaration, unless it is built-in.
   public var target: DeclarationIdentity? {
     switch self {
     case .direct(let d), .member(let d), .inherited(_, let d):
       return d
-    default:
+    case .builtin:
       return nil
     }
   }

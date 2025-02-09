@@ -1,4 +1,4 @@
-/// The type of a type.
+/// The type of a type expression.
 public struct Metatype: TypeTree {
 
   /// The type of which `self` is the type.
