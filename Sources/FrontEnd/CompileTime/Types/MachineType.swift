@@ -1,28 +1,28 @@
-/// A built-in type.
-public enum BuiltinType: TypeTree {
+/// A built-in machine type.
+public enum MachineType: TypeTree {
 
-  /// A built-in integer type.
+  /// A machine integer type.
   ///
-  /// This type represents the target's integer types. A built-in integer may be of any bit width
+  /// This type represents the target's integer types. A machine integer may be of any bit width
   /// and does not specify signedness.
   case i(UInt8)
 
   /// An alias for `.i(n)` where `n` is the width of `.ptr`.
   case word
 
-  /// A built-in 16-bit floating-point type (specifically, "binary16" in IEEE 754).
+  /// A machine 16-bit floating-point type (specifically, "binary16" in IEEE 754).
   case float16
 
-  /// A built-in 32-bit floating-point type (specifically, "binary32" in IEEE 754).
+  /// A machine 32-bit floating-point type (specifically, "binary32" in IEEE 754).
   case float32
 
-  /// A built-in 64-bit floating-point type (specifically, "binary64" in IEEE 754).
+  /// A machine 64-bit floating-point type (specifically, "binary64" in IEEE 754).
   case float64
 
-  /// A built-in 128-bit floating-point type (specifically, "binary128" in IEEE 754).
+  /// A machine 128-bit floating-point type (specifically, "binary128" in IEEE 754).
   case float128
 
-  /// A built-in opaque pointer.
+  /// A machine opaque pointer.
   case ptr
 
   /// `true` iff `self` is `.i` or `.word`.
@@ -42,7 +42,7 @@ public enum BuiltinType: TypeTree {
 
 }
 
-extension BuiltinType: CustomStringConvertible {
+extension MachineType: CustomStringConvertible {
 
   public var description: String {
     switch self {
@@ -65,7 +65,7 @@ extension BuiltinType: CustomStringConvertible {
 
 }
 
-extension BuiltinType: LosslessStringConvertible {
+extension MachineType: LosslessStringConvertible {
 
   /// Creates an instance from its description.
   public init?<S: StringProtocol>(_ description: S) {
@@ -100,7 +100,7 @@ extension BuiltinType: LosslessStringConvertible {
 
 }
 
-extension BuiltinType: Showable {
+extension MachineType: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {

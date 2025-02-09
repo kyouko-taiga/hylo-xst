@@ -224,6 +224,7 @@ public struct TypeStore: Sendable {
     return (inputs: f.inputs, output: p.projectee)
   }
 
+
   /// Returns the value at `p` on the type identified by `n` if that type is an instance of `T`.
   /// Otherwise, returns `nil`.
   public func select<T: TypeTree, U>(_ p: KeyPath<T, U>, on n: AnyTypeIdentity) -> U? {
@@ -473,8 +474,6 @@ public struct TypeStore: Sendable {
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (_ as AssociatedType, _ as AssociatedType):
       result = false
-    case (_ as BuiltinType, _ as BuiltinType):
-      result = false
     case (let t as EqualityWitness, let u as EqualityWitness):
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (_ as ErrorType, _ as ErrorType):
@@ -485,6 +484,8 @@ public struct TypeStore: Sendable {
       result = false
     case (let t as Implication, let u as Implication):
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
+    case (_ as MachineType, _ as MachineType):
+      result = false
     case (let t as Metatype, let u as Metatype):
       result = unifiable(t, u, extending: &subs, handlingCoercionsWith: areCoercible)
     case (let t as RemoteType, let u as RemoteType):
