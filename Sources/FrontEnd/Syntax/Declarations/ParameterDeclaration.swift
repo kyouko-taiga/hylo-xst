@@ -31,9 +31,9 @@ extension ParameterDeclaration: Showable {
     case .some(let l) where l.value == identifier.value:
       result.append(identifier.value)
     case .some(let l):
-      result.append("\(l) \(identifier)")
+      result.append("\(l) \(identifier.value)")
     case nil:
-      result.append("_ \(identifier)")
+      result.append("_ \(identifier.value)")
     }
 
     // Ascription.

@@ -18,7 +18,7 @@ extension AssociatedTypeDeclaration: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    "type \(identifier)"
+    "type \(identifier.value)"
   }
 
 }

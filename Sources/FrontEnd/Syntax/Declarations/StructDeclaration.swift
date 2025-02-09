@@ -29,7 +29,7 @@ extension StructDeclaration: Showable {
   public func show(using printer: inout TreePrinter) -> String {
     var result = ""
     for m in modifiers { result.append("\(m) ") }
-    result.append("struct \(identifier)")
+    result.append("struct \(identifier.value)")
 
     if !staticParameters.isEmpty {
       result.append(printer.show(staticParameters))

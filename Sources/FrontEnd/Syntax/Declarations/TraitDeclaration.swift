@@ -30,7 +30,7 @@ extension TraitDeclaration: Showable {
   public func show(using printer: inout TreePrinter) -> String {
     var result = ""
     for m in modifiers { result.append("\(m) ") }
-    result.append("trait \(identifier)")
+    result.append("trait \(identifier.value)")
 
     if !parameters.isEmpty {
       result.append("<\(printer.show(parameters))>")
