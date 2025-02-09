@@ -98,6 +98,14 @@ final class LexerTests: XCTestCase {
     XCTAssertNil(scanner.next())
   }
 
+  func testPoundLiteral() throws {
+    var scanner = Lexer(tokenizing: "#exactly #a #0 #")
+    try assertNext(from: &scanner, is: .exactly)
+    try assertNext(from: &scanner, is: .poundLiteral, withValue: "#a")
+    try assertNext(from: &scanner, is: .poundLiteral, withValue: "#0")
+    try assertNext(from: &scanner, is: .error)
+  }
+
   func testOperator() throws {
     var scanner = Lexer(tokenizing: "<= ++ & &&& -> ==")
     try assertNext(from: &scanner, is: .leftAngle)

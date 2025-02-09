@@ -23,6 +23,8 @@ public struct Lexer: IteratorProtocol, Sequence {
 
     if head.isIdentifierHead {
       return takeKeywordOrIdentifier()
+    } else if head == "#" {
+      return takePoundKeywordOrLiteral()
     } else if head.isOperator {
       return takeOperator()
     } else {
@@ -80,8 +82,24 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "where": tag = .where
     default: tag = .name
     }
+
     assert(!word.isEmpty)
     return .init(tag: tag, site: span(word.startIndex ..< word.endIndex))
+  }
+
+  /// Consumes and returns a keyword prefixed by a '#' symbol.
+  private mutating func takePoundKeywordOrLiteral() -> Token {
+    let start = position
+    _ = take()
+
+    let tag: Token.Tag
+    switch take(while: \.isIdentifierTail) {
+    case "": tag = .error
+    case "exactly": tag = .exactly
+    default: tag = .poundLiteral
+    }
+
+    return .init(tag: tag, site: span(start ..< position))
   }
 
   /// Consumes and returns an operator.
