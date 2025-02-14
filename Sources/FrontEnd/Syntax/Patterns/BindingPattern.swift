@@ -6,7 +6,7 @@ public struct BindingPattern: Pattern {
   /// The introducer of a binding pattern.
   public enum Introducer: UInt8, Sendable {
 
-    case `let`, `var`, `inout`, sinklet
+    case `let`, `set`, `var`, `inout`, sinklet
 
   }
 
@@ -78,6 +78,8 @@ extension BindingPattern.Introducer: CustomStringConvertible {
     switch self {
     case .let:
       return "let"
+    case .set:
+      return "set"
     case .var:
       return "var"
     case .inout:

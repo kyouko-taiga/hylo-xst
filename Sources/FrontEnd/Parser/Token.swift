@@ -97,7 +97,7 @@ public struct Token: Hashable, Sendable {
   /// `true` iff `self` is a binding introducer.
   public var isBindingIntroducer: Bool {
     switch tag {
-    case .inout, .let, .sink, .var:
+    case .inout, .let, .set, .sink, .var:
       return true
     default:
       return false

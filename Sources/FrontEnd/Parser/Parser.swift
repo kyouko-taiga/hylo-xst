@@ -1019,6 +1019,8 @@ public struct Parser {
     switch peek()?.tag {
     case .let:
       return Parsed(.let, at: take()!.site)
+    case .set:
+      return Parsed(.set, at: take()!.site)
     case .var:
       return Parsed(.var, at: take()!.site)
     case .inout:
