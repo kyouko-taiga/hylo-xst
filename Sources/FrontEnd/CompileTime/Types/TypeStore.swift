@@ -121,7 +121,7 @@ public struct TypeStore: Sendable {
     }
   }
 
-  /// Returns the implement parameters and head of `n` opened for unification.
+  /// Returns the implicit parameters and head of `n` opened for unification.
   public mutating func open(
     _ n: AnyTypeIdentity
   ) -> (usings: [AnyTypeIdentity], head: AnyTypeIdentity) {
