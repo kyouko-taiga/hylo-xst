@@ -157,7 +157,7 @@ public struct Typer {
   private mutating func check(_ d: AssociatedTypeDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO: Bounds
-    ensureUniqueDeclaration(d, of: program[d].identifier.value)
+    checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
@@ -168,7 +168,7 @@ public struct Typer {
     }
 
     program.forEachVariable(introducedBy: d) { (v, _) in
-      ensureUniqueDeclaration(v, of: program[v].identifier.value)
+      checkUniqueDeclaration(v, of: program[v].identifier.value)
     }
 
     if program[d].isGiven,  let p = program.parent(containing: d).node {
@@ -313,7 +313,7 @@ public struct Typer {
   /// Type checks `d`.
   private mutating func check(_ d: GenericParameterDeclaration.ID) {
     _ = declaredType(of: d)
-    // TODO: redeclarations
+    checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `body` as the definition of `d`, which declares a function or susbscript that
@@ -355,21 +355,21 @@ public struct Typer {
   private mutating func check(_ d: StructDeclaration.ID) {
     _ = declaredType(of: d)
     for m in program[d].members { check(m) }
-    ensureUniqueDeclaration(d, of: program[d].identifier.value)
+    checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
   private mutating func check(_ d: TraitDeclaration.ID) {
     _ = declaredType(of: d)
     for m in program[d].members { check(m) }
-    ensureUniqueDeclaration(d, of: program[d].identifier.value)
+    checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
   private mutating func check(_ d: TypeAliasDeclaration.ID) {
     _ = declaredType(of: d)
     // TODO
-    ensureUniqueDeclaration(d, of: program[d].identifier.value)
+    checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
@@ -497,7 +497,7 @@ public struct Typer {
   }
 
   /// Reports a diagnostic iff `d` is not the first declaration of `identifier` in its scope.
-  private mutating func ensureUniqueDeclaration<T: Declaration>(_ d: T.ID, of identifier: String) {
+  private mutating func checkUniqueDeclaration<T: Declaration>(_ d: T.ID, of identifier: String) {
     let p = program.parent(containing: d)
     if let t = declarations(lexicallyIn: p)[identifier], t.count > 1 {
       let x = t[0]
