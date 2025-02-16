@@ -510,6 +510,16 @@ public struct Typer {
     }
   }
 
+  /// Reports a diagnostic iff `p` is the metatype of a higher-kinded type constructor.
+  private mutating func checkProper(_ p: GenericParameter.ID, at site: SourceSpan) {
+    if program.types[p].kind != .proper {
+      let e = program.invalidTypeArguments(
+        toApply: program.show(p), found: 0, expected: program.types.parameters(of: p).count,
+        at: site)
+      report(e)
+    }
+  }
+
   /// Type checks `e` and returns its type, which is expected to be `r` from the context of `e`.
   @discardableResult
   private mutating func check(
@@ -743,7 +753,8 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    let t = metatype(of: GenericParameter.user(d)).erased
+    let k = declaredKind(of: d)
+    let t = metatype(of: GenericParameter.user(d, k)).erased
     program[module].setType(t, for: d)
     return t
   }
@@ -792,7 +803,7 @@ public struct Typer {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
 
-    var ps = [demand(GenericParameter.conformer(d))]
+    var ps = [typeOfSelf(in: d)]
     ps.append(contentsOf: declaredTypes(of: program[d].parameters))
 
     let a = TypeApplication.Arguments(uniqueKeysWithValues: ps.map({ (p) in (p, p.erased) }))
@@ -883,7 +894,7 @@ public struct Typer {
   ) -> [GenericParameter.ID] {
     ps.compactMap { (p) in
       let t = declaredType(of: p)
-      return program.types.select(\Metatype.inhabitant, on: t, as: GenericParameter.self)
+      return program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self)
     }
   }
 
@@ -910,14 +921,14 @@ public struct Typer {
 
     case .coercion(.reflexivity):
       // <T> T ~ T
-      let t0 = demand(GenericParameter.equality(.reflexivity, 0))
+      let t0 = demand(GenericParameter.nth(0, .proper))
       let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t0.erased)).erased
       result = demand(UniversalType(parameters: [t0], body: x0)).erased
 
     case .coercion(.symmetry):
       // <T0, T1> T0 ~ T1 ==> T1 ~ T0
-      let t0 = demand(GenericParameter.equality(.symmetry, 0))
-      let t1 = demand(GenericParameter.equality(.symmetry, 1))
+      let t0 = demand(GenericParameter.nth(0, .proper))
+      let t1 = demand(GenericParameter.nth(1, .proper))
       let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t1.erased)).erased
       let x1 = demand(EqualityWitness(lhs: t1.erased, rhs: t0.erased)).erased
       let x2 = demand(Implication(context: [x0], head: x1)).erased
@@ -925,9 +936,9 @@ public struct Typer {
 
     case .coercion(.transitivity):
       // <T0, T1, T2> T0 ~ T1, T1 ~ T2 ==> T0 ~ T2
-      let t0 = demand(GenericParameter.equality(.transitivity, 0))
-      let t1 = demand(GenericParameter.equality(.transitivity, 1))
-      let t2 = demand(GenericParameter.equality(.transitivity, 2))
+      let t0 = demand(GenericParameter.nth(0, .proper))
+      let t1 = demand(GenericParameter.nth(1, .proper))
+      let t2 = demand(GenericParameter.nth(2, .proper))
       let x0 = demand(EqualityWitness(lhs: t0.erased, rhs: t1.erased)).erased
       let x1 = demand(EqualityWitness(lhs: t1.erased, rhs: t2.erased)).erased
       let x2 = demand(EqualityWitness(lhs: t0.erased, rhs: t2.erased)).erased
@@ -974,6 +985,17 @@ public struct Typer {
     assert(!witness.hasVariable)
     cache.witnessToAliases[witness] = substitutions
     return substitutions
+  }
+
+  /// Returns the declared kind of `d`.
+  private mutating func declaredKind(of d: GenericParameterDeclaration.ID) -> Kind {
+    if let a = program[d].ascription {
+      let k = evaluateKindAscription(a)
+      return program.types[k].inhabitant
+    } else {
+      // Generic parameters are proper-kinded by default.
+      return .proper
+    }
   }
 
   /// Returns the type that `d` extends.
@@ -1676,7 +1698,7 @@ public struct Typer {
     case StructDeclaration.self:
       result = typeOfSelf(in: program.castUnchecked(n, to: StructDeclaration.self))
     case TraitDeclaration.self:
-      result = typeOfSelf(in: program.castUnchecked(n, to: TraitDeclaration.self))
+      result = typeOfSelf(in: program.castUnchecked(n, to: TraitDeclaration.self)).erased
     default:
       result = typeOfSelf(in: program.parent(containing: n))
     }
@@ -1705,19 +1727,19 @@ public struct Typer {
   }
 
   /// Returns the type of an instance of `Self` in `s`.
-  private mutating func typeOfSelf(in d: TraitDeclaration.ID) -> AnyTypeIdentity {
-    demand(GenericParameter.conformer(d)).erased
+  private mutating func typeOfSelf(in d: TraitDeclaration.ID) -> GenericParameter.ID {
+    demand(GenericParameter.conformer(d, .proper))
   }
 
   /// Returns the type of `P.self` in `d`, which declares a trait `P`.
   private mutating func typeOfTraitSelf(in d: TraitDeclaration.ID) -> TypeApplication.ID {
     let f = demand(Trait(declaration: d)).erased
-    let s = demand(GenericParameter.conformer(d))
+    let s = typeOfSelf(in: d)
 
     var a: TypeApplication.Arguments = [s: s.erased]
     for p in program[d].parameters {
       let t = declaredType(of: p)
-      let u = program.types.select(\Metatype.inhabitant, on: t, as: GenericParameter.self)!
+      let u = program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self)!
       a[u] = t
     }
 
@@ -1732,12 +1754,12 @@ public struct Typer {
   ) -> TypeApplication.ID {
     assert(arguments.count == program[concept].parameters.count, "not enough arguments")
     let f = demand(Trait(declaration: concept)).erased
-    let s = demand(GenericParameter.conformer(concept))
+    let s = typeOfSelf(in: concept)
 
     var a: TypeApplication.Arguments = [s: conformer]
     for (p, v) in zip(program[concept].parameters, arguments) {
       let t = declaredType(of: p)
-      let u = program.types.select(\Metatype.inhabitant, on: t, as: GenericParameter.self)!
+      let u = program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self)!
       a[u] = v
     }
 
@@ -1810,6 +1832,10 @@ public struct Typer {
       inferredType(of: e, in: &ctx)
     }
 
+    if let p = program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self) {
+      checkProper(p, at: program.spanForDiagnostic(about: e))
+    }
+
     let h = inhabitant(of: t, coercingIfNecessary: e, in: &context)
     return (result: h, isPartial: t[.hasVariable])
   }
@@ -1829,6 +1855,29 @@ public struct Typer {
       context.obligations.assume(
         CoercionConstraint(on: e, from: t, to: u, reason: .ascription, at: program[e].site))
       return h
+    }
+  }
+
+  /// Returns the value of `e` evaluated as a kind ascription.
+  private mutating func evaluateKindAscription(
+    _ e: KindExpression.ID
+  ) -> Metakind.ID {
+    if let k = program[e.module].type(assignedTo: e) { return program.types.castUnchecked(k) }
+    assert(e.module == module, "dependency is not typed")
+
+    switch program[e].value {
+    case .proper:
+      let k = demand(Metakind(inhabitant: .proper))
+      program[module].setType(k.erased, for: e)
+      return k
+
+    case .arrow(let a, let b):
+      let l = evaluateKindAscription(a)
+      let r = evaluateKindAscription(b)
+      let k = demand(
+        Metakind(inhabitant: .arrow(program.types[l].inhabitant, program.types[r].inhabitant)))
+      program[module].setType(k.erased, for: e)
+      return k
     }
   }
 
@@ -2115,14 +2164,14 @@ public struct Typer {
 
       // The witness has a universal type?
       if let u = program.types[witness.type] as? UniversalType {
-        var vs = TypeApplication.Arguments(minimumCapacity: u.parameters.count)
+        var a = TypeApplication.Arguments(minimumCapacity: u.parameters.count)
         for p in u.parameters {
-          vs[p] = fresh().erased
+          a[p] = fresh().erased
         }
 
         witness = WitnessExpression(
-          value: .typeApplication(witness, vs),
-          type: program.types.substitute(vs, in: u.body))
+          value: .typeApplication(witness, a),
+          type: program.types.substitute(a, in: u.body))
         continue
       }
 

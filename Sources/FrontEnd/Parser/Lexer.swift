@@ -104,9 +104,16 @@ public struct Lexer: IteratorProtocol, Sequence {
 
   /// Consumes and returns an operator.
   private mutating func takeOperator() -> Token {
+    let start = position
+
     // Leading angle brackets are tokenized individually, to parse generic clauses.
     if peek()!.isAngleBracket {
       return takePunctuationOrDelimiter()
+    }
+
+    // Stars are tokenized individually, to parse kinds.
+    if take("*") != nil {
+      return .init(tag: .star, site: span(start ..< position))
     }
 
     let text = take(while: \.isOperator)
@@ -118,7 +125,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "==": tag = .equal
     default: tag = .operator
     }
-    return .init(tag: tag, site: span(text.startIndex ..< text.endIndex))
+    return .init(tag: tag, site: span(start ..< position))
   }
 
   /// Consumes and returns a punctuation token if the input starts with a punctuation symbol;

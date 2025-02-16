@@ -49,6 +49,7 @@ public struct Token: Hashable, Sendable {
     case assign
     case conversion
     case equal
+    case star
     case `operator`
 
     // Punctuation

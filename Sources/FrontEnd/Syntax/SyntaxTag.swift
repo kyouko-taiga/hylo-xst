@@ -47,6 +47,7 @@ public struct SyntaxTag: Sendable {
     Call.self,
     EqualityWitnessExpression.self,
     ImplicitQualification.self,
+    KindExpression.self,
     NameExpression.self,
     New.self,
     RemoteTypeExpression.self,

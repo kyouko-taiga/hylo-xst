@@ -180,6 +180,17 @@ public struct TypeStore: Sendable {
     }
   }
 
+  /// Returns the type parameters of `p`.
+  public mutating func parameters(of p: GenericParameter.ID) -> [GenericParameter.ID] {
+    var k = self[p].kind
+    var p: [GenericParameter.ID] = []
+    while let (a, b) = k.arrow {
+      p.append(demand(GenericParameter.nth(p.count, a)))
+      k = b
+    }
+    return p
+  }
+
   /// Returns `n` if it identifies a tree of type `U`; otherwise, returns `nil`.
   public func cast<T: TypeIdentity, U: TypeTree>(_ n: T, to: U.Type) -> U.ID? {
     if type(of: self[n]) == U.self {
@@ -227,7 +238,7 @@ public struct TypeStore: Sendable {
 
   /// Returns the value at `p` on the type identified by `n` if that type is an instance of `T`.
   /// Otherwise, returns `nil`.
-  public func select<T: TypeTree, U>(_ p: KeyPath<T, U>, on n: AnyTypeIdentity) -> U? {
+  public func select<T: TypeTree, U>(_ n: AnyTypeIdentity, _ p: KeyPath<T, U>) -> U? {
     if let t = self[n] as? T {
       return t[keyPath: p]
     } else {
@@ -238,9 +249,9 @@ public struct TypeStore: Sendable {
   /// Returns the value at `p` on the type identified by `n` if that type is an instance of `T` and
   /// the value at `p` identifies an instance of `U`. Otherwise, returns `nil`.
   public func select<T: TypeTree, U: TypeTree>(
-    _ p: KeyPath<T, AnyTypeIdentity>, on n: AnyTypeIdentity, as: U.Type
+    _ n: AnyTypeIdentity, _ p: KeyPath<T, AnyTypeIdentity>, as: U.Type
   ) -> U.ID? {
-    if let child = select(p, on: n) {
+    if let child = select(n, p) {
       return cast(child, to: U.self)
     } else {
       return nil

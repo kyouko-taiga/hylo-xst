@@ -350,7 +350,7 @@ public struct Parser {
   /// Parses a generic parameter declaration.
   ///
   ///     generic-parameter ::=
-  ///       identifier ('::' expression)?
+  ///       identifier kind-ascription?
   ///
   private mutating func parseGenericParameterDeclaration(
     in file: inout Module.SourceContainer
@@ -923,13 +923,13 @@ public struct Parser {
   /// Parses a kind ascription iff the next token is a double colon.
   ///
   ///     kind-ascription ::=
-  ///       '::' expression
+  ///       '::' kind-expression
   ///
   private mutating func parseOptionalKindAscription(
     in file: inout Module.SourceContainer
-  ) throws -> ExpressionIdentity? {
+  ) throws -> KindExpression.ID? {
     if take(.doubleColon) != nil {
-      return try parseExpression(in: &file)
+      return try parseKind(in: &file)
     } else {
       return nil
     }
@@ -964,6 +964,34 @@ public struct Parser {
       let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))
       return file.insert(RemoteTypeExpression(access: k, projectee: b, site: s))
     }
+  }
+
+  // MARK: Kinds
+
+  /// Parses a the expression of a kind.
+  ///
+  ///     kind-expression ::=
+  ///       '*'
+  ///       '(' kind-expression ')'
+  ///       kind-expression ('->' kind-expression)*
+  ///
+  private mutating func parseKind(
+    in file: inout Module.SourceContainer
+  ) throws -> KindExpression.ID {
+    if peek()?.tag == .leftParenthesis {
+      return try inParentheses({ (me) in try me.parseKind(in: &file) })
+    }
+
+    let head = try take(.star) ?? expected("kind")
+    var kind = file.insert(KindExpression(value: .proper, site: head.site))
+
+    while take(.arrow) != nil {
+      let r = try parseKind(in: &file)
+      let s = head.site.extended(upTo: position.index)
+      kind = file.insert(KindExpression(value: .arrow(kind, r), site: s))
+    }
+
+    return kind
   }
 
   // MARK: Patterns
@@ -1204,7 +1232,7 @@ public struct Parser {
     }
 
     // Multi-token operators.
-    let first = try take(oneOf: [.leftAngle, .rightAngle]) ?? expected("operator")
+    let first = try take(oneOf: [.leftAngle, .rightAngle, .star]) ?? expected("operator")
     var last = first
     while let u = peek(), u.site.region.lowerBound == last.site.region.upperBound {
       if let next = take(if: \.isOperator) {

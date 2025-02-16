@@ -1,3 +1,5 @@
+import Utilities
+
 /// The type of a type lambda.
 public struct UniversalType: TypeTree {
 
@@ -26,7 +28,15 @@ extension UniversalType: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    "<\(printer.show(parameters))> \(printer.show(body))"
+    let ps = parameters.map { (p) in
+      switch printer.program.types[p].kind {
+      case .proper:
+        return printer.show(p)
+      case let k:
+        return "\(printer.show(p)) :: \(k)"
+      }
+    }
+    return "<\(list: ps)> \(printer.show(body))"
   }
 
 }

@@ -118,6 +118,18 @@ extension Program {
     return .init(level, m, at: site)
   }
 
+  /// Returns an error diagnosing an invalid number of type arguments.
+  internal func invalidTypeArguments(
+    toApply entity: String, found: Int, expected: Int, at site: SourceSpan
+  ) -> Diagnostic {
+    assert(found != expected)
+    return if found > 0 {
+      .init(.error, "\(entity) expects \(expected) type argument(s); found \(found)", at: site)
+    } else {
+      .init(.error, "\(entity) expects \(expected) type argument(s)", at: site)
+    }
+  }
+
   /// Returns an error diagnosing an invalid redeclaration.
   internal func invalidRedeclaration(
     of n: Name, at site: SourceSpan, previousDeclarations: [SourceSpan] = []

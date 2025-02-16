@@ -107,7 +107,7 @@ final class LexerTests: XCTestCase {
   }
 
   func testOperator() throws {
-    var scanner = Lexer(tokenizing: "<= ++ & &&& -> ==")
+    var scanner = Lexer(tokenizing: "<= ++ & &&& -> == +* *+ *>")
     try assertNext(from: &scanner, is: .leftAngle)
     try assertNext(from: &scanner, is: .assign)
     try assertNext(from: &scanner, is: .operator, withValue: "++")
@@ -115,6 +115,11 @@ final class LexerTests: XCTestCase {
     try assertNext(from: &scanner, is: .operator, withValue: "&&&")
     try assertNext(from: &scanner, is: .arrow)
     try assertNext(from: &scanner, is: .equal)
+    try assertNext(from: &scanner, is: .operator, withValue: "+*")
+    try assertNext(from: &scanner, is: .star)
+    try assertNext(from: &scanner, is: .operator, withValue: "+")
+    try assertNext(from: &scanner, is: .star)
+    try assertNext(from: &scanner, is: .rightAngle)
     XCTAssertNil(scanner.next())
   }
 
@@ -144,8 +149,8 @@ private func assertNext(
   file: StaticString = #file, line: UInt = #line
 ) throws {
   let next = try XCTUnwrap(scanner.next())
-  XCTAssertEqual(next.tag, expected, file: file, line: line)
+  XCTAssertEqual(next.tag, expected, file: (file), line: line)
   if let s = text {
-    XCTAssertEqual(String(next.text), s, file: file, line: line)
+    XCTAssertEqual(String(next.text), s, file: (file), line: line)
   }
 }

@@ -273,8 +273,8 @@ internal struct Solver {
     // Is the source an initializer?
     else if let (i, o) = program.types.seenAsConstructor(k.lhs) {
       let f = program.types.demand(Arrow(inputs: i, output: o)).erased
-      let s = schedule(EqualityConstraint(lhs: k.rhs, rhs: f, site: k.site))
-      return delegate([s])
+      let subgoal = schedule(EqualityConstraint(lhs: k.rhs, rhs: f, site: k.site))
+      return delegate([subgoal])
     }
 
     // The source isn't an initializer.
@@ -415,22 +415,42 @@ internal struct Solver {
       return postpone(g)
     }
 
-    // Is the callee applicable?
-    guard let f = program.types[k.callee] as? UniversalType else {
-      return invalidArgumentCount(k, expected: 0)
-    }
-    if f.parameters.count != k.arguments.count {
-      return invalidArgumentCount(k, expected: f.parameters.count)
+    // Is the callee a universal type?
+    if let u = program.types[k.callee] as? UniversalType {
+      if u.parameters.count != k.arguments.count {
+        return invalidArgumentCount(k, expected: u.parameters.count)
+      }
+
+      var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
+      for (p, a) in zip(u.parameters, k.arguments) {
+        ss[p.erased] = a
+      }
+
+      let t = program.types.substitute(ss, in: u.body)
+      let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: t, site: k.site))
+      return delegate([subgoal])
     }
 
-    var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: f.parameters.count)
-    for (p, a) in zip(f.parameters, k.arguments) {
-      ss[p.erased] = a
+    // Is the callee a higher-kinded type parameter?
+    if let u = program.types.select(k.callee, \Metatype.inhabitant, as: GenericParameter.self) {
+      let parameters = program.types.parameters(of: u)
+      if parameters.count != k.arguments.count {
+        return invalidArgumentCount(k, expected: parameters.count)
+      }
+
+      var a = TypeApplication.Arguments(minimumCapacity: parameters.count)
+      for (p, v) in zip(parameters, k.arguments) {
+        a[p] = v
+      }
+
+      let s = program.types.demand(TypeApplication(abstraction: u.erased, arguments: a)).erased
+      let t = program.types.demand(Metatype(inhabitant: s)).erased
+      let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: t, site: k.site))
+      return delegate([subgoal])
     }
 
-    let body = program.types.substitute(ss, in: f.body)
-    let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: body, site: k.site))
-    return delegate([subgoal])
+    // The callee is not application.
+    return invalidArgumentCount(k, expected: 0)
   }
 
   /// Returns a failure to solve a `k` due to an invalid number of arguments.
@@ -510,9 +530,9 @@ internal struct Solver {
     switch typer.assume(k.member, boundTo: cs, for: k.role, at: k.site, in: &o) {
     case .left(let t):
       bindings.merge(o.bindings, uniquingKeysWith: { (_, _) in unreachable() })
-      var subs = [schedule(EqualityConstraint(lhs: t, rhs: k.type, site: k.site))]
-      subs.append(contentsOf: o.constraints.map({ (c) in schedule(c) }))
-      return delegate(subs)
+      var subgoals = [schedule(EqualityConstraint(lhs: t, rhs: k.type, site: k.site))]
+      subgoals.append(contentsOf: o.constraints.map({ (c) in schedule(c) }))
+      return delegate(subgoals)
 
     case .right(let e):
       return .failure { (_, _, _, d) in d.insert(e) }
@@ -530,8 +550,8 @@ internal struct Solver {
 
       let s = indenting { (me) in
         var fork = Self(forking: me)
-        let s = fork.insert(fresh: equality)
-        fork.outcomes[g] = fork.delegate([s])
+        let subgoal = fork.insert(fresh: equality)
+        fork.outcomes[g] = fork.delegate([subgoal])
         fork.bindings[k.name] = choice.reference
         return fork.solution(betterThanOrEqualTo: me.best, using: &me.typer)
       }
@@ -676,10 +696,10 @@ internal struct Solver {
     return .pending
   }
 
-  /// Returns the splitting of a goal into sub-goals `gs`, reporting each of failure individually.
-  private func delegate(_ gs: [GoalIdentity]) -> GoalOutcome {
-    .forward(gs) { (substitutions, outcomes, typer, diagnostics) in
-      outcomes.diagnoseFailures(in: gs, into: &diagnostics, using: substitutions, &typer)
+  /// Returns the splitting of a goal into `subgoals`, reporting each of failure individually.
+  private func delegate(_ subgoals: [GoalIdentity]) -> GoalOutcome {
+    .forward(subgoals) { (substitutions, outcomes, typer, diagnostics) in
+      outcomes.diagnoseFailures(in: subgoals, into: &diagnostics, using: substitutions, &typer)
     }
   }
 

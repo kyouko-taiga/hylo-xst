@@ -56,7 +56,7 @@ extension Program {
     case FunctionDeclaration.self:
       traverse(castUnchecked(n, to: FunctionDeclaration.self), calling: &v)
     case GenericParameterDeclaration.self:
-      break
+      traverse(castUnchecked(n, to: GenericParameterDeclaration.self), calling: &v)
     case ImportDeclaration.self:
       break
     case ParameterDeclaration.self:
@@ -82,6 +82,8 @@ extension Program {
       break
     case EqualityWitnessExpression.self:
       traverse(castUnchecked(n, to: EqualityWitnessExpression.self), calling: &v)
+    case KindExpression.self:
+      traverse(castUnchecked(n, to: KindExpression.self), calling: &v)
     case NameExpression.self:
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
     case New.self:
@@ -169,6 +171,11 @@ extension Program {
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: GenericParameterDeclaration.ID, calling v: inout T) {
+    visit(self[n].ascription, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ParameterDeclaration.ID, calling v: inout T) {
     visit(self[n].ascription, calling: &v)
     visit(self[n].default, calling: &v)
@@ -206,6 +213,14 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: EqualityWitnessExpression.ID, calling v: inout T) {
     visit(self[n].lhs, calling: &v)
     visit(self[n].rhs, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: KindExpression.ID, calling v: inout T) {
+    if case .arrow(let a, let b) = self[n].value {
+      visit(a, calling: &v)
+      visit(b, calling: &v)
+    }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
