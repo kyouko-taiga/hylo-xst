@@ -412,15 +412,6 @@ public struct TypeStore: Sendable {
     }
   }
 
-  /// Returns `n` with all occurrences of `old` substituted for `new`.
-  public mutating func substitute(
-    _ old: AnyTypeIdentity, for new: AnyTypeIdentity, in n: AnyTypeIdentity
-  ) -> AnyTypeIdentity {
-    self.map(n) { (s, t) in
-      t == old ? .stepOver(new) : .stepInto(t)
-    }
-  }
-
   /// Returns `n` with the keys in `substitutions` substituted for their corresponding values.
   public mutating func substitute(
     _ substitutions: [AnyTypeIdentity: AnyTypeIdentity], in n: AnyTypeIdentity
