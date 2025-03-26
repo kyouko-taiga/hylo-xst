@@ -421,30 +421,21 @@ internal struct Solver {
         return invalidArgumentCount(k, expected: u.parameters.count)
       }
 
-      var ss: [AnyTypeIdentity: AnyTypeIdentity] = .init(minimumCapacity: u.parameters.count)
-      for (p, a) in zip(u.parameters, k.arguments) {
-        ss[p.erased] = a
-      }
-
+      let ss = TypeApplication.arguments(mapping: u.parameters, to: k.arguments)
       let t = program.types.substitute(ss, in: u.body)
       let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: t, site: k.site))
       return delegate([subgoal])
     }
 
     // Is the callee a higher-kinded type parameter?
-    if let u = program.types.select(k.callee, \Metatype.inhabitant, as: GenericParameter.self) {
+    if let u = program.types.cast(k.callee, to: GenericParameter.self) {
       let parameters = program.types.parameters(of: u)
       if parameters.count != k.arguments.count {
         return invalidArgumentCount(k, expected: parameters.count)
       }
 
-      var a = TypeApplication.Arguments(minimumCapacity: parameters.count)
-      for (p, v) in zip(parameters, k.arguments) {
-        a[p] = v
-      }
-
-      let s = program.types.demand(TypeApplication(abstraction: u.erased, arguments: a)).erased
-      let t = program.types.demand(Metatype(inhabitant: s)).erased
+      let ss = TypeApplication.arguments(mapping: parameters, to: k.arguments)
+      let t = program.types.demand(TypeApplication(abstraction: u.erased, arguments: ss)).erased
       let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: t, site: k.site))
       return delegate([subgoal])
     }

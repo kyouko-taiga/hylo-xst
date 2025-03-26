@@ -28,6 +28,18 @@ public struct TypeApplication: TypeTree {
     return .init(abstraction: t, arguments: x)
   }
 
+  /// Returns a table mapping each parameter in `ps` to its corresponding argument in `ts`.
+  public static func arguments<P: Collection, A: Collection>(
+    mapping ps: P, to ts: A
+  ) -> Arguments where P.Element == GenericParameter.ID, A.Element == AnyTypeIdentity {
+    assert(ps.count == ts.count)
+    var ss = Arguments(minimumCapacity: ps.count)
+    for (p, t) in zip(ps, ts) {
+      ss[p] = t
+    }
+    return ss
+  }
+
 }
 
 extension TypeApplication: Showable {
