@@ -440,12 +440,13 @@ public struct Typer {
   }
 
   /// Returns the expected type of an implementation of `requirement` substituting abstract types
-  /// of with the assignments in `subs`.
+  /// of with the assignments in `substitutions`.
   private mutating func expectedImplementationType(
-    of requirement: FunctionDeclaration.ID, applying subs: [AnyTypeIdentity: AnyTypeIdentity]
+    of requirement: FunctionDeclaration.ID,
+    applying substitutions: [AnyTypeIdentity: AnyTypeIdentity]
   ) -> AnyTypeIdentity {
     let t = declaredType(of: requirement)
-    return program.types.substitute(subs, in: program.types.contextAndHead(t).body)
+    return program.types.substitute(substitutions, in: program.types.contextAndHead(t).body)
   }
 
   /// Reports that `requirement` has no implementation.
@@ -2209,16 +2210,16 @@ public struct Typer {
     let (a, b) = (thread.witness.type, thread.queried)
 
     // The witness has a simple type; attempt a match.
-    var subs = SubstitutionTable()
+    var substitutions = SubstitutionTable()
     var coercions: [(AnyTypeIdentity, AnyTypeIdentity)] = []
-    _ = program.types.unifiable(a, b, extending: &subs) { (x, y) in
+    _ = program.types.unifiable(a, b, extending: &substitutions) { (x, y) in
       coercions.append((x, y))
       return true
     }
 
     // No coercion required?
     if coercions.isEmpty {
-      let s = thread.environment.substitutions.union(subs)
+      let s = thread.environment.substitutions.union(substitutions)
       let w = program.types.reify(thread.witness, applying: s, withVariables: .kept)
       if w.type[.hasError] { return .next([]) }
 
