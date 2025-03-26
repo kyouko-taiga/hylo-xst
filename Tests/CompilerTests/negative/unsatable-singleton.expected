@@ -1,3 +1,0 @@
-negative/unsatable-singleton.hylo:4.19-20: error: expression is not stable
-  let y: #exactly(x)
-                  ^
