@@ -416,7 +416,7 @@ extension MemberConstraint: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   internal func show(using printer: inout TreePrinter) -> String {
-    "\(printer.show(qualification)).\(printer.program[member].name) =:= \(printer.show(type))"
+    "(\(printer.show(qualification))).\(printer.program[member].name) =:= \(printer.show(type))"
   }
 
 }

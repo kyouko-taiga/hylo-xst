@@ -221,18 +221,18 @@ public struct TypeStore: Sendable {
     }
   }
 
-  /// Returns `([A...], T)` iff `n` has the form `[{self: set T}](A...) -> Void`.
+  /// Returns `(C, [A...], T)` iff `n` has the form `C ==> [{self: set T}](A...) -> Void`.
   public func seenAsConstructor<T: TypeIdentity>(
     _ n: T
-  ) -> (inputs: [Parameter], output: AnyTypeIdentity)? {
+  ) -> (context: ContextClause, inputs: [Parameter], output: AnyTypeIdentity)? {
+    let (c, h) = contextAndHead(n.erased)
     guard
-      let f = self[n] as? Arrow,
-      let t = self[f.environment] as? Tuple,
-      let e = t.elements.uniqueElement,
+      let f = self[h] as? Arrow,
+      let e = (self[f.environment] as? Tuple)?.elements.uniqueElement,
       let p = self[e.type] as? RemoteType,
       (e.label == "self") && (p.access == .set) && (f.output == .void)
     else { return nil }
-    return (inputs: f.inputs, output: p.projectee)
+    return (context: c, inputs: f.inputs, output: p.projectee)
   }
 
 
@@ -373,8 +373,23 @@ public struct TypeStore: Sendable {
     }
   }
 
-  /// Returns `n` with each open variable substituted by either its corresponding value in `subs`
-  /// or the application of `substitutionPolicy` if no such substitution exists.
+  /// Returns `n` with occurrences of applications of universal types β-reduced.
+  public mutating func reduced(
+    _ n: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    self.map(n) { (s, t) in
+      if let a = s[t] as? TypeApplication, let u = s[a.abstraction] as? UniversalType {
+        assert(a.arguments.count == u.parameters.count)
+        let ss = TypeApplication.arguments(mapping: u.parameters, to: a.arguments.values)
+        return .stepInto(s.substitute(ss, in: u.body))
+      } else {
+        return .stepInto(t)
+      }
+    }
+  }
+
+  /// Returns `n` with each open variable substituted by either its corresponding value in
+  /// `substitutions` or the application of `substitutionPolicy` if no such substitution exists.
   public mutating func reify(
     _ n: AnyTypeIdentity,
     applying substitutions: SubstitutionTable,

@@ -271,9 +271,10 @@ internal struct Solver {
     }
 
     // Is the source an initializer?
-    else if let (i, o) = program.types.seenAsConstructor(k.lhs) {
-      let f = program.types.demand(Arrow(inputs: i, output: o)).erased
-      let subgoal = schedule(EqualityConstraint(lhs: k.rhs, rhs: f, site: k.site))
+    else if let (c, i, o) = program.types.seenAsConstructor(k.lhs) {
+      let t = program.types.demand(Arrow(inputs: i, output: o)).erased
+      let u = program.types.introduce(c, into: t)
+      let subgoal = schedule(EqualityConstraint(lhs: k.rhs, rhs: u, site: k.site))
       return delegate([subgoal])
     }
 

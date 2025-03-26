@@ -785,18 +785,16 @@ public struct Typer {
       report(.init(.error, "context parameters in type definitions are not supported yet", at: s))
     }
 
-    if ps.isEmpty {
-      let t = metatype(of: Struct(declaration: d)).erased
-      program[module].setType(t, for: d)
-      return t
-    } else {
+    var s = demand(Struct(declaration: d)).erased
+    if !ps.isEmpty {
       let a = TypeApplication.Arguments(uniqueKeysWithValues: ps.map({ (p) in (p, p.erased) }))
-      let f = demand(Struct(declaration: d)).erased
-      let t = metatype(of: TypeApplication(abstraction: f, arguments: a)).erased
-      let u = demand(UniversalType(parameters: ps, body: t)).erased
-      program[module].setType(u, for: d)
-      return u
+      let t = demand(TypeApplication(abstraction: s, arguments: a)).erased
+      s = demand(UniversalType(parameters: ps, body: t)).erased
     }
+
+    let t = demand(Metatype(inhabitant: s)).erased
+    program[module].setType(t, for: d)
+    return t
   }
 
   /// Returns the declared type of `d` without checking.
@@ -809,8 +807,8 @@ public struct Typer {
 
     let a = TypeApplication.Arguments(uniqueKeysWithValues: ps.map({ (p) in (p, p.erased) }))
     let f = demand(Trait(declaration: d)).erased
-    let t = metatype(of: TypeApplication(abstraction: f, arguments: a)).erased
-    let u = demand(UniversalType(parameters: ps, body: t)).erased
+    let t = demand(TypeApplication(abstraction: f, arguments: a)).erased
+    let u = metatype(of: UniversalType(parameters: ps, body: t)).erased
     program[module].setType(u, for: d)
     return u
   }
@@ -961,8 +959,8 @@ public struct Typer {
     return program.types.substitute(substitutions, in: memberSansContext)
   }
 
-  /// Returns a table mapping the abstract types to their implementations in the conformance
-  /// witnessed by `witness`.
+  /// Returns a table mapping abstract types to their implementations in the conformance witnessed
+  /// by `witness`.
   private mutating func aliasesInConformance(
     seenThrough witness: WitnessExpression
   ) -> [AnyTypeIdentity: AnyTypeIdentity] {
@@ -1240,8 +1238,7 @@ public struct Typer {
     /// - Requires: The types of `e` and its children have been assigned in `context`.
     func isTypeDeclarationReference(_ e: ExpressionIdentity) -> Bool {
       if program.tag(of: e) == NameExpression.self {
-        let head = program.types.head(context.obligations.syntaxToType[e.erased]!)
-        return program.types.tag(of: head) == Metatype.self
+        return program.types.tag(of: context.obligations.syntaxToType[e.erased]!) == Metatype.self
       } else if let n = program.cast(e, to: StaticCall.self) {
         return isTypeDeclarationReference(program[n].callee)
       } else {
@@ -1385,19 +1382,31 @@ public struct Typer {
     if let computed =  context.obligations.syntaxToType[e.erased] { return computed }
 
     // Abstraction is inferred in the same inference context.
-    guard let f = inferredType(of: program[e].callee, in: &context).unlessError else {
+    guard let abstraction = inferredType(of: program[e].callee, in: &context).unlessError else {
       return context.obligations.assume(e, hasType: .error, at: program[e].site)
     }
 
+    let o = context.expectedType ?? fresh().erased
     let i = program[e].arguments.map { (a) in
       evaluatePartialTypeAscription(a, in: &context).result
     }
-    let o = context.expectedType ?? fresh().erased
-    let k = StaticCallConstraint(
-      callee: f, arguments: i, output: o, origin: e, site: program[e].site)
 
-    context.obligations.assume(k)
-    return context.obligations.assume(e, hasType: o, at: program[e].site)
+    // If the callee's referring to a type declaration, it will have type `Metatype<T>` and the
+    // type arguments should be applied to `T`, "under" the metatype.
+    if let m = program.types[abstraction] as? Metatype {
+      assumeApplicable(m.inhabitant)
+      let t = demand(Metatype(inhabitant: o)).erased
+      return context.obligations.assume(e, hasType: t, at: program[e].site)
+    } else {
+      assumeApplicable(abstraction)
+      return context.obligations.assume(e, hasType: o, at: program[e].site)
+    }
+
+    func assumeApplicable(_ f: AnyTypeIdentity) {
+      let k = StaticCallConstraint(
+        callee: f, arguments: i, output: o, origin: e, site: program[e].site)
+      context.obligations.assume(k)
+    }
   }
 
   /// Returns the inferred type of `e`.
@@ -1724,7 +1733,7 @@ public struct Typer {
   /// Returns the type of an instance of `Self` in `s`.
   private mutating func typeOfSelf(in d: StructDeclaration.ID) -> AnyTypeIdentity {
     let t = declaredType(of: d)
-    return (program.types[program.types.head(t)] as? Metatype)?.inhabitant ?? .error
+    return program.types.head(program.types.select(t, \Metatype.inhabitant) ?? .error)
   }
 
   /// Returns the type of an instance of `Self` in `s`.
@@ -1832,37 +1841,17 @@ public struct Typer {
     let t = context.withSubcontext(role: .ascription) { (ctx) in
       inferredType(of: e, in: &ctx)
     }
+    let u = program.types.select(t, \Metatype.inhabitant) ?? .error
 
-    if let p = program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self) {
+    if let p = program.types.cast(u, to: GenericParameter.self) {
       checkProper(p, at: program.spanForDiagnostic(about: e))
     }
 
-    let h = inhabitant(of: t, coercingIfNecessary: e, in: &context)
-    return (result: h, isPartial: t[.hasVariable])
-  }
-
-  /// Returns the inhabitant of `t`, which is the type of the ascription `e`.
-  private mutating func inhabitant(
-    of t: AnyTypeIdentity, coercingIfNecessary e: ExpressionIdentity,
-    in context: inout InferenceContext
-  ) -> AnyTypeIdentity {
-    if t == .error {
-      return .error
-    } else if let m = program.types[t] as? Metatype {
-      return m.inhabitant
-    } else {
-      let h = fresh().erased
-      let u = demand(Metatype(inhabitant: h)).erased
-      context.obligations.assume(
-        CoercionConstraint(on: e, from: t, to: u, reason: .ascription, at: program[e].site))
-      return h
-    }
+    return (result: u, isPartial: u[.hasVariable])
   }
 
   /// Returns the value of `e` evaluated as a kind ascription.
-  private mutating func evaluateKindAscription(
-    _ e: KindExpression.ID
-  ) -> Metakind.ID {
+  private mutating func evaluateKindAscription(_ e: KindExpression.ID) -> Metakind.ID {
     if let k = program[e.module].type(assignedTo: e) { return program.types.castUnchecked(k) }
     assert(e.module == module, "dependency is not typed")
 
@@ -2553,6 +2542,7 @@ public struct Typer {
       }
 
     case "self":
+      // TODO: This should be a reference some hidden parameter
       if let t = typeOfSelf(in: scopeOfUse) {
         return [.init(reference: .builtin(.alias), type: t)]
       } else {
@@ -2665,12 +2655,9 @@ public struct Typer {
 
             // Strip the context defined by the extension, apply type arguments from the matching
             // witness, and substitute the extendee for the receiver.
-            // (member, _) = program.types.bodyAndContext(member)
             if case .typeApplication(_, let arguments) = w.value {
               member = program.types.substitute(arguments, in: member)
             }
-            // member = program.types.substitute(s, for: w.type, in: member)
-            // member = program.types.introduce(context, into: member)
             result.append(.init(reference: .inherited(w, m), type: member))
           }
         }
