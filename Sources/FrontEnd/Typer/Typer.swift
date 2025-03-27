@@ -2538,7 +2538,20 @@ public struct Typer {
       let t = demand(Metatype(inhabitant: .void)).erased
       return [.init(reference: .builtin(.alias), type: t)]
 
+    case "Builtin":
+      let t = demand(Namespace(identifier: .builtin)).erased
+      return [.init(reference: .builtin(.alias), type: t)]
+
     default:
+      return []
+    }
+  }
+
+  /// Resolves `n` as a member of the built-in module.
+  private mutating func resolve(builtin n: Name) -> [NameResolutionCandidate] {
+    if let m = MachineType(n.identifier) {
+      return [.init(reference: .builtin(.alias), type: program.types.demand(m).erased)]
+    } else {
       return []
     }
   }
@@ -2549,8 +2562,14 @@ public struct Typer {
   internal mutating func resolve(
     _ n: Name, memberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
-    var candidates = resolve(n, nativeMemberOf: q)
+    // If `q` a namespace?
+    if let s = program.types.cast(q, to: Namespace.self) {
+      return resolve(n, memberOf: s, visibleFrom: scopeOfUse)
+    }
 
+    // Otherwise, look for native members and other symbols declared in extensions or inherited by
+    // conformance.
+    var candidates = resolve(n, nativeMemberOf: q)
     candidates.append(contentsOf: resolve(n, memberInExtensionOf: q, visibleFrom: scopeOfUse))
 
     for (concept, ms) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
@@ -2572,6 +2591,23 @@ public struct Typer {
     }
 
     return candidates
+  }
+
+  /// Returns candidates for resolving `n` as a member of `q` in `scopeOfUse`.
+  private mutating func resolve(
+    _ n: Name, memberOf q: Namespace.ID, visibleFrom scopeOfUse: ScopeIdentity
+  ) -> [NameResolutionCandidate] {
+    switch program.types[q].identifier {
+    case .builtin:
+      return resolve(builtin: n)
+
+    case .module(let m):
+      var result: [NameResolutionCandidate] = []
+      for s in program[m].sourceFileIdentities {
+        result.append(contentsOf: resolve(n, unqualifiedIn: .init(file: s)))
+      }
+      return result
+    }
   }
 
   /// Returns candidates for resolving `n` as a member declared in the primary declaration of the

@@ -516,8 +516,12 @@ public struct TypeStore: Sendable {
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (_ as MachineType, _ as MachineType):
       result = false
+    case (_ as Metakind, _ as Metakind):
+      result = false
     case (let t as Metatype, let u as Metatype):
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
+    case (_ as Namespace, _ as Namespace):
+      result = false
     case (let t as RemoteType, let u as RemoteType):
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (_ as Struct, _ as Struct):
