@@ -1158,8 +1158,6 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: New.self), in: &context)
     case RemoteTypeExpression.self:
       return inferredType(of: castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
-    case SingletonTypeExpression.self:
-      return inferredType(of: castUnchecked(e, to: SingletonTypeExpression.self), in: &context)
     case StaticCall.self:
       return inferredType(of: castUnchecked(e, to: StaticCall.self), in: &context)
     case TupleLiteral.self:
@@ -1356,23 +1354,6 @@ public struct Typer {
     let t = evaluateTypeAscription(program[e].projectee)
     let u = metatype(of: RemoteType(projectee: t, access: program[e].access.value)).erased
     return context.obligations.assume(e, hasType: u, at: program[e].site)
-  }
-
-  /// Returns the inferred type of `e`.
-  private mutating func inferredType(
-    of e: SingletonTypeExpression.ID, in context: inout InferenceContext
-  ) -> AnyTypeIdentity {
-    if let t = check(program[e].expression).unlessError {
-      if let v = stableDenotation(program[e].expression) {
-        let u = metatype(of: SingletonType(expression: v, label: t)).erased
-        return context.obligations.assume(e, hasType: u, at: program[e].site)
-      } else {
-        let s = program.spanForDiagnostic(about: program[e].expression)
-        report(.init(.error, "expression is not stable", at: s))
-      }
-    }
-
-    return context.obligations.assume(e, hasType: .error, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.

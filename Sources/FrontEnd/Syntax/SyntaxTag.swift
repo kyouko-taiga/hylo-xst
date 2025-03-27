@@ -51,7 +51,6 @@ public struct SyntaxTag: Sendable {
     NameExpression.self,
     New.self,
     RemoteTypeExpression.self,
-    SingletonTypeExpression.self,
     StaticCall.self,
     SynthethicExpression.self,
     TupleLiteral.self,

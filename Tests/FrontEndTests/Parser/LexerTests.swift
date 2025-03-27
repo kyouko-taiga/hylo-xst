@@ -99,8 +99,7 @@ final class LexerTests: XCTestCase {
   }
 
   func testPoundLiteral() throws {
-    var scanner = Lexer(tokenizing: "#exactly #a #0 #")
-    try assertNext(from: &scanner, is: .exactly)
+    var scanner = Lexer(tokenizing: "#a #0 #")
     try assertNext(from: &scanner, is: .poundLiteral, withValue: "#a")
     try assertNext(from: &scanner, is: .poundLiteral, withValue: "#0")
     try assertNext(from: &scanner, is: .error)

@@ -95,7 +95,6 @@ public struct Lexer: IteratorProtocol, Sequence {
     let tag: Token.Tag
     switch take(while: \.isIdentifierTail) {
     case "": tag = .error
-    case "exactly": tag = .exactly
     default: tag = .poundLiteral
     }
 

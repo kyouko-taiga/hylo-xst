@@ -762,8 +762,6 @@ public struct Parser {
       return try .init(parseUnqualifiedNameExpression(in: &file))
     case .inout, .let, .set, .sink:
       return try .init(parseRemoteTypeExpression(in: &file))
-    case .exactly:
-      return try .init(parseSingletonTypeExpression(in: &file))
     case .leftBrace:
       return try .init(parseTupleTypeExpression(in: &file))
     case .leftParenthesis:
@@ -832,22 +830,6 @@ public struct Parser {
   private mutating func parseNominalComponent() throws -> Parsed<Name> {
     let identifier = try take(.name) ?? expected("identifier")
     return .init(Name(identifier: String(identifier.text)), at: identifier.site)
-  }
-
-  /// Parses a singleton type expression.
-  ///
-  ///     singleton-type-expression ::=
-  ///       '#exactly' '(' expression ')'
-  ///
-  private mutating func parseSingletonTypeExpression(
-    in file: inout Module.SourceContainer
-  ) throws -> SingletonTypeExpression.ID {
-    let start = try take(.exactly) ?? expected("'#exactly'")
-    let e = try inParentheses { (me) in
-      try me.parseExpression(in: &file)
-    }
-    return file.insert(
-      SingletonTypeExpression(expression: e, site: start.site.extended(upTo: position.index)))
   }
 
   /// Parses a tuple type expression.
