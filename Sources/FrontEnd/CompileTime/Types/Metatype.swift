@@ -1,8 +1,16 @@
+import Archivist
+
 /// The type of a type expression.
+@Archivable
 public struct Metatype: TypeTree {
 
   /// The type of which `self` is the type.
   public let inhabitant: AnyTypeIdentity
+
+  /// Creates an instance with the given properties.
+  public init(inhabitant: AnyTypeIdentity) {
+    self.inhabitant = inhabitant
+  }
 
   /// Properties about `self`.
   public var properties: ValueProperties {

@@ -4,6 +4,7 @@ import Archivist
 public struct BindingPattern: Pattern {
 
   /// The introducer of a binding pattern.
+  @Archivable
   public enum Introducer: UInt8, Sendable {
 
     case `let`, `set`, `var`, `inout`, sinklet
@@ -51,23 +52,10 @@ extension BindingPattern: Archivable {
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(introducer)
+    try archive.write(introducer, in: &context)
     try archive.write(pattern, in: &context)
     try archive.write(ascription, in: &context)
     try archive.write(site, in: &context)
-  }
-
-}
-
-extension BindingPattern.Introducer: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self = try archive.read(rawValueOf: Self.self, in: &context)
-      .unwrapOrThrow(ArchiveError.invalidInput)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(rawValueOf: self)
   }
 
 }

@@ -1,9 +1,12 @@
+import Archivist
 import Utilities
 
 /// The type of a tuple.
+@Archivable
 public struct Tuple: TypeTree {
 
   /// An element in a tuple type.
+  @Archivable
   public struct Element: Hashable, Sendable {
 
     /// The label of the element.
@@ -11,6 +14,12 @@ public struct Tuple: TypeTree {
 
     /// The type of the element.
     public let type: AnyTypeIdentity
+
+    /// Creates an instance with the given properties.
+    public init(label: String?, type: AnyTypeIdentity) {
+      self.label = label
+      self.type = type
+    }
 
     /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
     public func modified(
@@ -25,14 +34,19 @@ public struct Tuple: TypeTree {
   /// The elements of the tuple.
   public let elements: [Element]
 
-  /// The labels associated with each element.
-  public var labels: some Sequence<String?> {
-    elements.lazy.map(\.label)
+  /// Creates an instance with the given properties.
+  public init(elements: [Element]) {
+    self.elements = elements
   }
 
   /// Properties about `self`.
   public var properties: ValueProperties {
     elements.reduce([], { (a, e) in a.union(e.type.properties) })
+  }
+
+  /// The labels associated with each element.
+  public var labels: some Sequence<String?> {
+    elements.lazy.map(\.label)
   }
 
   /// Returns `true` iff the labels of the elements in `self` are equal to the labels of the

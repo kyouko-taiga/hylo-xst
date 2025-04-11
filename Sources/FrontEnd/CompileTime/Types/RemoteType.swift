@@ -1,4 +1,7 @@
+import Archivist
+
 /// The type of a projected value.
+@Archivable
 public struct RemoteType: TypeTree {
 
   /// The type of the projected value.
@@ -6,6 +9,12 @@ public struct RemoteType: TypeTree {
 
   /// The capabilities of the projection.
   public let access: AccessEffect
+
+  /// Creates an instance with the given properties.
+  public init(projectee: AnyTypeIdentity, access: AccessEffect) {
+    self.projectee = projectee
+    self.access = access
+  }
 
   /// Properties about `self`.
   public var properties: ValueProperties {

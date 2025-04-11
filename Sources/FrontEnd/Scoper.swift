@@ -26,7 +26,7 @@ public struct Scoper {
         swap(&w.topLevelDeclarations, &v.topLevelDeclarations)
         swap(&w.syntaxToParent, &v.syntaxToParent)
         swap(&w.scopeToDeclarations, &v.scopeToDeclarations)
-        swap(&w.variableToBindingDeclaration, &v.variableToBindingDeclaration)
+        swap(&w.variableToBinding, &v.variableToBinding)
       }
       assert(p[f].syntax.count == v.syntaxToParent.count)
     }
@@ -45,7 +45,7 @@ public struct Scoper {
     var scopeToDeclarations: [Int: [DeclarationIdentity]]
 
     /// A table from variable declaration to its containing binding declaration, if any.
-    var variableToBindingDeclaration: [Int: BindingDeclaration.ID]
+    var variableToBinding: [Int: BindingDeclaration.ID]
 
     /// The innermost lexical scope currently visited.
     var innermostScope: Int
@@ -58,7 +58,7 @@ public struct Scoper {
       self.topLevelDeclarations = []
       self.syntaxToParent = f.syntaxToParent
       self.scopeToDeclarations = [:]
-      self.variableToBindingDeclaration = [:]
+      self.variableToBinding = [:]
       self.innermostScope = -1
       self.bindingDeclarationsOnStack = []
     }
@@ -70,7 +70,7 @@ public struct Scoper {
       case BindingDeclaration.self:
         bindingDeclarationsOnStack.append(.init(uncheckedFrom: n))
       case VariableDeclaration.self:
-        variableToBindingDeclaration[n.offset] = bindingDeclarationsOnStack.last
+        variableToBinding[n.offset] = bindingDeclarationsOnStack.last
       default:
         break
       }

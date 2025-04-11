@@ -42,7 +42,7 @@ public struct TypeStore: Sendable {
   }
 
   /// Inserts `t` in `self` it isn't already present and returns the identity of an equal tree.
-  private mutating func demand(any t: any TypeTree) -> AnyTypeIdentity {
+  internal mutating func demand(any t: any TypeTree) -> AnyTypeIdentity {
     switch t {
     case is ErrorType:
       return AnyTypeIdentity.error

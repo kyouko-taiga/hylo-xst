@@ -1,6 +1,8 @@
+import Archivist
 import Utilities
 
 /// The type of term abstraction returning independent values.
+@Archivable
 public struct Arrow: TypeTree {
 
   /// The effect of the abstraction's call operator.
@@ -19,7 +21,7 @@ public struct Arrow: TypeTree {
   public let output: AnyTypeIdentity
 
   /// Creates an instance with the given properties.
-  internal init(
+  public init(
     effect: AccessEffect = .let,
     environment: AnyTypeIdentity = .void,
     inputs: [Parameter],
@@ -33,7 +35,7 @@ public struct Arrow: TypeTree {
   }
 
   /// Creates the type of a by-name expression.
-  internal init(
+  public init(
     effect: AccessEffect = .let,
     environment: AnyTypeIdentity = .void,
     byName output: AnyTypeIdentity

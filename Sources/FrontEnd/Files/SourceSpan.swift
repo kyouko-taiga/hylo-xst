@@ -80,7 +80,7 @@ extension SourceSpan: Archivable {
 
   public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
     let i = try Int(archive.readUnsignedLEB128())
-    let s = (context as! Module.SerializationContext).sources.values[i].source
+    let s = (context as! Module.SerializationContext).sources.values[i]
 
     let l = try String.Index(utf16Offset: archive.read(Int.self), in: s.text)
     let u = try String.Index(utf16Offset: archive.read(Int.self), in: s.text)
@@ -92,7 +92,7 @@ extension SourceSpan: Archivable {
       let i = ctx.sources.index(forKey: source.name)!
       archive.write(unsignedLEB128: i)
 
-      let contents = ctx.sources[source.name]!.source.text
+      let contents = ctx.sources[source.name]!.text
       try archive.write(region.lowerBound.utf16Offset(in: contents))
       try archive.write(region.upperBound.utf16Offset(in: contents))
     }

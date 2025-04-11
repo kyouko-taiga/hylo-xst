@@ -3,6 +3,8 @@ import Foundation
 import FrontEnd
 import Utilities
 
+import Archivist
+
 /// The top-level command of `hc`.
 @main struct Driver: AsyncParsableCommand {
 

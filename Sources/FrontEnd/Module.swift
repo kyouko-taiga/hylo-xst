@@ -8,6 +8,9 @@ public struct Module: Sendable {
   /// The name of a module.
   public typealias Name = String
 
+  /// The type of a table mapping file names to source files.
+  internal typealias SourceTable = OrderedDictionary<FileName, SourceContainer>
+
   /// A source file added to a module.
   internal struct SourceContainer: Sendable {
 
@@ -40,7 +43,7 @@ public struct Module: Sendable {
     internal var scopeToDeclarations: [Int: [DeclarationIdentity]] = [:]
 
     /// A table from variable declaration to its containing binding declaration, if any.
-    internal var variableToBindingDeclaration: [Int: BindingDeclaration.ID] = [:]
+    internal var variableToBinding: [Int: BindingDeclaration.ID] = [:]
 
     /// A table from syntax tree to its type.
     internal var syntaxToType: [Int: AnyTypeIdentity] = [:]
@@ -113,7 +116,7 @@ public struct Module: Sendable {
   public private(set) var dependencies: [Module.Name] = []
 
   /// The source files in the module.
-  internal private(set) var sources = OrderedDictionary<FileName, SourceContainer>()
+  internal private(set) var sources = SourceTable()
 
   /// Creates an empty module with the given name and identity.
   public init(name: Name, identity: Program.ModuleIdentity) {
@@ -285,93 +288,126 @@ extension Module: Archivable {
   /// The context of the serialization/deserialization of a module.
   internal struct SerializationContext {
 
+    /// A mapping from module names to their identity in the program.
+    internal var identities: Program.ModuleIdentityMap
+
+    /// The types in the program.
+    internal var types: TypeStore
+
     /// A mapping from archived module identity to its new value.
     internal var modules = OrderedDictionary<Program.ModuleIdentity, Program.ModuleIdentity>()
 
     /// A mapping from file name to its contents.
-    internal var sources = OrderedDictionary<FileName, SourceContainer>()
+    internal var sources = OrderedDictionary<FileName, SourceFile>()
+
+    /// Returns the result of calling `action` on `self` wrapped in `Any`.
+    internal mutating func withWrapped<T>(_ action: (inout Any) throws -> T) rethrows -> T {
+      try withUnsafeMutablePointer(to: &self) { (this) in
+        var w = this.move() as Any
+        defer { this.initialize(to: w as! Self) }
+        return try action(&w)
+      }
+    }
 
   }
 
   /// Reads an instance of `self` from `archive`.
   ///
   /// This method is meant to be called by `Program.load(module:from:)`, which passes `context` as
-  /// an instance of `ModuleIdentityMap` associating a module name to its identity in the program.
+  /// an instance of `SerializationContext` that associates a module name to its identity in the
+  /// program and contains a store with the types of the program.
   public init<A>(from archive: inout ReadableArchive<A>, in context: inout Any) throws {
-    let identities = context as? Program.ModuleIdentityMap ?? fatalError("bad context")
-    var newContext = SerializationContext()
-
     // <module name>
     let name = try archive.read(Name.self, in: &context)
-    newContext.modules[0] = identities[name]!
 
-    // <dependency count> <dependency name> ...
-    let dependencyCount = try archive.readUnsignedLEB128()
-    var dependencies: [Module.Name] = []
-    for i in 0 ..< dependencyCount {
-      let d = try archive.read(Name.self, in: &context)
-      dependencies.append(d)
-      newContext.modules[Program.ModuleIdentity(i + 1)] = identities[d]
+    self = try modify(&context, as: SerializationContext.self) { (ctx) in
+      ctx.modules[0] = ctx.identities[name]!
+
+      // <dependency count> <dependency name> ...
+      let dependencyCount = try archive.readUnsignedLEB128()
+      var dependencies: [Module.Name] = []
+      for i in 0 ..< dependencyCount {
+        let d = try ctx.withWrapped({ (c) in try archive.read(Name.self, in: &c) })
+        dependencies.append(d)
+        ctx.modules[Program.ModuleIdentity(i + 1)] = ctx.identities[d]
+      }
+
+      var me = Self(name: name, identity: ctx.identities[name]!)
+
+      // <source count> <identity> <contents> ...
+      let count = try Int(archive.readUnsignedLEB128())
+      for _ in 0 ..< count {
+        let i = try archive.read(rawValueOf: Program.SourceFileIdentity.self)!
+        let s = try archive.read(SourceFile.self)
+        ctx.sources[s.name] = s
+        me.sources[s.name] = .init(identity: i, source: s)
+      }
+      return me
     }
 
-    // <source count> <identity> <contents> ...
-    let sourceCount = try Int(archive.readUnsignedLEB128())
-    for _ in 0 ..< sourceCount {
-      let i = try archive.read(rawValueOf: Program.SourceFileIdentity.self)!
-      let s = try archive.read(SourceFile.self)
-      newContext.sources[s.name] = .init(identity: i, source: s)
-    }
-
-    // The remainder of the module is deserialized in a new context.
-    for i in 0 ..< sourceCount {
-      let syntaxCount = try archive.readUnsignedLEB128()
-      for _ in 0 ..< syntaxCount {
-        var c = newContext as Any
-        let n = try archive.read(AnySyntax.self, in: &c)
-        newContext = c as! SerializationContext
-        modify(&newContext.sources.values[i]) { (f) in
-          f.syntax.append(n)
-          f.syntaxToTag.append(.init(Swift.type(of: n.wrapped)))
+    for i in 0 ..< self.sources.count {
+      try modify(&self.sources.values[i]) { (s) in
+        // Syntax trees.
+        let syntaxCount = try archive.readUnsignedLEB128()
+        for _ in 0 ..< syntaxCount {
+          let n = try archive.read(AnySyntax.self, in: &context)
+          s.syntax.append(n)
+          s.syntaxToTag.append(.init(Swift.type(of: n.wrapped)))
         }
+
+        // Semantic properties.
+        s.syntaxToParent = try archive.read([Int].self, in: &context)
+        s.topLevelDeclarations = try archive.read([DeclarationIdentity].self, in: &context)
+        s.scopeToDeclarations = try archive.read([Int: [DeclarationIdentity]].self, in: &context)
+        s.variableToBinding = try archive.read([Int: BindingDeclaration.ID].self, in: &context)
+        s.syntaxToType = try archive.read([Int: AnyTypeIdentity].self, in: &context)
       }
     }
-
-    self.init(name: name, identity: identities[name]!)
-    self.sources = newContext.sources
   }
 
   /// Serializes `self` to `archive`.
   ///
   /// This method is meant to be called by `Program.write(module:to:)`, which passes `context` as
-  /// an instance of `ModuleIdentityMap` associating a module name to its identity in the program.
+  /// an instance of `ModuleIdentityMap` that associates a module name to its identity in the
+  /// program and contains a store with the types of the program.
   public func write<A>(to archive: inout WriteableArchive<A>, in context: inout Any) throws {
-    let identities = context as? Program.ModuleIdentityMap ?? fatalError("bad context")
-    var newContext = SerializationContext()
+    var unwrappedContext = context as? SerializationContext ?? fatalError("bad context")
 
     // <module name>
     try archive.write(name, in: &context)
-    newContext.modules[identity] = 0
+    unwrappedContext.modules[identity] = 0
+    unwrappedContext.sources = .init(uniqueKeysWithValues: sources.mapValues(\.source))
 
     // <dependency count> <dependency name> ...
     archive.write(unsignedLEB128: dependencies.count)
     for d in dependencies {
       try archive.write(d, in: &context)
-      newContext.modules[identities[d]!] = newContext.modules.count
+      unwrappedContext.modules[unwrappedContext.identities[d]!] = unwrappedContext.modules.count
     }
 
     // <source count> <identity> <contents> ...
     archive.write(unsignedLEB128: sources.count)
-    for (f, s) in sources {
+    for s in sources.values {
       try archive.write(rawValueOf: s.identity, in: &context)
       try archive.write(s.source, in: &context)
-      newContext.sources[f] = s
     }
 
     // The remainder of the module is serialized in a new context.
-    var c = newContext as Any
-    for s in sources.values {
-      archive.write(unsignedLEB128: s.syntax.count)
-      for n in s.syntax { try archive.write(n, in: &c) }
+    try unwrappedContext.withWrapped { (ctx) in
+      for s in sources.values {
+        // Syntax trees.
+        archive.write(unsignedLEB128: s.syntax.count)
+        for n in s.syntax {
+          try archive.write(n, in: &ctx)
+        }
+
+        // Semantic properties.
+        try archive.write(s.syntaxToParent, in: &ctx)
+        try archive.write(s.topLevelDeclarations, in: &ctx)
+        try archive.write(s.scopeToDeclarations, in: &ctx)
+        try archive.write(s.variableToBinding, in: &ctx)
+        try archive.write(s.syntaxToType, in: &ctx)
+      }
     }
   }
 

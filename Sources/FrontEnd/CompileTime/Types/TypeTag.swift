@@ -1,5 +1,7 @@
+import Archivist
+
 /// The type of a node in a type tree.
-public struct TypeTag {
+public struct TypeTag: Sendable {
 
   /// The underlying value of `self`.
   public let value: any TypeTree.Type
@@ -24,6 +26,31 @@ public struct TypeTag {
     l.value != r
   }
 
+  static let allValues: [any TypeTree.Type] = [
+    Arrow.self,
+    AssociatedType.self,
+    EqualityWitness.self,
+    ErrorType.self,
+    GenericParameter.self,
+    Implication.self,
+    MachineType.self,
+    Metakind.self,
+    Metatype.self,
+    Namespace.self,
+    RemoteType.self,
+    Struct.self,
+    Trait.self,
+    Tuple.self,
+    TypeAlias.self,
+    TypeApplication.self,
+    TypeVariable.self,
+    Union.self,
+    UniversalType.self,
+  ]
+
+  static let indices = Dictionary(
+    uniqueKeysWithValues: allValues.enumerated().map({ (i, k) in (TypeTag(k), i) }))
+
 }
 
 extension TypeTag: Equatable {
@@ -41,6 +68,19 @@ extension TypeTag: Hashable {
   }
 
 }
+
+extension TypeTag: Archivable {
+
+  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
+    self = try .init(Self.allValues[Int(archive.readUnsignedLEB128())])
+  }
+
+  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
+    archive.write(unsignedLEB128: Self.indices[self]!)
+  }
+
+}
+
 
 extension TypeTag: CustomStringConvertible {
 

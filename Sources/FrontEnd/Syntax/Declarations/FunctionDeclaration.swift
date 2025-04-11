@@ -2,9 +2,11 @@ import Archivist
 import Utilities
 
 /// The declaration of a function.
+@Archivable
 public struct FunctionDeclaration: Declaration, Scope {
 
   /// The introducer of an initializer declaration.
+  @Archivable
   public enum Introducer: UInt8, Sendable {
 
     /// The function introducer, `fun`.
@@ -19,6 +21,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   }
 
   /// The identifier of a function.
+  @Archivable
   public enum Identifier: Equatable, Sendable {
 
     /// A simple identifier.
@@ -55,6 +58,29 @@ public struct FunctionDeclaration: Declaration, Scope {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  public init(
+    modifiers: [Parsed<DeclarationModifier>],
+    introducer: Parsed<Introducer>,
+    identifier: Parsed<Identifier>,
+    staticParameters: StaticParameters,
+    parameters: [ParameterDeclaration.ID],
+    effect: Parsed<AccessEffect>,
+    output: ExpressionIdentity?,
+    body: [StatementIdentity]?,
+    site: SourceSpan
+  ) {
+    self.modifiers = modifiers
+    self.introducer = introducer
+    self.identifier = identifier
+    self.staticParameters = staticParameters
+    self.parameters = parameters
+    self.effect = effect
+    self.output = output
+    self.body = body
+    self.site = site
+  }
 
   /// `true` iff `self` declares a memberwise initializer.
   public var isMemberwiseInitializer: Bool {
@@ -95,18 +121,6 @@ extension FunctionDeclaration: Showable {
     }
 
     return result
-  }
-
-}
-
-extension FunctionDeclaration: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    fatalError()
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    fatalError()
   }
 
 }

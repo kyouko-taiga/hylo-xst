@@ -455,7 +455,7 @@ public struct Program: Sendable {
   /// - Requires: The module containing `s` is scoped.
   public func bindingDeclaration(containing d: VariableDeclaration.ID) -> BindingDeclaration.ID? {
     assert(isScoped(d.file), "unscoped module")
-    return self[d.file].variableToBindingDeclaration[d.offset]
+    return self[d.file].variableToBinding[d.offset]
   }
 
   /// Returns the names introduced by `d`.
@@ -798,13 +798,19 @@ public struct Program: Sendable {
 
 extension Program {
 
+  /// The type of a table mapping module names to their identity in a program.
   internal typealias ModuleIdentityMap = [Module.Name: ModuleIdentity]
 
   /// Serializes `m` to `archive`.
   public func write<A>(module m: ModuleIdentity, to archive: inout WriteableArchive<A>) throws {
-    var context: Any = ModuleIdentityMap(
-      uniqueKeysWithValues: modules.values.map({ (m) in (m.name, m.identity) }))
-    try self[m].write(to: &archive, in: &context)
+    // Configure the serialization context.
+    let c = Module.SerializationContext(
+      identities: .init(uniqueKeysWithValues: modules.values.map({ (m) in (m.name, m.identity) })),
+      types: types)
+
+    // Serialize the module.
+    var ctx: Any = c
+    try self[m].write(to: &archive, in: &ctx)
   }
 
   /// Serializes `m`.
@@ -825,12 +831,19 @@ extension Program {
     // Nothing to do if the module is already loaded.
     if let m = modules.index(forKey: moduleName) { return (false, m) }
 
+    // Reserve an identity for the new module.
     let m = modules.count
-    var c: ModuleIdentityMap = [moduleName: m]
-    for n in modules.values { c[n.name] = n.identity }
+    var c = Module.SerializationContext(identities: [moduleName: m], types: .init())
 
-    var context: Any = c
-    let instance = try archive.read(Module.self, in: &context)
+    // Configure the serialization context.
+    swap(&c.types, &types)
+    defer { swap(&c.types, &types) }
+    for n in modules.values {
+      c.identities[n.name] = n.identity
+    }
+
+    // Deserialize the module.
+    let instance = try c.withWrapped({ (ctx) in try archive.read(Module.self, in: &ctx) })
     precondition(moduleName == instance.name)
     modules[moduleName] = instance
     return (true, m)

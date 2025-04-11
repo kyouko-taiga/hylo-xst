@@ -2,6 +2,7 @@ import Archivist
 import Utilities
 
 /// An access effect, specifying how a parameter, receiver, or remote part is accessed.
+@Archivable
 public enum AccessEffect: UInt8, Sendable {
 
   /// Value is accessed immutably.
@@ -35,18 +36,6 @@ extension AccessEffect: Comparable {
 
   public static func < (l: Self, r: Self) -> Bool {
     l.rawValue < r.rawValue
-  }
-
-}
-
-extension AccessEffect: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self = try Self(rawValue: archive.readByte()).unwrapOrThrow(ArchiveError.invalidInput)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    archive.write(byte: self.rawValue)
   }
 
 }
