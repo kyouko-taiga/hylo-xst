@@ -48,7 +48,7 @@ final class CompilerTests: XCTestCase {
   /// Compiles `input` into `p` and returns expected diagnostics for each compiled source file.
   private func compile(_ input: ProgramDescription) async throws -> (Program, [FileName: String]) {
     var p = Program()
-    let m = p.demandModule("Test")
+    let m = p.demandModule(.init("Test"))
 
     var expectations: [FileName: String] = [:]
     try input.forEachSourceURL { (u) in

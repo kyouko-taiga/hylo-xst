@@ -11,7 +11,7 @@ final class ProgramTests: XCTestCase {
 
   func testSelectByModule() throws {
     let p = Program.test
-    let m = p.identity(module: "org.hylo.M0")!
+    let m = p.identity(module: .init("M0"))!
     XCTAssertEqual(p.select(.from(m)).count, 4)
   }
 

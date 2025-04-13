@@ -37,6 +37,7 @@ let package = Package(
       name: "hc",
       dependencies: [
         .target(name: "FrontEnd"),
+        .target(name: "StandardLibrary"),
         .target(name: "Utilities"),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ]),
@@ -44,7 +45,6 @@ let package = Package(
     .target(
       name: "FrontEnd",
       dependencies: [
-        .target(name: "StandardLibrary"),
         .target(name: "Utilities"),
         .product(name: "Archivist", package: "archivist"),
         .product(name: "Algorithms", package: "swift-algorithms"),

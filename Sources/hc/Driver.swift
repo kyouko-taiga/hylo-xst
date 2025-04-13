@@ -64,11 +64,11 @@ import StandardLibrary
 
     // Load the standard library.
     var program = Program()
-    try await load("org.hylo.Hylo", withSourcesAt: standardLibrarySources, into: &program)
+    try await load(.standardLibrary, withSourcesAt: standardLibrarySources, into: &program)
 
     // Create a module for the product being compiled.
     let module = program.demandModule(productName(inputs))
-    program[module].addDependency("org.hylo.Hylo")
+    program[module].addDependency(.standardLibrary)
 
     let sources = try sourceFiles(recursivelyContainedIn: inputs)
     parse(sources, into: &program[module])
@@ -137,7 +137,8 @@ import StandardLibrary
 
     if !noCaching {
       let archive = try program.archive(module: m)
-      try archive.write(into: moduleCachePath!.appending(component: module + ".hylomodule"))
+      try archive.write(
+        into: moduleCachePath!.appending(component: module.rawValue + ".hylomodule"))
     }
   }
 
@@ -159,7 +160,7 @@ import StandardLibrary
   /// Searches for an archive of `module` in `librarySearchPaths`, returning it if found.
   private func archive(of module: Module.Name) -> Data? {
     for prefix in librarySearchPaths {
-      let path = prefix.appending(path: module + ".hylomodule")
+      let path = prefix.appending(path: module.rawValue + ".hylomodule")
       return try? Data(contentsOf: path)
     }
     return nil
@@ -237,14 +238,14 @@ import StandardLibrary
 
   /// If `inputs` contains a single URL `u` whose path is non-empty, returns the last component of
   /// `u` without any path extension and stripping all leading dots. Otherwise, returns "Main".
-  private func productName(_ inputs: [URL]) -> String {
+  private func productName(_ inputs: [URL]) -> Module.Name {
     if let u = inputs.uniqueElement {
       let n = u.deletingPathExtension().lastPathComponent.drop(while: { $0 == "." })
       if !n.isEmpty {
-        return String(n)
+        return .init(String(n))
       }
     }
-    return "Main"
+    return .init("Main")
   }
 
   /// The type of the output files to generate.

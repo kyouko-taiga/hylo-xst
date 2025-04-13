@@ -2825,12 +2825,21 @@ public struct Typer {
       return table
     } else {
       var table: [Program.ModuleIdentity] = []
+
+      // Standard library is imported implicitly.
+      if program[f.module].dependencies.contains(.standardLibrary) {
+        let m = program.identity(module: .standardLibrary)
+        assert(m != nil, "standard library is not loaded")
+        table.append(m!)
+      }
+
       for d in program[f].topLevelDeclarations {
         // Imports precede all other declarations.
         guard let i = program.cast(d, to: ImportDeclaration.self) else { break }
         // Ignore invalid imports.
-        if let m = program.identity(module: program[i].identifier.value) { table.append(m) }
+        if let m = program.identity(module: .init(program[i].identifier.value)) { table.append(m) }
       }
+
       cache.sourceToImports[f.offset] = table
       return table
     }

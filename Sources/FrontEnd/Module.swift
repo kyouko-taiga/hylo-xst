@@ -6,7 +6,21 @@ import Utilities
 public struct Module: Sendable {
 
   /// The name of a module.
-  public typealias Name = String
+  @Archivable
+  public struct Name: Hashable, Sendable {
+
+    /// The raw value of this name.
+    public let rawValue: String
+
+    /// Creates an instance with the given raw value.
+    public init(_ rawValue: String) {
+      self.rawValue = rawValue
+    }
+
+    /// The name of Hylo's standard library.
+    public static let standardLibrary = Name("hylo.Hylo")
+
+  }
 
   /// The type of a table mapping file names to source files.
   internal typealias SourceTable = OrderedDictionary<FileName, SourceContainer>
@@ -122,6 +136,11 @@ public struct Module: Sendable {
   public init(name: Name, identity: Program.ModuleIdentity) {
     self.name = name
     self.identity = identity
+  }
+
+  /// `true` iff `self` is Hylo's standard library.
+  public var isStandardLibrary: Bool {
+    name == .standardLibrary
   }
 
   /// Returns a hash of the module that suitable for determining whether its sources have changed.
