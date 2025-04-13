@@ -1,8 +1,16 @@
+import Archivist
+
 /// The type of a type constructor.
+@Archivable
 public struct Kind: Sendable {
 
   /// The type of a kind's raw value.
   private typealias RawValue = UInt32
+
+  /// Creates an instance with the given raw value.
+  private init(rawValue: RawValue) {
+    self.rawValue = rawValue
+  }
 
   /// The raw representation of `self`.
   ///

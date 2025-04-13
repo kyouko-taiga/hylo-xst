@@ -1,4 +1,7 @@
+import Archivist
+
 /// The way in which an entity is referred to.
+@Archivable
 public enum DeclarationReference: Hashable, Sendable {
 
   /// A reference to a built-in entity.

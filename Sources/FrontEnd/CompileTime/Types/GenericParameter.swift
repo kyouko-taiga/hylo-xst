@@ -1,6 +1,8 @@
+import Archivist
 import Utilities
 
 /// A generic parameter.
+@Archivable
 public enum GenericParameter: TypeTree {
 
   /// The generic parameter representing the conformer of a trait.

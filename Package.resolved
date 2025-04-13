@@ -1,5 +1,5 @@
 {
-  "originHash" : "18d9ab90e24e5ff46a97b41ad1d57c416f0b98b7667c0297f91642595025f4cd",
+  "originHash" : "63318dfa57a34852696094211df7cacfbf6097636bb5cd7f90eb60c388e390f4",
   "pins" : [
     {
       "identity" : "archivist",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/kyouko-taiga/archivist.git",
       "state" : {
         "branch" : "main",
-        "revision" : "f612d639e6502e04562c5e03dee08009590f6aad"
+        "revision" : "9f956d8f257c5fe82519243c70add37252902225"
       }
     },
     {

@@ -1,6 +1,7 @@
 import Archivist
 
 /// The expression of a witness produced by implicit resolution.
+@Archivable
 public struct WitnessExpression: Hashable, Sendable {
 
   /// The expression of a witness.
@@ -151,20 +152,6 @@ extension WitnessExpression: Showable {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     printer.show(value)
-  }
-
-}
-
-extension WitnessExpression: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.value = try archive.read(Value.self, in: &context)
-    self.type = try archive.read(AnyTypeIdentity.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(self.value)
-    try archive.write(self.type)
   }
 
 }

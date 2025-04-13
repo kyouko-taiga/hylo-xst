@@ -1,6 +1,8 @@
+import Archivist
 import Utilities
 
 /// The type of a type lambda.
+@Archivable
 public struct UniversalType: TypeTree {
 
   /// The variables introduced by the quantifier.
@@ -8,6 +10,12 @@ public struct UniversalType: TypeTree {
 
   /// The type under the quantifier.
   public let body: AnyTypeIdentity
+
+  /// Creates an instance with the given properties.
+  public init(parameters: [GenericParameter.ID], body: AnyTypeIdentity) {
+    self.parameters = parameters
+    self.body = body
+  }
 
   /// Properties about `self`.
   public var properties: ValueProperties {
