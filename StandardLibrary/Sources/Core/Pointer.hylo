@@ -1,0 +1,3 @@
+/// A typed memory address whose contents can be read.
+public struct Pointer<Pointee> {
+}

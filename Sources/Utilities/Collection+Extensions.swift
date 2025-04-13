@@ -12,3 +12,22 @@ extension Collection {
   }
 
 }
+
+extension RangeReplaceableCollection where Element: Hashable {
+
+  /// Removes all except the first element from every consecutive group of equivalent elements.
+  ///
+  /// - Complexity: O(n) where n is the length of `self`.
+  public mutating func removeDuplicates() {
+    var s = Set<Element>(minimumCapacity: count)
+    var i = startIndex
+    while i != endIndex {
+      if s.insert(self[i]).inserted {
+        formIndex(after: &i)
+      } else {
+        remove(at: i)
+      }
+    }
+  }
+
+}

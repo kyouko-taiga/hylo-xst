@@ -44,6 +44,25 @@ public struct SourceFile: Hashable, Sendable {
     }
   }
 
+  /// Returns a hash of the source file that suitable for determining whether it has changed.
+  public var fingerprint: UInt64 {
+    var hasher = FNV()
+    hasher.combine(baseName)
+    hasher.combine(text.utf8.count)
+    hasher.combine(bytes: text.utf8)
+    return UInt64(truncatingIfNeeded: UInt(bitPattern: hasher.state))
+  }
+
+  /// Returns a hash of the contents of `files` that suitable for determining whether one of the
+  /// source files have changed.
+  public static func fingerprint<S: Sequence<SourceFile>>(contentsOf files: S) -> UInt64 {
+    var hasher = FNV()
+    for f in files.sorted(by: \.baseName) {
+      hasher.combine(f.fingerprint)
+    }
+    return UInt64(truncatingIfNeeded: UInt(bitPattern: hasher.state))
+  }
+
   /// The number of lines in `self`.
   public var lineCount: Int {
     lineStarts.count

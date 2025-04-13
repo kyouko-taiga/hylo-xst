@@ -24,4 +24,10 @@ final class CollectionTests: XCTestCase {
     XCTAssertEqual(Array(t2), [2, 3])
   }
 
+  func testRemoveDuplicates() {
+    var a0 = [1, 2, 1, 1, 3, 3, 3, 4, 5, 4]
+    a0.removeDuplicates()
+    XCTAssertEqual(a0, [1, 2, 3, 4, 5])
+  }
+
 }

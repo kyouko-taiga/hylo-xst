@@ -1,15 +1,36 @@
+import Archivist
 import ArgumentParser
 import Foundation
 import FrontEnd
 import Utilities
-
-import Archivist
+import StandardLibrary
 
 /// The top-level command of `hc`.
 @main struct Driver: AsyncParsableCommand {
 
   /// Configuration for this command.
   public static let configuration = CommandConfiguration(commandName: "hc")
+
+  /// The paths at which libraries may be found.
+  @Option(
+    name: [.customShort("L")],
+    help: ArgumentHelp(
+      "Add a directory to the library search path.",
+      valueName: "path"),
+    transform: URL.init(fileURLWithPath:))
+  private var librarySearchPaths: [URL] = []
+
+  /// The path containing cached module data.
+  @Option(
+    name: [.customLong("module-cache")],
+    help: ArgumentHelp(
+      "Specify the module cache path.",
+      valueName: "path"),
+    transform: URL.init(fileURLWithPath:))
+  private var moduleCachePath: URL?
+
+  @Flag(help: "Disable caching.")
+  private var noCaching: Bool = false
 
   /// The kind of output that should be produced by the compiler.
   @Option(
@@ -39,10 +60,19 @@ import Archivist
   /// Executes the command.
   @MainActor
   public mutating func run() async throws {
-    var program = Program()
-    let module = program.demandModule(productName(inputs))
+    try configureSearchPaths()
 
-    try parse(inputs: inputs, into: &program[module])
+    // Load the standard library.
+    var program = Program()
+    try await load("org.hylo.Hylo", withSourcesAt: standardLibrarySources, into: &program)
+
+    // Create a module for the product being compiled.
+    let module = program.demandModule(productName(inputs))
+    program[module].addDependency("org.hylo.Hylo")
+
+    let sources = try sourceFiles(recursivelyContainedIn: inputs)
+    parse(sources, into: &program[module])
+
     await assignScopes(of: module, in: &program)
     assignTypes(of: module, in: &program)
 
@@ -50,6 +80,89 @@ import Archivist
     for d in program.select(.and(.from(module), .topLevel)) {
       print(program.show(d, configuration: c))
     }
+
+    let a = try program.archive(module: module)
+    print(a)
+  }
+
+  /// Sets up the value of search paths for locating libraries and cached artefacts.
+  private mutating func configureSearchPaths() throws {
+    let fm = FileManager.default
+    if let m = moduleCachePath {
+      librarySearchPaths.append(m)
+    } else {
+      let m = fm.temporaryDirectory.appending(path: ".hylocache")
+      try fm.createDirectory(at: m, withIntermediateDirectories: true)
+      librarySearchPaths.append(m)
+      moduleCachePath = m
+    }
+
+    librarySearchPaths = .init(librarySearchPaths.uniqued())
+    librarySearchPaths.removeDuplicates()
+  }
+
+  /// Loads `module`, whose sources are in `root`, into `program`.
+  ///
+  /// If `noCaching` is not set, the module is loaded from cache if an archive is found and its
+  /// fingerprint matches the fingerprint of the source files in `root`. Otherwise, the module is
+  /// compiled from sources and an archive is stored at `moduleCachePath`. If `noCaching` is set,
+  /// the module is unconditionally compiled from sources and no archive is stored.
+  private mutating func load(
+    _ module: Module.Name, withSourcesAt root: URL,
+    into program: inout Program
+  ) async throws {
+    // Compute a fingerprint of all source files.
+    var sources: [SourceFile] = []
+    try SourceFile.forEach(in: root) { (s) in
+      sources.append(s)
+    }
+
+    // Attempt to load the module from disk.
+    if !noCaching, let data = archive(of: module) {
+      let h = SourceFile.fingerprint(contentsOf: sources)
+      var a = ReadableArchive(data)
+      let (_, fingerprint) = try Module.header(&a)
+      if h == fingerprint {
+        a = ReadableArchive(data)
+        try program.load(module: module, from: &a)
+        return
+      }
+    }
+
+    // Compile the module from sources.
+    let m = program.demandModule(module)
+    await parse(sources, into: &program[m])
+    await program.assignScopes(m)
+    program.assignTypes(m)
+
+    if !noCaching {
+      let archive = try program.archive(module: m)
+      try archive.write(into: moduleCachePath!.appending(component: module + ".hylomodule"))
+    }
+  }
+
+  /// Returns an array with all the source files in `inputs` and their subdirectories.
+  private func sourceFiles(recursivelyContainedIn inputs: [URL]) throws -> [SourceFile] {
+    var sources: [SourceFile] = []
+    for url in inputs {
+      if url.hasDirectoryPath {
+        try SourceFile.forEach(in: url) { (f) in sources.append(f) }
+      } else if url.pathExtension == "hylo" {
+        try sources.append(SourceFile(contentsOf: url))
+      } else {
+        throw ValidationError("unexpected input: \(url.relativePath)")
+      }
+    }
+    return sources
+  }
+
+  /// Searches for an archive of `module` in `librarySearchPaths`, returning it if found.
+  private func archive(of module: Module.Name) -> Data? {
+    for prefix in librarySearchPaths {
+      let path = prefix.appending(path: module + ".hylomodule")
+      return try? Data(contentsOf: path)
+    }
+    return nil
   }
 
   /// If `module` contains errors, renders all its diagnostics and exits with `ExitCode.failure`.
@@ -73,19 +186,13 @@ import Archivist
     print(o, to: &Driver.standardError)
   }
 
-  /// Parses the input files in `inputs` and adds them to `module`.
+  /// Parses the source files in `inputs` and adds them to `module`.
   @MainActor
-  private func parse(inputs: [URL], into module: inout Module) throws {
+  private func parse(_ sources: [SourceFile], into module: inout Module) {
     let clock = ContinuousClock()
-    let elapsed = try clock.measure {
-      for url in inputs {
-        if url.hasDirectoryPath {
-          try SourceFile.forEach(in: url) { (f) in module.addSource(f) }
-        } else if url.pathExtension == "hylo" {
-          try module.addSource(SourceFile(contentsOf: url))
-        } else {
-          throw ValidationError("unexpected input: \(url.relativePath)")
-        }
+    let elapsed = clock.measure {
+      for s in sources {
+        module.addSource(s)
       }
     }
     note("parsed \(module.sourceFileIdentities.count) files in \(elapsed.human)")

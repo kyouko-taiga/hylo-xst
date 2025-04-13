@@ -849,7 +849,7 @@ extension Program {
     return (true, m)
   }
 
-  /// Loads the module named `moduleName` from `archive`.
+  /// Loads the module named `moduleName`, reading its contents from `archive`.
   ///
   /// - Note: `self` is not modified if an exception is thrown.
   /// - Requires: `moduleName` is the name of the module stored in `archive`.

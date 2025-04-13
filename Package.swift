@@ -23,11 +23,11 @@ let package = Package(
       url: "https://github.com/kyouko-taiga/more-swift-collections.git",
       from: "0.5.1"),
     .package(
-      url: "https://github.com/apple/swift-argument-parser.git",
-      from: "1.1.4"),
-    .package(
       url: "https://github.com/apple/swift-algorithms.git",
       from: "1.2.0"),
+    .package(
+      url: "https://github.com/apple/swift-argument-parser.git",
+      from: "1.1.4"),
     .package(
       url: "https://github.com/apple/swift-collections.git",
       from: "1.1.0"),
@@ -44,13 +44,20 @@ let package = Package(
     .target(
       name: "FrontEnd",
       dependencies: [
+        .target(name: "StandardLibrary"),
         .target(name: "Utilities"),
         .product(name: "Archivist", package: "archivist"),
         .product(name: "Algorithms", package: "swift-algorithms"),
         .product(name: "Collections", package: "swift-collections"),
         .product(name: "MoreCollections", package: "more-swift-collections")
       ]),
-    
+
+    .target(
+      name: "StandardLibrary",
+      // dependencies: ["FrontEnd", "Utils"],
+      path: "StandardLibrary",
+      resources: [.copy("Sources")]),
+
     .target(name: "Utilities"),
 
     .testTarget(

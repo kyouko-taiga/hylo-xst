@@ -124,6 +124,11 @@ public struct Module: Sendable {
     self.identity = identity
   }
 
+  /// Returns a hash of the module that suitable for determining whether its sources have changed.
+  public var fingerprint: UInt64 {
+    SourceFile.fingerprint(contentsOf: sources.values.lazy.map(\.source))
+  }
+
   /// `true` if the module has errors.
   public var containsError: Bool {
     sources.values.contains(where: \.diagnostics.containsError)
@@ -285,6 +290,40 @@ public struct Module: Sendable {
 
 extension Module: Archivable {
 
+  /// A constant written at the beginning of an archive ("hylo" in hex).
+  private static let serializationMagicNumber: UInt32 = 0x68796c6f
+
+  /// The version of a serialization scheme.
+  private struct SerializationVersion: Archivable {
+
+    /// The raw value of this version.
+    private let rawValue: UInt32
+
+    /// Creates an instance with the given properties.
+    private init(compatibility: UInt16, revision: UInt16) {
+      self.rawValue = UInt32(compatibility) << 16 | UInt32(revision)
+    }
+
+    /// Reads an instance of `self` from `archive`.
+    internal init<A>(from archive: inout ReadableArchive<A>, in _: inout Any) throws {
+      self.rawValue = try archive.read(UInt32.self, endianness: .little)
+    }
+
+    /// Serializes `self` to `archive`.
+    internal func write<A>(to archive: inout WriteableArchive<A>, in _: inout Any) throws {
+      archive.write(rawValue, endianness: .little)
+    }
+
+    /// Returns `true` iff `self` is compatible with an archive compiled with `other`.
+    internal func compatible(with other: Self) -> Bool {
+      (self.rawValue >> 16) == (other.rawValue >> 16)
+    }
+
+    /// The current version of the serialization scheme.
+    internal static let current = SerializationVersion(compatibility: 1, revision: 1)
+
+  }
+
   /// The context of the serialization/deserialization of a module.
   internal struct SerializationContext {
 
@@ -317,8 +356,15 @@ extension Module: Archivable {
   /// an instance of `SerializationContext` that associates a module name to its identity in the
   /// program and contains a store with the types of the program.
   public init<A>(from archive: inout ReadableArchive<A>, in context: inout Any) throws {
-    // <module name>
-    let name = try archive.read(Name.self, in: &context)
+    // Magic number and version.
+    guard
+      try archive.read(UInt32.self, endianness: .little) == Module.serializationMagicNumber,
+      try archive.read(SerializationVersion.self).compatible(with: .current)
+    else { throw ArchiveError.invalidInput }
+
+    // <fingerprint> <module name>
+    let name = try archive.read(Name.self)
+    let hash = try archive.read(UInt64.self, endianness: .little)
 
     self = try modify(&context, as: SerializationContext.self) { (ctx) in
       ctx.modules[0] = ctx.identities[name]!
@@ -361,8 +407,11 @@ extension Module: Archivable {
         s.scopeToDeclarations = try archive.read([Int: [DeclarationIdentity]].self, in: &context)
         s.variableToBinding = try archive.read([Int: BindingDeclaration.ID].self, in: &context)
         s.syntaxToType = try archive.read([Int: AnyTypeIdentity].self, in: &context)
+        s.nameToDeclaration = try archive.read([Int: DeclarationReference].self, in: &context)
       }
     }
+
+    assert(hash == fingerprint, "module fingerprint does not match")
   }
 
   /// Serializes `self` to `archive`.
@@ -373,8 +422,13 @@ extension Module: Archivable {
   public func write<A>(to archive: inout WriteableArchive<A>, in context: inout Any) throws {
     var unwrappedContext = context as? SerializationContext ?? fatalError("bad context")
 
-    // <module name>
-    try archive.write(name, in: &context)
+    // Magic number and version.
+    archive.write(Module.serializationMagicNumber, endianness: .little)
+    try archive.write(Module.SerializationVersion.current)
+
+    // <module name> <fingerprint>
+    try archive.write(name)
+    archive.write(fingerprint, endianness: .little)
     unwrappedContext.modules[identity] = 0
     unwrappedContext.sources = .init(uniqueKeysWithValues: sources.mapValues(\.source))
 
@@ -407,8 +461,25 @@ extension Module: Archivable {
         try archive.write(s.scopeToDeclarations, in: &ctx)
         try archive.write(s.variableToBinding, in: &ctx)
         try archive.write(s.syntaxToType, in: &ctx)
+        try archive.write(s.nameToDeclaration, in: &ctx)
       }
     }
+  }
+
+  /// Returns the name and fingerprint of the module stored in `archive`.
+  public static func header<A>(
+    _ archive: inout ReadableArchive<A>
+  ) throws -> (Module.Name, UInt64) {
+    // Magic number and version.
+    guard
+      try archive.read(UInt32.self, endianness: .little) == Module.serializationMagicNumber,
+      try archive.read(SerializationVersion.self).compatible(with: .current)
+    else { throw ArchiveError.invalidInput }
+
+    // <module name> <fingerprint>
+    let name = try archive.read(Name.self)
+    let hash = try archive.read(UInt64.self, endianness: .little)
+    return (name, hash)
   }
 
 }
