@@ -1,0 +1,3 @@
+negative/invalid-ascription.hylo:3.10-11: error: expression does not denote a type
+  var b: a
+         ^

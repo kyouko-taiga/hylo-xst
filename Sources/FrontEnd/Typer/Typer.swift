@@ -1822,13 +1822,19 @@ public struct Typer {
     let t = context.withSubcontext(role: .ascription) { (ctx) in
       inferredType(of: e, in: &ctx)
     }
-    let u = program.types.select(t, \Metatype.inhabitant) ?? .error
 
-    if let p = program.types.cast(u, to: GenericParameter.self) {
-      checkProper(p, at: program.spanForDiagnostic(about: e))
+    if let u = program.types.select(t, \Metatype.inhabitant) {
+      if let p = program.types.cast(u, to: GenericParameter.self) {
+        checkProper(p, at: program.spanForDiagnostic(about: e))
+      }
+      return (result: u, isPartial: u[.hasVariable])
+    } else if t == .error {
+      // Error already reported.
+      return (result: .error, isPartial: false)
+    } else {
+      report(program.doesNotDenoteType(e))
+      return (result: .error, isPartial: false)
     }
-
-    return (result: u, isPartial: u[.hasVariable])
   }
 
   /// Returns the value of `e` evaluated as a kind ascription.
