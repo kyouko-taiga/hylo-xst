@@ -477,10 +477,10 @@ extension Module: Archivable {
         // Semantic properties.
         try archive.write(s.syntaxToParent, in: &ctx)
         try archive.write(s.topLevelDeclarations, in: &ctx)
-        try archive.write(s.scopeToDeclarations, in: &ctx)
-        try archive.write(s.variableToBinding, in: &ctx)
-        try archive.write(s.syntaxToType, in: &ctx)
-        try archive.write(s.nameToDeclaration, in: &ctx)
+        try archive.write(s.scopeToDeclarations, in: &ctx, sortedBy: \.key)
+        try archive.write(s.variableToBinding, in: &ctx, sortedBy: \.key)
+        try archive.write(s.syntaxToType, in: &ctx, sortedBy: \.key)
+        try archive.write(s.nameToDeclaration, in: &ctx, sortedBy: \.key)
       }
     }
   }
