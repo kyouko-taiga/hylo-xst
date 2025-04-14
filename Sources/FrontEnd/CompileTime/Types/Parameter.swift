@@ -21,11 +21,11 @@ public struct Parameter: Hashable, Sendable {
 
   /// Creates an instance with the given properties.
   public init(
-    declaration: ParameterDeclaration.ID?,
-    label: String?,
+    declaration: ParameterDeclaration.ID? = nil,
+    label: String? = nil,
     access: AccessEffect,
     type: AnyTypeIdentity,
-    isImplicit: Bool
+    isImplicit: Bool = false
   ) {
     self.declaration = declaration
     self.label = label

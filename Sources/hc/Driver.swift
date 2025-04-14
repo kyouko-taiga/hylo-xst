@@ -67,7 +67,9 @@ import StandardLibrary
     try await load(.standardLibrary, withSourcesAt: standardLibrarySources, into: &program)
 
     // Create a module for the product being compiled.
-    let module = program.demandModule(productName(inputs))
+    let product = productName(inputs)
+    note("start compiling \(product)")
+    let module = program.demandModule(product)
     program[module].addDependency(.standardLibrary)
 
     let sources = try sourceFiles(recursivelyContainedIn: inputs)
@@ -111,6 +113,8 @@ import StandardLibrary
     _ module: Module.Name, withSourcesAt root: URL,
     into program: inout Program
   ) async throws {
+    note("start loading \(module)")
+
     // Compute a fingerprint of all source files.
     var sources: [SourceFile] = []
     try SourceFile.forEach(in: root) { (s) in
@@ -126,14 +130,16 @@ import StandardLibrary
         a = ReadableArchive(data)
         try program.load(module: module, from: &a)
         return
+      } else {
+        note("archive is out of date")
       }
     }
 
     // Compile the module from sources.
     let m = program.demandModule(module)
     await parse(sources, into: &program[m])
-    await program.assignScopes(m)
-    program.assignTypes(m)
+    await assignScopes(of: m, in: &program)
+    await assignTypes(of: m, in: &program)
 
     if !noCaching {
       let archive = try program.archive(module: m)

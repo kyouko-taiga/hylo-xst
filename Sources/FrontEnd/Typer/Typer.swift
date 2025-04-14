@@ -2555,11 +2555,19 @@ public struct Typer {
 
   /// Resolves `n` as a member of the built-in module.
   private mutating func resolve(builtin n: Name) -> [NameResolutionCandidate] {
+    // Are we selecting a machine type?
     if let m = MachineType(n.identifier) {
-      return [.init(reference: .builtin(.alias), type: program.types.demand(m).erased)]
-    } else {
-      return []
+      return [.init(reference: .builtin(.alias), type: metatype(of: m).erased)]
     }
+
+    // Are we selecting a built-in function?
+    else if let f = BuiltinFunction(n.identifier, uniquingTypesWith: &program.types) {
+      let t = f.type(uniquingTypesWith: &program.types)
+      return [.init(reference: .builtin(.function(f)), type: t.erased)]
+    }
+
+    // Nothing that we know.
+    else { return [] }
   }
 
   /// Returns candidates for resolving `n` as a member of `q` in `scopeOfUse`.

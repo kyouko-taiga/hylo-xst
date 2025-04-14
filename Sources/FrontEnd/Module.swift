@@ -7,7 +7,7 @@ public struct Module: Sendable {
 
   /// The name of a module.
   @Archivable
-  public struct Name: Hashable, Sendable {
+  public struct Name: Hashable, CustomStringConvertible, Sendable {
 
     /// The raw value of this name.
     public let rawValue: String
@@ -15,6 +15,11 @@ public struct Module: Sendable {
     /// Creates an instance with the given raw value.
     public init(_ rawValue: String) {
       self.rawValue = rawValue
+    }
+
+    /// A textual description of this name.
+    public var description: String {
+      rawValue
     }
 
     /// The name of Hylo's standard library.
