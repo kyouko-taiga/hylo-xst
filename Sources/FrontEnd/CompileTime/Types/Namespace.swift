@@ -1,7 +1,11 @@
+import Archivist
+
 /// The type of a namespace.
+@Archivable
 public struct Namespace: TypeTree {
 
   /// The identifier of a namespace.
+  @Archivable
   public enum Identifier: Hashable, Sendable {
 
     /// The built-in module
@@ -14,6 +18,11 @@ public struct Namespace: TypeTree {
 
   /// The unique identifier of the namespace.
   public let identifier: Identifier
+
+  /// Creates an instance with the given identifier.
+  public init(identifier: Identifier) {
+    self.identifier = identifier
+  }
 
   /// Properties about `self`.
   public var properties: ValueProperties {

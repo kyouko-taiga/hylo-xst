@@ -1,4 +1,7 @@
+import Archivist
+
 /// A built-in machine type.
+@Archivable
 public enum MachineType: TypeTree {
 
   /// A machine integer type.
