@@ -12,7 +12,7 @@ final class ProgramTests: XCTestCase {
   func testSelectByModule() throws {
     let p = Program.test
     let m = p.identity(module: .init("M0"))!
-    XCTAssertEqual(p.select(.from(m)).count, 4)
+    XCTAssertEqual(p.select(from: m, .all).count, 4)
   }
 
   func testSelectByTag() throws {
@@ -52,7 +52,7 @@ final class ProgramTests: XCTestCase {
     // Syntax trees should have the same identities.
     XCTAssert(loaded)
     XCTAssertEqual(p[m].name, q[n].name)
-    for (l, r) in zip(p.select(.from(m)), q.select(.from(n))) {
+    for (l, r) in zip(p.select(from: m, .all), q.select(from: n, .all)) {
       assertIsomorphic(l, r)
     }
 

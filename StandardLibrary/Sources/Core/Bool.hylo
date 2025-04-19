@@ -1,3 +1,12 @@
 /// A value that can be either `true` or `false`.
 public struct Bool {
+
+  /// The raw value of this instance.
+  internal var value: Builtin.i1
+
+  /// Creates an instance equal to `false`.
+  public init() {
+    &self.value = Builtin.zeroinitializer_i1()
+  }
+
 }

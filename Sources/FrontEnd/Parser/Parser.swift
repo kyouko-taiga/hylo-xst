@@ -605,12 +605,9 @@ public struct Parser {
     var l = try parseConversionExpression(in: &file)
 
     while p < .max {
+      // Next token isn't considered an infix operator unless it is surrounded by whitespaces.
       guard let h = peek(), h.isOperator, whitespaceBeforeNextToken() else { break }
-      guard let (o, q) = try parseInfixOperator(notTighterThan: p) else { break }
-
-      if !whitespaceBeforeNextToken() {
-        report(.init("infix operator requires whitespaces on both sides", at: .empty(at: o.end)))
-      }
+      guard let (o, q) = try parseOptionalInfixOperator(notTighterThan: p) else { break }
 
       let r = try parseInfixExpression(minimumPrecedence: q.next, in: &file)
       let f = file.insert(
@@ -621,8 +618,7 @@ public struct Parser {
       let n = file.insert(
         Call(
           callee: .init(f),
-          arguments: [.init(label: nil, value: r)],
-          style: .parenthesized,
+          arguments: [.init(label: nil, value: r)], style: .parenthesized,
           site: file[l].site.extended(upTo: position.index)))
       l = .init(n)
     }
@@ -649,7 +645,27 @@ public struct Parser {
   private mutating func parsePrefixExpression(
     in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity {
-    try parseCompoundExpression(in: &file)
+    // Is there a prefix operator? (note: `&` is not a prefix operator)
+    if let h = peek(), h.isOperator, (h.tag != .ampersand) {
+      let o = try parseOperator()
+      if whitespaceBeforeNextToken() { report(separatedUnaryOperator(o)) }
+
+      let e = try parseCompoundExpression(in: &file)
+      let f = file.insert(
+        NameExpression(
+          qualification: e,
+          name: .init(Name(identifier: String(o.text), notation: .prefix), at: o),
+          site: o))
+      let n = file.insert(
+        Call(
+          callee: .init(f),
+          arguments: [], style: .parenthesized,
+          site: span(from: file[e].site.start)))
+      return .init(n)
+    }
+
+    // No prefix operator; simply parse a compound expression.
+    else { return try parseCompoundExpression(in: &file) }
   }
 
   /// Parses an expression made of one or more components.
@@ -661,10 +677,21 @@ public struct Parser {
   private mutating func parseCompoundExpression(
     in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity {
+    // Is there a mutation marker?
+    var marker = take(.ampersand)
+    if let m = marker, whitespaceBeforeNextToken() {
+      report(separatedUnaryOperator(m.site))
+    }
+
     var head = try parsePrimaryExpression(in: &file)
 
     while true {
-      if try appendNominalComponent(to: &head, in: &file) { continue }
+      // The period separating nominal components binds more tightly than mutation markers.
+      if try appendNominalComponent(to: &head, in: &file) {
+        continue
+      } else if let m = marker.take() {
+        head = .init(file.insert(InoutExpression(marker: m, lvalue: head, site: span(from: m))))
+      }
 
       // Exit if there's a whitespace before the next token.
       if whitespaceBeforeNextToken() { break }
@@ -1087,6 +1114,7 @@ public struct Parser {
   /// Parses a statement.
   ///
   ///     statement ::=
+  ///       assignment-statement
   ///       discard-statement
   ///       return-statement
   ///       declaration
@@ -1096,6 +1124,7 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> StatementIdentity {
     let head = try peek() ?? expected("statement")
+    defer { ensureStatementDelimiter() }
 
     switch head.tag {
     case .underscore:
@@ -1105,13 +1134,13 @@ public struct Parser {
     case _ where head.isDeclarationHead:
       return try .init(parseDeclaration(in: &file))
     default:
-      return try .init(parseExpression(in: &file))
+      return try parseAssignmentOrExpression(in: &file)
     }
   }
 
   /// Parses a discard statement.
   ///
-  ///     return-statement ::=
+  ///     discard-statement ::=
   ///       '_' '=' expression
   ///
   private mutating func parseDiscardStement(
@@ -1137,7 +1166,7 @@ public struct Parser {
 
     // The return value must be on the same line.
     let v: ExpressionIdentity?
-    if newlinesBeforeNextToken() {
+    if statementDelimiterBeforeNextToken() {
       v = nil
     } else if let w = attempt({ (me) in try me.parseExpression(in: &file) }) {
       v = w
@@ -1149,11 +1178,23 @@ public struct Parser {
     return file.insert(Return(introducer: i, value: v, site: span(from: i)))
   }
 
-  private mutating func newlinesBeforeNextToken() -> Bool {
-    if let t = peek() {
-      return tokens.source[position.index ..< t.site.start.index].contains(where: \.isNewline)
+  /// Parses an assignment or an expression.
+  ///
+  ///     assignment-statement ::=
+  ///       expression '=' expression
+  ///
+  private mutating func parseAssignmentOrExpression(
+    in file: inout Module.SourceContainer
+  ) throws -> StatementIdentity {
+    let l = try parseExpression(in: &file)
+    if let a = take(.assign) {
+      if !withespacesAround(a.site) { report(inconsistentWhitespaces(around: a.site)) }
+      let r = try parseExpression(in: &file)
+      let n = file.insert(
+        Assignment(lhs: l, rhs: r, site: file[l].site.extended(upTo: position.index)))
+      return .init(n)
     } else {
-      return false
+      return .init(l)
     }
   }
 
@@ -1228,19 +1269,16 @@ public struct Parser {
 
   /// Parses an infix operator and returns the region of the file from which it has been extracted
   /// iff it binds less than or as tightly as `p`.
-  private mutating func parseInfixOperator(
+  private mutating func parseOptionalInfixOperator(
     notTighterThan p: PrecedenceGroup
   ) throws -> (SourceSpan, PrecedenceGroup)? {
-    let s = tokens.save()
-    let l = lookahead
-
+    var backup = self
     let o = try parseOperator()
     let q = PrecedenceGroup(containing: o.text)
-    if (p < q) || ((p == q) && !q.isRightAssociative) {
+    if whitespaceBeforeNextToken() && ((p < q) || ((p == q) && !q.isRightAssociative)) {
       return (o, q)
     } else {
-      tokens.restore(s)
-      lookahead = l
+      swap(&self, &backup)
       return nil
     }
   }
@@ -1295,6 +1333,18 @@ public struct Parser {
     tokens.source[position.index].isWhitespace
   }
 
+  /// Returns `true` iff there are whitespaces immediately before and after `s`.
+  private func withespacesAround(_ s: SourceSpan) -> Bool {
+    let text = tokens.source
+
+    if (s.start.index != text.startIndex) && (s.end.index != text.endIndex) {
+      let before = text.index(before: s.start.index)
+      return text[before].isWhitespace && text[s.end.index].isWhitespace
+    } else {
+      return false
+    }
+  }
+
   /// Returns `true` iff there is a whitespace before the next token.
   private mutating func whitespaceBeforeNextToken() -> Bool {
     if let n = peek() {
@@ -1302,6 +1352,30 @@ public struct Parser {
     } else {
       return false
     }
+  }
+
+  /// Returns `true` iff there is a newline before the next token or the character stream is empty.
+  private mutating func newlinesBeforeNextToken() -> Bool {
+    if let n = peek() {
+      return tokens.source[position.index ..< n.site.start.index].contains(where: \.isNewline)
+    } else {
+      return tokens.source.index(after: position.index) == tokens.source.endIndex
+    }
+  }
+
+  /// Returns `true` iff there is a statement delimiter before the next token.
+  private mutating func statementDelimiterBeforeNextToken() -> Bool {
+    (newlinesBeforeNextToken() || next(is: .semicolon) || next(is: .rightBrace))
+  }
+
+  /// Returns `true` iff the next token has tag `k`, without consuming that token.
+  private mutating func next(is k: Token.Tag) -> Bool {
+    peek()?.tag == k
+  }
+
+  /// Returns `true` iff the next token satisfies `predicate`, without consuming that token.
+  private mutating func next(satisfies predicate: (Token) -> Bool) -> Bool {
+    peek().map(predicate) ?? false
   }
 
   /// Returns the next token without consuming it.
@@ -1319,16 +1393,12 @@ public struct Parser {
 
   /// Consumes and returns the next token iff it has tag `k`; otherwise, returns `nil`.
   private mutating func take(_ k: Token.Tag) -> Token? {
-    peek()?.tag == k ? take() : nil
+    next(is: k) ? take() : nil
   }
 
   /// Consumes and returns the next token iff it satisifies `predicate`; otherwise, returns `nil`.
   private mutating func take(if predicate: (Token) -> Bool) -> Token? {
-    if let t = peek(), predicate(t) {
-      return take()
-    } else {
-      return nil
-    }
+    next(satisfies: predicate) ? take() : nil
   }
 
   /// COnsumes and returns the next token iff it is a contextual keyword withe the given value.
@@ -1343,7 +1413,7 @@ public struct Parser {
 
   /// Discards tokens until `predicate` isn't satisfied or all the input has been consumed.
   private mutating func discard(while predicate: (Token) -> Bool) {
-    while let t = peek(), predicate(t) { _ = take() }
+    while next(satisfies: predicate) { _ = take() }
   }
 
   /// Discards tokens until the next token may be at the beginning of a top-level declaration.
@@ -1497,18 +1567,35 @@ public struct Parser {
     .init("expected \(s)", at: site)
   }
 
+  /// Ensures there is a statement delimiter before the next token, reporting an error otherwise.
+  private mutating  func ensureStatementDelimiter() {
+    if !statementDelimiterBeforeNextToken() {
+      report(missingSemicolon(at: .empty(at: position)))
+    }
+  }
+
   /// Returns a parse error reporting a missing statement separator at `site`.
-  func missingSemicolon(at site: SourceSpan) -> ParseError {
+  private func missingSemicolon(at site: SourceSpan) -> ParseError {
     .init("consecutive statements on the same line must be separated by ';'", at: site)
   }
 
   /// Returns a parse error reporting an unexpected wildcard at `site`.
-  func unexpectedWildcard(at site: SourceSpan) -> ParseError {
+  private func unexpectedWildcard(at site: SourceSpan) -> ParseError {
     let m = """
     '_' can only appear as a pattern, as a compile-time argument, or on the left-hand side of an \
     assignment
     """
     return .init(m, at:  site)
+  }
+
+  /// Returns a parse error reporting inconsistent whitespaces surrounding an infix operator.
+  private func inconsistentWhitespaces(around o: SourceSpan) -> ParseError {
+    .init("infix operator '\(o.text)' requires whitespaces on both sides", at: o)
+  }
+
+  /// Returns a parse error reporting an unary operator separated from its operand.
+  private func separatedUnaryOperator(_ o: SourceSpan) -> ParseError {
+    .init("unary operator '\(o.text)' cannot be separated from its operand", at: o)
   }
 
   /// Reports `e` and returns `v`.

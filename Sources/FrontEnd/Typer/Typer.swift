@@ -86,6 +86,9 @@ public struct Typer {
     /// The cache of `Typer.declaredType(of:)` for predefined givens.
     var predefinedGivens: [Given: AnyTypeIdentity]
 
+    /// The cache of `Typer.std(_:)`.
+    var standardLibraryTypes: [StandardLibraryType: AnyTypeIdentity]
+
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
       self.moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
@@ -99,6 +102,7 @@ public struct Typer {
       self.scopeToTypeOfSelf = [:]
       self.witnessToAliases = [:]
       self.predefinedGivens = [:]
+      self.standardLibraryTypes = [:]
     }
 
   }
@@ -164,7 +168,7 @@ public struct Typer {
   private mutating func check(_ d: BindingDeclaration.ID) {
     let t = declaredType(of: d)
     if let i = program[d].initializer {
-      check(i, expecting: t)
+      check(i, requiring: t)
     }
 
     program.forEachVariable(introducedBy: d) { (v, _) in
@@ -325,7 +329,7 @@ public struct Typer {
     if let b = body {
       // Is the function expression-bodied?
       if let e = b.uniqueElement.flatMap(program.castToExpression(_:)) {
-        check(e, expecting: r)
+        check(e, requiring: r)
       } else {
         for s in b { check(s) }
       }
@@ -347,7 +351,7 @@ public struct Typer {
     }
 
     if let v = program[d].default {
-      check(v, expecting: a.projectee)
+      check(v, requiring: a.projectee)
     }
   }
 
@@ -537,7 +541,7 @@ public struct Typer {
   }
 
   /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
-  private mutating func check(_ e: ExpressionIdentity, expecting r: AnyTypeIdentity) {
+  private mutating func check(_ e: ExpressionIdentity, requiring r: AnyTypeIdentity) {
     let u = check(e, inContextExpecting: r)
 
     // Fast path: `e` has the expected type or never returns.
@@ -563,6 +567,8 @@ public struct Typer {
   /// Type checks `s`.
   private mutating func check(_ s: StatementIdentity) {
     switch program.tag(of: s) {
+    case Assignment.self:
+      check(program.castUnchecked(s, to: Assignment.self))
     case Discard.self:
       check(program.castUnchecked(s, to: Discard.self))
     case Return.self:
@@ -577,6 +583,13 @@ public struct Typer {
   }
 
   /// Type checks `s`.
+  private mutating func check(_ s: Assignment.ID) {
+    let l = check(program[s].lhs)
+    check(program[s].rhs, requiring: l)
+    program[module].setType(.void, for: s)
+  }
+
+  /// Type checks `s`.
   private mutating func check(_ s: Discard.ID) {
     check(program[s].value)
     program[module].setType(.void, for: s)
@@ -588,7 +601,7 @@ public struct Typer {
 
     if let v = program[s].value {
       if u != .error {
-        check(v, expecting: u)
+        check(v, requiring: u)
       } else {
         check(v)
       }
@@ -1047,7 +1060,7 @@ public struct Typer {
     case WildcardLiteral.self:
       ascribe(k, t, to: program.castUnchecked(p, to: WildcardLiteral.self))
     default:
-      check(program.castToExpression(p)!, expecting: t)
+      check(program.castToExpression(p)!, requiring: t)
     }
   }
 
@@ -1152,6 +1165,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: Conversion.self), in: &context)
     case EqualityWitnessExpression.self:
       return inferredType(of: castUnchecked(e, to: EqualityWitnessExpression.self), in: &context)
+    case InoutExpression.self:
+      return inferredType(of: castUnchecked(e, to: InoutExpression.self), in: &context)
     case NameExpression.self:
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case New.self:
@@ -1175,7 +1190,8 @@ public struct Typer {
   private mutating func inferredType(
     of e: BooleanLiteral.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    fatalError("TODO")
+    let t = std(.bool)
+    return context.obligations.assume(e, hasType: t, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.
@@ -1303,6 +1319,14 @@ public struct Typer {
     else {
       return metatype(of: EqualityWitness(lhs: l, rhs: r)).erased
     }
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: InoutExpression.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let t = inferredType(of: program[e].lvalue, in: &context)
+    return context.obligations.assume(e, hasType: t, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.
@@ -2636,7 +2660,7 @@ public struct Typer {
     var candidates: [NameResolutionCandidate] = []
 
     for m in declarations(nativeMembersOf: q)[n.identifier] ?? [] {
-      var member = declaredType(of: m)
+      var member = typeOfName(boundTo: m)
       if let a = program.types[receiver] as? TypeApplication {
         member = program.types.substitute(a.arguments, in: member)
       }
@@ -2914,6 +2938,43 @@ public struct Typer {
       cache.scopeToTraits[scopeOfUse] = ts
       return ts
     }
+  }
+
+  // MARK: Standard library types
+
+  /// The value identifying a type from the standard library.
+  private enum StandardLibraryType: Hashable {
+
+    /// `Hylo.Bool`.
+    case bool
+
+    /// Returns a selector for the declaration corresponding to `self`.
+    var filter: SyntaxFilter {
+      switch self {
+      case .bool: return .name(Name("Bool"))
+      }
+    }
+
+  }
+
+  /// Returns the identity of the given standard library type.
+  ///
+  /// The module containing the sources of the standard library must be present in the program but
+  /// it does not have to be already type checked.
+  private mutating func std(_ n: StandardLibraryType) -> AnyTypeIdentity {
+    if let t = cache.standardLibraryTypes[n] { return t }
+
+    guard
+      let a = program.identity(module: .standardLibrary),
+      let b = program.select(from: a, n.filter).uniqueElement,
+      let c = program.castToDeclaration(b)
+    else { fatalError("missing or corrupted standard library") }
+
+    let t = declaredType(of: c)
+    let u = (program.types[t] as! Metatype).inhabitant
+
+    cache.standardLibraryTypes[n] = u
+    return u
   }
 
   // MARK: Helpers

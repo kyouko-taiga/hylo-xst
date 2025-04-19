@@ -47,6 +47,7 @@ public struct SyntaxTag: Sendable {
     Call.self,
     EqualityWitnessExpression.self,
     ImplicitQualification.self,
+    InoutExpression.self,
     KindExpression.self,
     NameExpression.self,
     New.self,
@@ -62,6 +63,7 @@ public struct SyntaxTag: Sendable {
     TuplePattern.self,
 
     // Statements
+    Assignment.self,
     Discard.self,
     Return.self,
   ]

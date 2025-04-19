@@ -68,7 +68,7 @@ public struct Program: Sendable {
   }
 
   /// Returns the identities of the modules in `self`.
-  public var moduleIdentities: Range<Int> {
+  public var moduleIdentities: Range<ModuleIdentity> {
     modules.values.indices
   }
 
@@ -190,15 +190,6 @@ public struct Program: Sendable {
   /// Returns `true` iff `n` denotes a scope.
   public func isScope<T: SyntaxIdentity>(_ n: T) -> Bool {
     tag(of: n).value is any Scope.Type
-  }
-
-  /// Returns `true` iff `n` occurs at the top-level of a source file.
-  ///
-  /// - Requires: The module containing `s` is scoped.
-  public func isTopLevel<T: SyntaxIdentity>(_ n: T) -> Bool {
-    modules.values[n.module][n.file].topLevelDeclarations.contains { (m) in
-      m.erased == n.erased
-    }
   }
 
   /// Returns `true` iff `n` is a trait requirement.
@@ -866,9 +857,13 @@ extension Program {
 extension Program {
 
   public func select(_ filter: SyntaxFilter) -> some Collection<AnySyntaxIdentity> {
-    modules.values
-      .map(\.syntax).joined().lazy
-      .filter({ (i) in filter(i, in: self) })
+    moduleIdentities.map({ (m) in select(from: m, filter) }).joined()
+  }
+
+  public func select(
+    from m: Program.ModuleIdentity, _ filter: SyntaxFilter
+  ) -> some Collection<AnySyntaxIdentity> {
+    modules.values[m].syntax.filter({ (n) in filter(n, in: self) })
   }
 
 }
@@ -882,14 +877,11 @@ public indirect enum SyntaxFilter {
   /// Matches any node satisfying both filters.
   case and(SyntaxFilter, SyntaxFilter)
 
-  /// Matches any node in the given module.
-  case from(Program.ModuleIdentity)
+  /// Matches any node declaring a single entity with the given name.
+  case name(Name)
 
   /// Matches any node with the given tag.
   case tag(any Syntax.Type)
-
-  /// Matches top-level declarations.
-  case topLevel
 
   /// Matches any node satisfying the given predicate.
   case satisfies((AnySyntaxIdentity) -> Bool)
@@ -901,12 +893,10 @@ public indirect enum SyntaxFilter {
       return true
     case .and(let l, let r):
       return l(n, in: p) && r(n, in: p)
-    case .from(let m):
-      return m == n.module
+    case .name(let x):
+      return p.castToDeclaration(n).map({ (d) in p.name(of: d) == x }) ?? false
     case .tag(let k):
       return p.tag(of: n) == k
-    case .topLevel:
-      return p.isTopLevel(n)
     case .satisfies(let p):
       return p(n)
     }

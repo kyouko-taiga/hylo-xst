@@ -79,7 +79,7 @@ import StandardLibrary
     assignTypes(of: module, in: &program)
 
     let c = treePrinterConfiguration(for: treePrinterFlags)
-    for d in program.select(.and(.from(module), .topLevel)) {
+    for d in program.select(from: module, .satisfies({ program.parent(containing: $0).isFile })) {
       print(program.show(d, configuration: c))
     }
 

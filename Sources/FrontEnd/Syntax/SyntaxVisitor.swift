@@ -78,10 +78,12 @@ extension Program {
       traverse(castUnchecked(n, to: Call.self), calling: &v)
     case Conversion.self:
       traverse(castUnchecked(n, to: Conversion.self), calling: &v)
-    case ImplicitQualification.self:
-      break
     case EqualityWitnessExpression.self:
       traverse(castUnchecked(n, to: EqualityWitnessExpression.self), calling: &v)
+    case ImplicitQualification.self:
+      break
+    case InoutExpression.self:
+      traverse(castUnchecked(n, to: InoutExpression.self), calling: &v)
     case KindExpression.self:
       traverse(castUnchecked(n, to: KindExpression.self), calling: &v)
     case NameExpression.self:
@@ -106,6 +108,8 @@ extension Program {
     case TuplePattern.self:
       traverse(castUnchecked(n, to: TuplePattern.self), calling: &v)
 
+    case Assignment.self:
+      traverse(castUnchecked(n, to: Assignment.self), calling: &v)
     case Discard.self:
       traverse(castUnchecked(n, to: Discard.self), calling: &v)
     case Return.self:
@@ -214,6 +218,11 @@ extension Program {
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: InoutExpression.ID, calling v: inout T) {
+    visit(self[n].lvalue, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: KindExpression.ID, calling v: inout T) {
     if case .arrow(let a, let b) = self[n].value {
       visit(a, calling: &v)
@@ -268,6 +277,12 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: TuplePattern.ID, calling v: inout T) {
     for a in self[n].elements { visit(a.value, calling: &v) }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: Assignment.ID, calling v: inout T) {
+    visit(self[n].lhs, calling: &v)
+    visit(self[n].rhs, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
