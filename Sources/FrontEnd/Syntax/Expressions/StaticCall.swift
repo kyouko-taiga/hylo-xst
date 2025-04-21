@@ -12,6 +12,11 @@ public struct StaticCall: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
+  /// Returns a copy of `self` with the arguments replaced.
+  public func replacing(arguments: [ExpressionIdentity]) -> StaticCall {
+    .init(callee: callee, arguments: arguments, site: site)
+  }
+
 }
 
 extension StaticCall: Showable {

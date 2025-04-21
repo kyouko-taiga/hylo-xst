@@ -4,6 +4,10 @@ import Archivist
 public struct ConformanceDeclaration: TypeExtendingDeclaration {
 
   /// The introducer of this declaration.
+  ///
+  /// This token is a `given` keyword if the conformance is declared on its own, or a colon if it
+  /// is "adjunct" to a struct. In the latter case, the conformance declaration has no parameters
+  /// and no members; those belong to the struct declaration.
   public let introducer: Token
 
   /// The compile-time parameters of the conformance.
@@ -17,6 +21,11 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Returns `true` iff `self` is a context bound in a struct declaration.
+  public var isAdjunct: Bool {
+    introducer.tag == .colon
+  }
 
 }
 

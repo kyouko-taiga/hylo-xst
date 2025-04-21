@@ -1,0 +1,17 @@
+trait P {
+  fun f()
+}
+trait Q<T> {
+  fun g() -> T
+}
+
+struct S : P & Q<Void> {
+  public fun f() {}
+  public fun g() {}
+}
+
+fun f<T where T: P>() {}
+
+public fun main() {
+  f<S>()
+}

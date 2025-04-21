@@ -359,6 +359,7 @@ public struct Typer {
   private mutating func check(_ d: StructDeclaration.ID) {
     _ = declaredType(of: d)
     for m in program[d].members { check(m) }
+    for b in program[d].contextBounds { check(b) }
     checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
@@ -1724,9 +1725,14 @@ public struct Typer {
 
   /// Returns the type of an instance of `Self` in `s`.
   private mutating func typeOfSelf(in d: ConformanceDeclaration.ID) -> AnyTypeIdentity {
-    let t = declaredType(of: d)
-    let w = program.types.seenAsTraitApplication(program.types.head(t))
-    return w?.arguments.values[0] ?? .error
+    if program[d].isAdjunct {
+      // `Self` refers to the struct to which `d` is adjunct.
+      return typeOfSelf(in: program.parent(containing: d))!
+    } else {
+      let t = declaredType(of: d)
+      let w = program.types.seenAsTraitApplication(program.types.head(t))
+      return w?.arguments.values[0] ?? .error
+    }
   }
 
   /// Returns the type of an instance of `Self` in `s`.
@@ -2361,9 +2367,17 @@ public struct Typer {
     for d in ds {
       if program.isGiven(d) { gs.append(.user(d)) }
 
+      // Implications introduced by given definitions nested in traits.
       if let t = program.cast(d, to: TraitDeclaration.self) {
         for n in givens(lexicallyIn: .init(node: t)) where !n.isAbstract {
           gs.append(.nested(t, n))
+        }
+      }
+
+      // Conformances introduced along with a struct declaration.
+      if let t = program.cast(d, to: StructDeclaration.self) {
+        for d in program[t].contextBounds {
+          gs.append(.user(.init(d)))
         }
       }
     }

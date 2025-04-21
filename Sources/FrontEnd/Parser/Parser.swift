@@ -341,7 +341,7 @@ public struct Parser {
   private mutating func parseCommaSeparatedGenericParameters(
     in file: inout Module.SourceContainer
   ) throws -> [GenericParameterDeclaration.ID] {
-    let (ps, _) = try commaSeparated(delimitedBy: Token.oneOf([.rightAngle, .where])) { (me) in
+    let (ps, _) = try commaSeparated(until: Token.oneOf([.rightAngle, .where])) { (me) in
       try me.parseGenericParameterDeclaration(in: &file)
     }
     return ps
@@ -361,12 +361,70 @@ public struct Parser {
       GenericParameterDeclaration(identifier: .init(n), ascription: a, site: n.site))
   }
 
+  /// Parses a list of context bounds iff the next token is a colon.
+  ///
+  ///     context-bound-list ::=
+  ///       ':' compound-expression ('&' compound-expression)*
+  ///
+  private mutating func parseOptionalContextBoundList(
+    until rightDelimiter: Token.Tag, in file: inout Module.SourceContainer
+  ) throws -> [ConformanceDeclaration.ID] {
+    if let introducer = take(.colon) {
+      return try ampersandSeparated(until: rightDelimiter) { me in
+        try me.parseContextBound(introducedBy: introducer, in: &file)
+      }
+    } else {
+      return []
+    }
+  }
+
+  /// Parses a context bound.
+  ///
+  ///     context-bound ::=
+  ///       compound-expression
+  ///
+  /// A context bound is parsed as a compound expression and immediately desugared as a static call
+  /// whose first argument is a name expression referring to the conforming type. For example, if
+  /// the bound is spelled out as `P<A>` in source, it is desugared as `P<Self, A>`.
+  private mutating func parseContextBound(
+    introducedBy introducer: Token,
+    in file: inout Module.SourceContainer
+  ) throws -> ConformanceDeclaration.ID {
+    let b = try parseCompoundExpression(in: &file)
+    let w = try desugared(bound: b)
+    let s = file[w].site
+
+    return file.insert(
+      ConformanceDeclaration(
+        introducer: introducer, staticParameters: .empty(at: s), witness: w, members: [], site: s))
+
+    /// Desugards a compound expression into a call of the form `P<Self, ...>`.
+    func desugared(bound b: ExpressionIdentity) throws -> StaticCall.ID {
+      switch file[b] {
+      case let n as NameExpression:
+        return file.insert(StaticCall(callee: b, arguments: conformer(), site: n.site))
+      case let n as StaticCall:
+        return file.replace(b, for: n.replacing(arguments: conformer() + n.arguments))
+      case let n:
+        throw ParseError("invalid context bound", at: n.site)
+      }
+    }
+
+    /// Returns a name expression referring to the conforming type.
+    func conformer() -> [ExpressionIdentity] {
+      let s = SourceSpan.empty(at: position)
+      let e = file.insert(
+        NameExpression(qualification: nil, name: .init("Self", at: s), site: s))
+      return [.init(e)]
+    }
+  }
+
   /// Parses a where clause iff the next token is `.where`. Otherwise, returns an empty clause.
   private mutating func parseOptionalWhereClause(
     in file: inout Module.SourceContainer
   ) throws -> [DeclarationIdentity] {
     guard take(.where) != nil else { return [] }
-    let (ps, _) = try commaSeparated(delimitedBy: .rightAngle) { (me) in
+    let (ps, _) = try commaSeparated(until: .rightAngle) { (me) in
       try me.parseContextParameter(in: &file)
     }
     return ps
@@ -398,7 +456,7 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> [ParameterDeclaration.ID] {
     let (ps, _) = try inParentheses { (m0) in
-      try m0.commaSeparated(delimitedBy: .rightParenthesis) { (m1) in
+      try m0.commaSeparated(until: .rightParenthesis) { (m1) in
         try m1.parseParameterDeclaration(in: &file)
       }
     }
@@ -458,7 +516,7 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> [StatementIdentity] {
     try inBraces { (m0) in
-      try m0.semicolonSeparated(delimitedBy: .rightBrace) { (m1) in
+      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
         try m1.parseStatement(in: &file)
       }
     }
@@ -475,6 +533,7 @@ public struct Parser {
     let introducer = try take(.struct) ?? expected("'struct'")
     let identifier = parseSimpleIdentifier()
     let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
+    let contextBounds = try parseOptionalContextBoundList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file)
 
     return file.insert(
@@ -483,6 +542,7 @@ public struct Parser {
         introducer: introducer,
         identifier: identifier,
         staticParameters: staticParameters,
+        contextBounds: contextBounds,
         members: members,
         site: span(from: introducer)))
   }
@@ -525,7 +585,7 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> [DeclarationIdentity] {
     try inBraces { (m0) in
-      try m0.semicolonSeparated(delimitedBy: .rightBrace) { (m1) in
+      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
         try m1.parseDeclaration(in: &file)
       }
     }
@@ -724,7 +784,7 @@ public struct Parser {
   ) throws -> Bool {
     if peek()?.tag != .leftParenthesis { return false }
     let (a, _) = try inParentheses { (me) in
-      try me.parseLabeledExpressionList(delimitedBy: .rightParenthesis, in: &file)
+      try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
     }
     let s = file[h].site.extended(upTo: position.index)
     let m = file.insert(Call(callee: h, arguments: a, style: .parenthesized, site: s))
@@ -739,7 +799,7 @@ public struct Parser {
   ) throws -> Bool {
     if peek()?.tag != .leftAngle { return false }
     let (a, _) = try inAngles { (m0) in
-      try m0.commaSeparated(delimitedBy: .rightAngle) { (m1) in
+      try m0.commaSeparated(until: .rightAngle) { (m1) in
         try m1.parseExpression(in: &file)
       }
     }
@@ -757,10 +817,10 @@ public struct Parser {
   ///       (expression-label ':')? expression
   ///
   private mutating func parseLabeledExpressionList(
-    delimitedBy rightDelimiter: Token.Tag,
+    until rightDelimiter: Token.Tag,
     in file: inout Module.SourceContainer
   ) throws -> ([LabeledExpression], lastComma: Token?) {
-    try labeledSyntaxList(delimitedBy: rightDelimiter) { (me) in
+    try labeledSyntaxList(until: rightDelimiter) { (me) in
       try me.parseExpression(in: &file)
     }
   }
@@ -871,7 +931,7 @@ public struct Parser {
   ) throws -> TupleTypeExpression.ID {
     let start = try peek() ?? expected("'{'")
     let (elements, _) = try inBraces { (me) in
-      try me.parseLabeledExpressionList(delimitedBy: .rightBrace, in: &file)
+      try me.parseLabeledExpressionList(until: .rightBrace, in: &file)
     }
 
     return file.insert(
@@ -890,7 +950,7 @@ public struct Parser {
   ) throws -> ExpressionIdentity {
     let start = try peek() ?? expected("'('")
     let (elements, lastComma) = try inParentheses { (me) in
-      try me.parseLabeledExpressionList(delimitedBy: .rightParenthesis, in: &file)
+      try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
     }
 
     if (elements.count == 1) && (elements[0].label == nil) && (lastComma == nil) {
@@ -1104,7 +1164,7 @@ public struct Parser {
   private mutating func parseLabeledPatternList(
     in file: inout Module.SourceContainer
   ) throws -> ([LabeledPattern], lastComma: Token?) {
-    try labeledSyntaxList(delimitedBy: .rightParenthesis) { (me) in
+    try labeledSyntaxList(until: .rightParenthesis) { (me) in
       try me.parsePattern(in: &file)
     }
   }
@@ -1473,10 +1533,10 @@ public struct Parser {
 
   /// Parses a parenthesized list of labeled syntax.
   private mutating func labeledSyntaxList<T: LabeledSyntax>(
-    delimitedBy rightDelimiter: Token.Tag,
+    until rightDelimiter: Token.Tag,
     _ parse: (inout Self) throws -> T.Value
   ) throws -> ([T], lastComma: Token?) {
-    try commaSeparated(delimitedBy: rightDelimiter) { (me) in
+    try commaSeparated(until: rightDelimiter) { (me) in
       try me.labeled(parse)
     }
   }
@@ -1515,7 +1575,7 @@ public struct Parser {
 
   /// Parses a list of instances of `T` separated by colons.
   private mutating func commaSeparated<T>(
-    delimitedBy isRightDelimiter: (Token) -> Bool, _ parse: (inout Self) throws -> T
+    until isRightDelimiter: (Token) -> Bool, _ parse: (inout Self) throws -> T
   ) throws -> ([T], lastComma: Token?) {
     var xs: [T] = []
     var lastComma: Token? = nil
@@ -1534,14 +1594,14 @@ public struct Parser {
 
   /// Parses a list of instances of `T` separated by colons.
   private mutating func commaSeparated<T>(
-    delimitedBy rightDelimiter: Token.Tag?, _ parse: (inout Self) throws -> T
+    until rightDelimiter: Token.Tag?, _ parse: (inout Self) throws -> T
   ) throws -> ([T], lastComma: Token?) {
-    try commaSeparated(delimitedBy: { (t) in t.tag == rightDelimiter }, parse)
+    try commaSeparated(until: { (t) in t.tag == rightDelimiter }, parse)
   }
 
   /// Parses a list of instances of `T` separated by semicolons.
   private mutating func semicolonSeparated<T>(
-    delimitedBy rightDelimiter: Token.Tag?, _ parse: (inout Self) throws -> T
+    until rightDelimiter: Token.Tag?, _ parse: (inout Self) throws -> T
   ) throws -> [T] {
     var xs: [T] = []
     while let head = peek() {
@@ -1553,6 +1613,24 @@ public struct Parser {
         report(e)
         recover(at: { (t) in t.tag == rightDelimiter || t.tag == .semicolon })
       }
+    }
+    return xs
+  }
+
+  /// Parses a list of instances of `T` separated by ampersands (i.e., `&`).
+  private mutating func ampersandSeparated<T>(
+    until rightDelimiter: Token.Tag, _ parse: (inout Self) throws -> T
+  ) throws -> [T] {
+    var xs: [T] = []
+    while let head = peek() {
+      if head.tag == rightDelimiter { break }
+      do {
+        try xs.append(parse(&self))
+      } catch let e as ParseError {
+        report(e)
+        recover(at: Token.oneOf([rightDelimiter, .ampersand]))
+      }
+      _ = take(.ampersand)
     }
     return xs
   }

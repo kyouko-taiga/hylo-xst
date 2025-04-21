@@ -1,0 +1,8 @@
+struct A<T> {
+  var x: T
+  memberwise init
+}
+
+public fun main() {
+  let a: A<_> = .new(x: ())
+}
