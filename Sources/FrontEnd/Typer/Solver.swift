@@ -382,8 +382,8 @@ internal struct Solver {
       }
 
       // The parameter has a default value?
-      else if let d = p.declaration, program[d].default != nil {
-        bindings.append(.defaulted(d))
+      else if let e = p.defaultValue {
+        bindings.append(.defaulted(e))
         continue
       }
 

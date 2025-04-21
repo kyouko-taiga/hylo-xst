@@ -4,9 +4,6 @@ import Archivist
 @Archivable
 public struct Parameter: Hashable, Sendable {
 
-  /// The declaration of the parameter if it is not synthetic.
-  public let declaration: ParameterDeclaration.ID?
-
   /// The label of the parameter.
   public let label: String?
 
@@ -16,22 +13,20 @@ public struct Parameter: Hashable, Sendable {
   /// The type of the values that can be passed to the parameter.
   public let type: AnyTypeIdentity
 
-  /// `true` if arguments to the parameter can be passed implicitly.
-  public let isImplicit: Bool
+  /// The default value of the parameter, if any.
+  public let defaultValue: ExpressionIdentity?
 
   /// Creates an instance with the given properties.
   public init(
-    declaration: ParameterDeclaration.ID? = nil,
     label: String? = nil,
     access: AccessEffect,
     type: AnyTypeIdentity,
-    isImplicit: Bool = false
+    defaultValue: ExpressionIdentity? = nil
   ) {
-    self.declaration = declaration
     self.label = label
     self.access = access
     self.type = type
-    self.isImplicit = isImplicit
+    self.defaultValue = defaultValue
   }
 
   /// Returns `self`, which is in `store`, with its parts transformed by `transform(_:_:)`.
@@ -40,8 +35,7 @@ public struct Parameter: Hashable, Sendable {
     by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
   ) -> Parameter {
     let t = store.map(type, transform)
-    return .init(
-      declaration: declaration, label: label, access: access, type: t, isImplicit: isImplicit)
+    return .init(label: label, access: access, type: t, defaultValue: defaultValue)
   }
 
 }

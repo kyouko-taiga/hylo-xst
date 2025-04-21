@@ -13,7 +13,7 @@ public struct ParameterDeclaration: Declaration, Sendable {
   public let ascription: RemoteTypeExpression.ID?
 
   /// The default value of the parameter, if any.
-  public let `default`: ExpressionIdentity?
+  public let defaultValue: ExpressionIdentity?
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
@@ -42,7 +42,7 @@ extension ParameterDeclaration: Showable {
     }
 
     // Default value.
-    if let v = `default` {
+    if let v = defaultValue {
       result.append(" = \(printer.show(v))")
     }
 
@@ -58,7 +58,7 @@ extension ParameterDeclaration: Archivable {
     self.identifier = try archive.read(Parsed<String>.self, in: &context)
     self.site = try archive.read(SourceSpan.self, in: &context)
     self.ascription = try archive.read(RemoteTypeExpression.ID?.self, in: &context)
-    self.default = try archive.read(ExpressionIdentity?.self, in: &context)
+    self.defaultValue = try archive.read(ExpressionIdentity?.self, in: &context)
   }
 
   public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
@@ -66,7 +66,7 @@ extension ParameterDeclaration: Archivable {
     try archive.write(identifier, in: &context)
     try archive.write(site, in: &context)
     try archive.write(ascription, in: &context)
-    try archive.write(`default`, in: &context)
+    try archive.write(defaultValue, in: &context)
   }
 
 }

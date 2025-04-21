@@ -10,7 +10,7 @@ public struct SynthethicExpression: Expression {
     case witness(WitnessExpression)
 
     /// A default argument.
-    case defaultArgument(ParameterDeclaration.ID)
+    case defaultArgument(ExpressionIdentity)
 
   }
 
@@ -29,8 +29,8 @@ extension SynthethicExpression: Showable {
     switch value {
     case .witness(let w):
       return printer.show(w)
-    case .defaultArgument(let n):
-      return "$default \(printer.show(printer.program[n].default!))"
+    case .defaultArgument(let e):
+      return "$default \(printer.show(e))"
     }
   }
 
@@ -57,7 +57,7 @@ extension SynthethicExpression.Value: Archivable {
     case 0:
       self = try .witness(archive.read(WitnessExpression.self, in: &context))
     case 1:
-      self = try .defaultArgument(archive.read(ParameterDeclaration.ID.self, in: &context))
+      self = try .defaultArgument(archive.read(ExpressionIdentity.self, in: &context))
     default:
       throw ArchiveError.invalidInput
     }

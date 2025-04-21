@@ -119,8 +119,24 @@ public struct Typer {
   }
 
   /// Returns `true` iff `t` and `u` are equal modulo α-conversion.
-  public func unifiable(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> Bool {
-    program.types.unifiable(t, u) != nil
+  public mutating func unifiable(_ t: AnyTypeIdentity, _ u: AnyTypeIdentity) -> Bool {
+    // Fast path: types are trivially equal.
+    if t == u { return true }
+
+    // Slow path: unify the types.
+    let lhs = program.types.contextAndHead(t)
+    let rhs = program.types.contextAndHead(u)
+
+    // Map the type parameters on the RHS to those on the LHS.
+    if lhs.context.parameters.count != rhs.context.parameters.count { return false }
+    var a: TypeApplication.Arguments = [:]
+    for (p, q) in zip(rhs.context.parameters, lhs.context.parameters) {
+      a[p] = .init(q)
+    }
+
+    let x = program.types.introduce(usings: lhs.context.usings, into: lhs.body)
+    let y = program.types.introduce(usings: rhs.context.usings, into: rhs.body)
+    return x == program.types.substitute(a, in: y)
   }
 
   // MARK: Type checking
@@ -290,7 +306,7 @@ public struct Typer {
     /// Returns the expected type of an implementation of `requirement`.
     func expectedImplementationType(of requirement: DeclarationIdentity) -> AnyTypeIdentity {
       let t = declaredType(of: requirement)
-      return program.types.substitute(substitutions, in: program.types.contextAndHead(t).body)
+      return program.types.substitute(substitutions, in: t)
     }
   }
 
@@ -350,7 +366,7 @@ public struct Typer {
       return
     }
 
-    if let v = program[d].default {
+    if let v = program[d].defaultValue {
       check(v, requiring: a.projectee)
     }
   }
@@ -471,16 +487,6 @@ public struct Typer {
   ) {
     let n = program.name(of: requirement)
     let m = "no implementation of '\(n)'"
-    report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
-  }
-
-  /// Reports that `requirement` has multiple equally valid implementations.
-  private mutating func reportAmbiguousImplementation(
-    of requirement: FunctionDeclaration.ID,
-    in conformance: ConformanceDeclaration.ID
-  ) {
-    let n = program.name(of: requirement)
-    let m = "ambiguous implementation of '\(n)'"
     report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
   }
 
@@ -728,11 +734,7 @@ public struct Typer {
         _ = declaredType(of: b)
         program.forEachVariable(introducedBy: b) { (v, _) in
           let t = program[module].type(assignedTo: b) ?? .error
-          inputs.append(
-            Parameter(
-              declaration: nil,
-              label: program[v].identifier.value, access: .sink, type: t,
-              isImplicit: false))
+          inputs.append(Parameter(label: program[v].identifier.value, access: .sink, type: t))
         }
       }
     }
@@ -895,8 +897,8 @@ public struct Typer {
 
       result.append(
         Parameter(
-          declaration: p, label: program[p].label?.value, access: access, type: projectee,
-          isImplicit: false))
+          label: program[p].label?.value, access: access, type: projectee,
+          defaultValue: program[p].defaultValue))
     }
     return result
   }
@@ -1678,21 +1680,20 @@ public struct Typer {
   }
 
   /// Returns the elaboration of `b` which describes an argument in `n`.
+  ///
+  /// The elaboration of default arguments does preserve labels.
   private mutating func elaborate(_ b: ParameterBinding, in n: Call.ID) -> LabeledExpression {
     switch b {
     case .explicit(let i):
       return program[n].arguments[i]
 
-    case .implicit:
-      fatalError("TODO")
-
-    case .defaulted(let d):
-      let t = program[n.module].type(assignedTo: program[d].default!) ?? .error
+    case .defaulted(let e):
+      let t = program[n.module].type(assignedTo: e) ?? .error
       let n = program[n.module].insert(
-        SynthethicExpression(value: .defaultArgument(d), site: program[n].site),
+        SynthethicExpression(value: .defaultArgument(e), site: program[n].site),
         in: program.parent(containing: n))
       program[n.module].setType(t, for: n)
-      return .init(label: program[d].label, value: .init(n))
+      return .init(label: nil, value: e)
     }
   }
 

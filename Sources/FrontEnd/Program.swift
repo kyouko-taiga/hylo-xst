@@ -654,12 +654,7 @@ public struct Program: Sendable {
       }
 
       // The parameter has a default value?
-      else if let d = p.declaration, self[d].default != nil {
-        continue
-      }
-
-      /// The parameter can be passed implicitly?
-      else if p.isImplicit {
+      else if p.defaultValue != nil {
         continue
       }
 

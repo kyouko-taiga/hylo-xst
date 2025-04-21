@@ -4,11 +4,8 @@ internal enum ParameterBinding: Equatable {
   /// The argument is the n-th expression in the syntax of the call.
   case explicit(Int)
 
-  /// The argument is a an implicit declaration reference.
-  case implicit(DeclarationReference)
-
   /// The argument is elided; the callee receive the parameter's default value.
-  case defaulted(ParameterDeclaration.ID)
+  case defaulted(ExpressionIdentity)
 
 }
 

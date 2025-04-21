@@ -180,7 +180,7 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: ParameterDeclaration.ID, calling v: inout T) {
     visit(self[n].ascription, calling: &v)
-    visit(self[n].default, calling: &v)
+    visit(self[n].defaultValue, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

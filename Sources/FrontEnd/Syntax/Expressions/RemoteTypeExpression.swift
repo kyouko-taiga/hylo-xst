@@ -2,6 +2,7 @@ import Archivist
 import Utilities
 
 /// The expression of a remote type.
+@Archivable
 public struct RemoteTypeExpression: Expression {
 
   /// The capabilities of the projection.
@@ -13,6 +14,13 @@ public struct RemoteTypeExpression: Expression {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
+  /// Creates an instance with the given properties.
+  public init(access: Parsed<AccessEffect>, projectee: ExpressionIdentity, site: SourceSpan) {
+    self.access = access
+    self.projectee = projectee
+    self.site = site
+  }
+
 }
 
 extension RemoteTypeExpression: Showable {
@@ -20,18 +28,6 @@ extension RemoteTypeExpression: Showable {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     "\(access) \(printer.show(projectee))"
-  }
-
-}
-
-extension RemoteTypeExpression: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    fatalError()
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    fatalError()
   }
 
 }

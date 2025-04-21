@@ -1,0 +1,14 @@
+trait P {
+  fun f<T>(_ x: T)
+}
+
+given Void: P {
+  // This one is OK.
+  public fun f<U>(_ x: U) {}
+}
+
+struct S<T> {}
+given<T> S<T>: P {
+  // This one isn't.
+  public fun f(_ x: T) {}
+}
