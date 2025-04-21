@@ -1221,12 +1221,16 @@ public struct Typer {
   }
 
   /// Returns the inferred type of `e`'s callee.
+  ///
+  /// If `e`'s callee is implicitly qualified, it is resolved as a member of the expected type
+  /// stored in `context`.
   private mutating func inferredType(
     calleeOf e: Call.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     let callee = program[e].callee
+    let o = program.isConstructorReference(callee) ? context.expectedType : nil
     let r = SyntaxRole(program[e].style, labels: program[e].labels)
-    let f = context.withSubcontext(role: r) { (ctx) in
+    let f = context.withSubcontext(expectedType: o, role: r) { (ctx) in
       inferredType(of: callee, in: &ctx)
     }
 
@@ -1367,7 +1371,7 @@ public struct Typer {
         member: program[e].target, role: context.role, qualification: q, type: u, site: site))
     context.obligations.assume(program[e].target, hasType: u, at: site)
 
-    let v = context.expectedType ?? fresh().erased
+    let v = fresh().erased
     context.obligations.assume(ConstructorConversionConstraint(lhs: u, rhs: v, site: site))
     return context.obligations.assume(e, hasType: v, at: site)
   }
@@ -2502,7 +2506,7 @@ public struct Typer {
     if program.tag(of: q) == ImplicitQualification.self {
       if let t = context.expectedType {
         context.obligations.assume(q, hasType: t, at: program[q].site)
-        return t
+        return qualificationForSelection(on: t)
       } else {
         let s = program.spanForDiagnostic(about: e)
         report(.init(.error, "no context to resolve constructor reference", at: s))

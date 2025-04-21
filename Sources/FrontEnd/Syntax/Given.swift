@@ -1,6 +1,9 @@
 /// The declaration of a given.
 public enum Given: Hashable {
 
+  /// A user-defined given.
+  case user(DeclarationIdentity)
+
   /// The built-in given of a coercion.
   case coercion(EqualityProperty)
 
@@ -9,9 +12,6 @@ public enum Given: Hashable {
 
   /// A given that is assumed during implicit resolution.
   case assumed(Int, AnyTypeIdentity)
-
-  /// A user-defined given.
-  case user(DeclarationIdentity)
 
   /// A given nested in a trait.
   indirect case nested(TraitDeclaration.ID, Given)

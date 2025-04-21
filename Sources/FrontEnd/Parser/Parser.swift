@@ -832,6 +832,7 @@ public struct Parser {
   ///       tuple-literal
   ///       wildcard-literal
   ///       unqualified-name-expression
+  ///       impliclty-qualified-name-expression
   ///       remote-type-expression
   ///       singleton-type-expression
   ///       tuple-type-expression
@@ -845,6 +846,8 @@ public struct Parser {
       return .init(file.insert(BooleanLiteral(site: take()!.site)))
     case .underscore:
       return try .init(parseWildcardLiteral(in: &file))
+    case .dot:
+      return try .init(parseImplicitlyQualifiedNameExpression(in: &file))
     case .name:
       return try .init(parseUnqualifiedNameExpression(in: &file))
     case .inout, .let, .set, .sink:
@@ -899,6 +902,20 @@ public struct Parser {
     default:
       return nil
     }
+  }
+
+  /// Parses a name expression with an implicit qualification.
+  ///
+  ///     implicitly-qualified-name-expression ::=
+  ///       '.' identifier
+  ///
+  private mutating func parseImplicitlyQualifiedNameExpression(
+    in file: inout Module.SourceContainer
+  ) throws -> NameExpression.ID {
+    let dot = try take(.dot) ?? expected("'.'")
+    let n = try parseNominalComponent()
+    let q = file.insert(ImplicitQualification(site: dot.site))
+    return file.insert(NameExpression(qualification: .init(q), name: n, site: span(from: dot)))
   }
 
   /// Parses an unqualified name expression.

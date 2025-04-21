@@ -42,11 +42,14 @@ public struct Module: Sendable {
     /// The abstract syntax of `source`'s contents.
     internal var syntax: [AnySyntax] = []
 
+    /// A table from syntax tree to its tag.
+    internal var syntaxToTag: [SyntaxTag] = []
+
     /// The root of the syntax trees in `self`, which may be subset of the top-level declarations.
     internal var roots: [DeclarationIdentity] = []
 
-    /// A table from syntax tree to its tag.
-    internal var syntaxToTag: [SyntaxTag] = []
+    /// The top-level declarations in `self`.
+    internal var topLevelDeclarations: [DeclarationIdentity] = []
 
     /// A table from syntax tree to the scope that contains it.
     ///
@@ -54,9 +57,6 @@ public struct Module: Sendable {
     /// (i.e., syntax identities sans module or source offset). Top-level declarations are mapped
     /// onto `-1`.
     internal var syntaxToParent: [Int] = []
-
-    /// The top-level declarations in `self`.
-    internal var topLevelDeclarations: [DeclarationIdentity] = []
 
     /// A table from scope to the declarations that it contains directly.
     internal var scopeToDeclarations: [Int: [DeclarationIdentity]] = [:]
@@ -97,7 +97,9 @@ public struct Module: Sendable {
     }
 
     /// Replaces the node identified by `n` by `newTree`.
-    internal mutating func replace<T: Expression>(_ n: ExpressionIdentity, for newTree: T) -> T.ID {
+    internal mutating func replace<T: Expression>(
+      _ n: ExpressionIdentity, for newTree: T
+    ) -> T.ID {
       assert(n.file == identity)
       syntax[n.offset] = .init(newTree)
       syntaxToTag[n.offset] = .init(T.self)
@@ -426,8 +428,9 @@ extension Module: Archivable {
         }
 
         // Semantic properties.
-        s.syntaxToParent = try archive.read([Int].self, in: &context)
+        s.roots = try archive.read([DeclarationIdentity].self, in: &context)
         s.topLevelDeclarations = try archive.read([DeclarationIdentity].self, in: &context)
+        s.syntaxToParent = try archive.read([Int].self, in: &context)
         s.scopeToDeclarations = try archive.read([Int: [DeclarationIdentity]].self, in: &context)
         s.variableToBinding = try archive.read([Int: BindingDeclaration.ID].self, in: &context)
         s.syntaxToType = try archive.read([Int: AnyTypeIdentity].self, in: &context)
@@ -480,8 +483,9 @@ extension Module: Archivable {
         }
 
         // Semantic properties.
-        try archive.write(s.syntaxToParent, in: &ctx)
+        try archive.write(s.roots, in: &ctx)
         try archive.write(s.topLevelDeclarations, in: &ctx)
+        try archive.write(s.syntaxToParent, in: &ctx)
         try archive.write(s.scopeToDeclarations, in: &ctx, sortedBy: \.key)
         try archive.write(s.variableToBinding, in: &ctx, sortedBy: \.key)
         try archive.write(s.syntaxToType, in: &ctx, sortedBy: \.key)

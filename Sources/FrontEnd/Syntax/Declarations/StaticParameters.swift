@@ -1,6 +1,7 @@
 import Archivist
 
 /// A clause describing contextual parameters and contextual constraints taken at compile-time.
+@Archivable
 public struct StaticParameters: Equatable, Sendable {
 
   /// The explicit parameters of the list.
@@ -11,6 +12,17 @@ public struct StaticParameters: Equatable, Sendable {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  public init(
+    explicit: [GenericParameterDeclaration.ID],
+    implicit: [DeclarationIdentity],
+    site: SourceSpan
+  ) {
+    self.explicit = explicit
+    self.implicit = implicit
+    self.site = site
+  }
 
   /// `true` iff `self` doesn't contain any parameter or constraint.
   public var isEmpty: Bool {
@@ -37,19 +49,3 @@ extension StaticParameters: Showable {
 
 }
 
-
-extension StaticParameters: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.explicit = try archive.read([GenericParameterDeclaration.ID].self, in: &context)
-    self.implicit = try archive.read([DeclarationIdentity].self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(explicit, in: &context)
-    try archive.write(implicit, in: &context)
-    try archive.write(site, in: &context)
-  }
-
-}

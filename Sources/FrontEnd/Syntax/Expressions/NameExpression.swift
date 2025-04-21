@@ -1,6 +1,7 @@
 import Archivist
 
 /// A reference to an entity.
+@Archivable
 public struct NameExpression: Expression {
 
   /// The qualification of the referred entity, if any.
@@ -11,6 +12,13 @@ public struct NameExpression: Expression {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  public init(qualification: ExpressionIdentity?, name: Parsed<Name>, site: SourceSpan) {
+    self.qualification = qualification
+    self.name = name
+    self.site = site
+  }
 
 }
 
@@ -23,22 +31,6 @@ extension NameExpression: Showable {
     } else {
       return name.description
     }
-  }
-
-}
-
-extension NameExpression: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.qualification = try archive.read(ExpressionIdentity?.self, in: &context)
-    self.name = try archive.read(Parsed<Name>.self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(qualification, in: &context)
-    try archive.write(name, in: &context)
-    try archive.write(site, in: &context)
   }
 
 }

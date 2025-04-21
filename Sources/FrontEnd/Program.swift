@@ -268,9 +268,14 @@ public struct Program: Sendable {
     }
   }
 
-  /// Returns `true` iff `n` has the form `q.new`, where `q` is an arbitrary qualification.
-  public func isConstructorReference(_ n: NameExpression.ID) -> Bool {
-    self[n].name.value.identifier == "new"
+  /// Returns `true` iff `n` is a name expression of the form  `.new` or `q.new`, where `q` is any
+  /// arbitrary qualification.
+  public func isConstructorReference<T: SyntaxIdentity>(_ n: T) -> Bool {
+    if let m = cast(n, to: NameExpression.self) {
+      return self[m].name.value.identifier == "new"
+    } else {
+      return false
+    }
   }
 
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
