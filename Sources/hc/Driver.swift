@@ -84,7 +84,7 @@ import StandardLibrary
     }
 
     let a = try program.archive(module: module)
-    print(a)
+    print(a.count)
   }
 
   /// Sets up the value of search paths for locating libraries and cached artefacts.

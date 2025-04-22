@@ -35,7 +35,7 @@ extension SyntaxIdentity {
   }
 
   /// Returns `true` iff `l` denotes the same node as `r`.
-  public static func == <T: SyntaxIdentity>(l: T, r: Self) -> Bool {
+  public static func ~= <T: SyntaxIdentity>(l: Self, r: T) -> Bool {
     l.erased == r.erased
   }
 
@@ -122,6 +122,11 @@ extension AnySyntaxIdentity: SyntaxIdentity {
   /// The type-erased value of this identity.
   public var erased: AnySyntaxIdentity {
     self
+  }
+
+  /// Returns `true` iff `l` denotes the same node as `r`.
+  public static func == <T: SyntaxIdentity>(l: Self, r: T) -> Bool {
+    l.bits == r.erased.bits
   }
 
   /// Returns `true` if `l` is ordered before `r`.

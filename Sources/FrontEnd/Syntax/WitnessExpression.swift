@@ -5,6 +5,7 @@ import Archivist
 public struct WitnessExpression: Hashable, Sendable {
 
   /// The expression of a witness.
+  @Archivable
   public indirect enum Value: Hashable, Sendable {
 
     /// An existing term.
@@ -23,7 +24,7 @@ public struct WitnessExpression: Hashable, Sendable {
     case termApplication(WitnessExpression, WitnessExpression)
 
     /// A type abstraction applied to type arguments.
-    case typeApplication(WitnessExpression, TypeApplication.Arguments)
+    case typeApplication(WitnessExpression, TypeArguments)
 
     /// The selection of a nested witness.
     case nested(WitnessExpression)
@@ -176,18 +177,6 @@ extension WitnessExpression.Value: Showable {
     case .nested(let w):
       return "$<nested given>(\(printer.show(w))"
     }
-  }
-
-}
-
-extension WitnessExpression.Value: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    fatalError()
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    fatalError()
   }
 
 }

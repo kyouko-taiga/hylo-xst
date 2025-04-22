@@ -16,10 +16,13 @@ public enum DeclarationReference: Hashable, Sendable {
   /// A reference to a member inherited by conformance or extension.
   case inherited(WitnessExpression, DeclarationIdentity)
 
+  /// A reference to a synthetic implementation of a trait requirement.
+  case synthetic(DeclarationIdentity)
+
   /// `true` iff this referennce mentions open variable.
   public var hasVariable: Bool {
     switch self {
-    case .builtin, .direct, .member:
+    case .builtin, .direct, .member, .synthetic:
       return false
     case .inherited(let w, _):
       return w.hasVariable
@@ -31,7 +34,7 @@ public enum DeclarationReference: Hashable, Sendable {
     switch self {
     case .direct(let d), .member(let d), .inherited(_, let d):
       return d
-    case .builtin:
+    case .builtin, .synthetic:
       return nil
     }
   }
@@ -39,7 +42,7 @@ public enum DeclarationReference: Hashable, Sendable {
   /// A measure of the complexity of reference's elaborated expression.
   public var elaborationCost: Int {
     switch self {
-    case .builtin, .direct, .member:
+    case .builtin, .direct, .member, .synthetic:
       return 0
     case .inherited(let w, _):
       return 1 + w.elaborationCost
@@ -64,6 +67,8 @@ extension DeclarationReference: Showable {
     switch self {
     case .builtin(let e):
       return "$<builtin \(e)>"
+    case .synthetic(let d):
+      return "$<synthetic implementation of \(printer.program.nameOrTag(of: d))>"
     case .direct(let d), .member(let d), .inherited(_, let d):
       return printer.program.nameOrTag(of: d)
     }

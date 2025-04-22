@@ -86,8 +86,8 @@ public struct Typer {
     /// The cache of `Typer.declaredType(of:)` for predefined givens.
     var predefinedGivens: [Given: AnyTypeIdentity]
 
-    /// The cache of `Typer.std(_:)`.
-    var standardLibraryTypes: [StandardLibraryType: AnyTypeIdentity]
+    /// The cache of `Typer.standardLibraryDeclaration(_:)`.
+    var standardLibraryDeclarations: [StandardLibraryEntity: DeclarationIdentity]
 
     /// Creates an instance for typing `m`, which is a module in `p`.
     init(typing m: Program.ModuleIdentity, in p: Program) {
@@ -102,7 +102,7 @@ public struct Typer {
       self.scopeToTypeOfSelf = [:]
       self.witnessToAliases = [:]
       self.predefinedGivens = [:]
-      self.standardLibraryTypes = [:]
+      self.standardLibraryDeclarations = [:]
     }
 
   }
@@ -129,7 +129,7 @@ public struct Typer {
 
     // Map the type parameters on the RHS to those on the LHS.
     if lhs.context.parameters.count != rhs.context.parameters.count { return false }
-    var a: TypeApplication.Arguments = [:]
+    var a: TypeArguments = [:]
     for (p, q) in zip(rhs.context.parameters, lhs.context.parameters) {
       a[p] = .init(q)
     }
@@ -137,6 +137,38 @@ public struct Typer {
     let x = program.types.introduce(usings: lhs.context.usings, into: lhs.body)
     let y = program.types.introduce(usings: rhs.context.usings, into: rhs.body)
     return x == program.types.substitute(a, in: y)
+  }
+
+  /// Returns the types of stored parts of `t`.
+  private mutating func storage(of t: AnyTypeIdentity) -> [AnyTypeIdentity]? {
+    let u = program.types.reduced(t)
+    switch program.types.tag(of: u) {
+    case Struct.self:
+      return storage(of: program.types.castUnchecked(t, to: Struct.self))
+    case TypeApplication.self:
+      return storage(of: program.types.castUnchecked(t, to: TypeApplication.self))
+    case Tuple.self:
+      return (program.types[t] as! Tuple).elements.map(\.type)
+    default:
+      return nil
+    }
+  }
+
+  /// Returns the types of stored parts of `t`.
+  private mutating func storage(of t: Struct.ID) -> [AnyTypeIdentity] {
+    program.storedProperties(of: program.types[t].declaration).map { (v) in
+      typeOfName(boundTo: .init(v))
+    }
+  }
+
+  /// Returns the types of stored parts of `t`.
+  private mutating func storage(of t: TypeApplication.ID) -> [AnyTypeIdentity]? {
+    if let ts = storage(of: program.types[t].abstraction) {
+      let a = program.types[t].arguments
+      return ts.map({ (u) in program.types.substitute(a, in: u) })
+    } else {
+      return nil
+    }
   }
 
   // MARK: Type checking
@@ -214,7 +246,7 @@ public struct Typer {
     // members of the type `B` where type parameters occur as skolems.
     let witnessSansContext = program.types.contextAndHead(t).body
     guard let witness = program.types.seenAsTraitApplication(witnessSansContext) else {
-      assert(t == .error)
+      assert(t[.hasError])
       return
     }
 
@@ -224,7 +256,7 @@ public struct Typer {
     // The expected types of implementations satisfying the concept's requirements are computed by
     // substituting the abstract types of the concept by their corresponding assignment.
     var substitutions = Dictionary(
-      uniqueKeysWithValues: witness.arguments.map({ (k, v) in (k.erased, v) }))
+      uniqueKeysWithValues: witness.arguments.elements.map({ (k, v) in (k.erased, v) }))
 
     let (requirements, associatedTypes) = program[concept].members.partitioned { (r) in
       program.tag(of: r) == AssociatedTypeDeclaration.self
@@ -287,13 +319,15 @@ public struct Typer {
 
       if let pick = viable.uniqueElement {
         return pick
-      } else if !viable.isEmpty {
+      } else if viable.count > 1 {
         reportAmbiguousImplementation(of: requiredName, in: d)
+        return nil
+      } else if let pick = syntheticImplementation(of: requirement, in: d, for: conformer) {
+        return pick
       } else {
         reportMissingImplementation(of: requiredName, in: d)
+        return nil
       }
-
-      return nil
     }
 
     /// Returns the declarations implementing `requirement`.
@@ -460,14 +494,63 @@ public struct Typer {
     lookup(program[requirement].identifier.value, lexicallyIn: .init(node: d)).uniqueElement
   }
 
-  /// Returns the expected type of an implementation of `requirement` substituting abstract types
-  /// of with the assignments in `substitutions`.
-  private mutating func expectedImplementationType(
-    of requirement: FunctionDeclaration.ID,
-    applying substitutions: [AnyTypeIdentity: AnyTypeIdentity]
-  ) -> AnyTypeIdentity {
-    let t = declaredType(of: requirement)
-    return program.types.substitute(substitutions, in: program.types.contextAndHead(t).body)
+  /// Returns an implementation of `requirement` for `conformer` iff one can be synthesized.
+  private mutating func syntheticImplementation(
+    of requirement: DeclarationIdentity,
+    in d: ConformanceDeclaration.ID,
+    for conformer: AnyTypeIdentity
+  ) -> DeclarationReference? {
+    let concept = program.traitRequiring(requirement)!
+    if isDerivable(structuralConformanceOf: conformer, to: concept, in: .init(node: d)) {
+      return .synthetic(requirement)
+    } else {
+      return nil
+    }
+  }
+
+  /// Returns `true` iff a conformance of `conformer` to `concept` can be resolved or synthesized
+  /// in `scopeOfUse`.
+  private mutating func isDerivable(
+    conformanceOf conformer: AnyTypeIdentity, to concept: TraitDeclaration.ID,
+    in scopeOfUse: ScopeIdentity
+  ) -> Bool {
+    if !isDerivable(conformanceTo: concept) { return false }
+    if program.types[conformer] is MachineType {
+      return true
+    }
+
+    let a = typeOfModel(of: conformer, conformingTo: concept, with: []).erased
+    if summon(a, in: scopeOfUse).count == 1 {
+      return true
+    } else if program.types.isStructural(conformer) {
+      return isDerivable(structuralConformanceOf: conformer, to: concept, in: scopeOfUse)
+    } else {
+      return false
+    }
+  }
+
+  /// Returns `true` iff a conformance to `concept` can be resolved or synthesized in `scopeOfUse`
+  /// for each individual stored property of `conformer`.
+  private mutating func isDerivable(
+    structuralConformanceOf conformer: AnyTypeIdentity, to concept: TraitDeclaration.ID,
+    in scopeOfUse: ScopeIdentity
+  ) -> Bool {
+    if isDerivable(conformanceTo: concept), let ts = storage(of: conformer) {
+      return ts.allSatisfy({ (t) in isDerivable(conformanceOf: t, to: concept, in: scopeOfUse) })
+    } else {
+      return false
+    }
+  }
+
+  /// Returns `true` iff conformances to `concept` can be synthesized.
+  private mutating func isDerivable(conformanceTo concept: TraitDeclaration.ID) -> Bool {
+    guard program.containsStandardLibrarySources else { return false }
+    switch concept {
+    case standardLibraryDeclaration(.deinitializable):
+      return true
+    default:
+      return false
+    }
   }
 
   /// Reports that `requirement` has no implementation.
@@ -727,10 +810,10 @@ public struct Typer {
     if program[d].introducer.value == .memberwiseinit {
       // Memberwise initializers can only appear nested in a struct declaration.
       let s = program.parent(containing: d, as: StructDeclaration.self)!
-      for m in program[s].members {
-        guard let b = program.cast(m, to: BindingDeclaration.self) else { continue }
 
-        // Make sure there's a type for each of the variables introduced by the declaration.
+      // We don't use `program.storedProperties(of:)` because we have to ensure that all stored
+      // properties are typed before we can form a corresponding parameter.
+      for b in program.collect(BindingDeclaration.self, in: program[s].members) {
         _ = declaredType(of: b)
         program.forEachVariable(introducedBy: b) { (v, _) in
           let t = program[module].type(assignedTo: b) ?? .error
@@ -803,7 +886,7 @@ public struct Typer {
 
     var s = demand(Struct(declaration: d)).erased
     if !ps.isEmpty {
-      let a = TypeApplication.Arguments(uniqueKeysWithValues: ps.map({ (p) in (p, p.erased) }))
+      let a = TypeArguments(parametersWithValues: ps.map({ (p) in (p, p.erased) }))
       let t = demand(TypeApplication(abstraction: s, arguments: a)).erased
       s = demand(UniversalType(parameters: ps, body: t)).erased
     }
@@ -821,7 +904,7 @@ public struct Typer {
     var ps = [typeOfSelf(in: d)]
     ps.append(contentsOf: declaredTypes(of: program[d].parameters))
 
-    let a = TypeApplication.Arguments(uniqueKeysWithValues: ps.map({ (p) in (p, p.erased) }))
+    let a = TypeArguments(parametersWithValues: ps.map({ (p) in (p, p.erased) }))
     let f = demand(Trait(declaration: d)).erased
     let t = demand(TypeApplication(abstraction: f, arguments: a)).erased
     let u = metatype(of: UniversalType(parameters: ps, body: t)).erased
@@ -984,7 +1067,7 @@ public struct Typer {
 
     let w = program.types.seenAsTraitApplication(witness.type)!
     var substitutions = Dictionary(
-      uniqueKeysWithValues: w.arguments.map({ (k, v) in (k.erased, v) }))
+      uniqueKeysWithValues: w.arguments.elements.map({ (k, v) in (k.erased, v) }))
 
     for r in program[program.types[w.concept].declaration].members {
       if let a = program.cast(r, to: AssociatedTypeDeclaration.self) {
@@ -1193,7 +1276,7 @@ public struct Typer {
   private mutating func inferredType(
     of e: BooleanLiteral.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    let t = std(.bool)
+    let t = standardLibraryType(.bool)
     return context.obligations.assume(e, hasType: t, at: program[e].site)
   }
 
@@ -1762,7 +1845,7 @@ public struct Typer {
     let f = demand(Trait(declaration: d)).erased
     let s = typeOfSelf(in: d)
 
-    var a: TypeApplication.Arguments = [s: s.erased]
+    var a: TypeArguments = [s: s.erased]
     for p in program[d].parameters {
       let t = declaredType(of: p)
       let u = program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self)!
@@ -1782,7 +1865,7 @@ public struct Typer {
     let f = demand(Trait(declaration: concept)).erased
     let s = typeOfSelf(in: concept)
 
-    var a: TypeApplication.Arguments = [s: conformer]
+    var a: TypeArguments = [s: conformer]
     for (p, v) in zip(program[concept].parameters, arguments) {
       let t = declaredType(of: p)
       let u = program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self)!
@@ -1837,7 +1920,7 @@ public struct Typer {
   /// Returns the context parameters of the type of an instance of `Self` in `s`.
   private mutating func contextOfSelf(in s: TraitDeclaration.ID) -> ContextClause {
     let w = typeOfTraitSelf(in: s)
-    return .init(parameters: .init(program.types[w].arguments.keys), usings: [w.erased])
+    return .init(parameters: .init(program.types[w].arguments.parameters), usings: [w.erased])
   }
 
   // MARK: Compile-time evaluation
@@ -2176,11 +2259,7 @@ public struct Typer {
 
       // The witness has a universal type?
       if let u = program.types[witness.type] as? UniversalType {
-        var a = TypeApplication.Arguments(minimumCapacity: u.parameters.count)
-        for p in u.parameters {
-          a[p] = fresh().erased
-        }
-
+        let a = TypeArguments(mapping: u.parameters, to: { _ in fresh().erased })
         witness = WitnessExpression(
           value: .typeApplication(witness, a),
           type: program.types.substitute(a, in: u.body))
@@ -2619,25 +2698,20 @@ public struct Typer {
   internal mutating func resolve(
     _ n: Name, memberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
-    // If `q` a namespace?
+    // Is `q` a namespace?
     if let s = program.types.cast(q, to: Namespace.self) {
       return resolve(n, memberOf: s, visibleFrom: scopeOfUse)
     }
 
-    // Otherwise, look for native members and other symbols declared in extensions or inherited by
-    // conformance.
+    // Gather for native members.
     var candidates = resolve(n, nativeMemberOf: q)
     candidates.append(contentsOf: resolve(n, memberInExtensionOf: q, visibleFrom: scopeOfUse))
 
+    // Gather symbols declared in extensions or inherited by conformance.
     for (concept, ms) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
       let vs = program[concept].parameters.map({ _ in fresh().erased })
       let model = typeOfModel(of: q, conformingTo: concept, with: vs)
-      let summonings = summon(model.erased, in: scopeOfUse)
-
-      // TODO: report ambiguous resolution results in the candidate's diagnostics
-      assert(summonings.count <= 1)
-
-      for a in summonings {
+      for a in summon(model.erased, in: scopeOfUse) {
         for m in ms {
           let w = program.types.reify(
             a.witness, applying: a.substitutions, withVariables: .substitutedByError)
@@ -2961,39 +3035,50 @@ public struct Typer {
 
   // MARK: Standard library types
 
-  /// The value identifying a type from the standard library.
-  private enum StandardLibraryType: Hashable {
+  /// The value identifying an entity from the standard library.
+  private enum StandardLibraryEntity: String, Hashable {
 
     /// `Hylo.Bool`.
-    case bool
+    case bool = "Bool"
+
+    /// `Hylo.Deinitializable`.
+    case deinitializable = "Deinitializable"
 
     /// Returns a selector for the declaration corresponding to `self`.
     var filter: SyntaxFilter {
-      switch self {
-      case .bool: return .name(Name("Bool"))
-      }
+      .name(.init(identifier: rawValue))
     }
 
   }
 
-  /// Returns the identity of the given standard library type.
+  /// Returns the type of the given standard library entity.
   ///
   /// The module containing the sources of the standard library must be present in the program but
   /// it does not have to be already type checked.
-  private mutating func std(_ n: StandardLibraryType) -> AnyTypeIdentity {
-    if let t = cache.standardLibraryTypes[n] { return t }
+  private mutating func standardLibraryType(_ n: StandardLibraryEntity) -> AnyTypeIdentity {
+    let d = standardLibraryDeclaration(n)
+    let t = declaredType(of: d)
+    let m = (program.types[t] as? Metatype) ?? fatalError("missing corrupt standard library")
+    return m.inhabitant
+  }
+
+  /// Returns the declaration of the given standard library entity.
+  ///
+  /// The module containing the sources of the standard library must be present in the program but
+  /// it does not have to be already type checked.
+  private mutating func standardLibraryDeclaration(
+    _ n: StandardLibraryEntity
+  ) -> DeclarationIdentity {
+    if let d = cache.standardLibraryDeclarations[n] { return d }
 
     guard
       let a = program.identity(module: .standardLibrary),
       let b = program.select(from: a, n.filter).uniqueElement,
-      let c = program.castToDeclaration(b)
-    else { fatalError("missing or corrupted standard library") }
+      let d = program.castToDeclaration(b)
+    else { fatalError("missing or corrupt standard library") }
 
-    let t = declaredType(of: c)
-    let u = (program.types[t] as! Metatype).inhabitant
-
-    cache.standardLibraryTypes[n] = u
-    return u
+    cache.standardLibraryDeclarations[n] = d
+    return d
   }
 
   // MARK: Helpers

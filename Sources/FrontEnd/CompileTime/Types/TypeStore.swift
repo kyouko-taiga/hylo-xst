@@ -79,6 +79,16 @@ public struct TypeStore: Sendable {
     return false
   }
 
+  /// Returns `true` iff `n` identifies a non-nominal type (e.g., a tuple).
+  public func isStructural<T: TypeIdentity>(_ n: T) -> Bool {
+    switch tag(of: n) {
+    case Tuple.self:
+      return true
+    default:
+      return false
+    }
+  }
+
   /// Returns `true` iff `n` is a universal type or an implication.
   public func hasContext<T: TypeIdentity>(_ n: T) -> Bool {
     (tag(of: n) == UniversalType.self) || (tag(of: n) == Implication.self)
@@ -143,8 +153,8 @@ public struct TypeStore: Sendable {
   }
 
   /// Returns a table mapping each parameter in `ps` to a fresh unification variable.
-  public mutating func open(_ ps: [GenericParameter.ID]) -> TypeApplication.Arguments {
-    .init(uniqueKeysWithValues: ps.map({ (p) in (p, fresh().erased) }))
+  public mutating func open(_ ps: [GenericParameter.ID]) -> TypeArguments {
+    .init(parametersWithValues: ps.map({ (p) in (p, fresh().erased) }))
   }
 
   /// Returns `body` as the head of a universal type and/or implication introducing `c`.
@@ -209,7 +219,7 @@ public struct TypeStore: Sendable {
   /// Returns `(P, [A...])` iff `n` has the form `P<A...>`.
   public func seenAsTraitApplication<T: TypeIdentity>(
     _ n: T
-  ) -> (concept: Trait.ID, arguments: TypeApplication.Arguments)? {
+  ) -> (concept: Trait.ID, arguments: TypeArguments)? {
     if
       let t = cast(n, to: TypeApplication.self),
       let u = cast(self[t].abstraction, to: Trait.self),
@@ -305,7 +315,7 @@ public struct TypeStore: Sendable {
     _ transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
   ) -> DeclarationReference {
     switch r {
-    case .builtin, .direct, .member:
+    case .builtin, .direct, .member, .synthetic:
       return r
     case .inherited(let w, let d):
       return .inherited(self.map(w, transform), d)
@@ -374,13 +384,11 @@ public struct TypeStore: Sendable {
   }
 
   /// Returns `n` with occurrences of applications of universal types β-reduced.
-  public mutating func reduced(
-    _ n: AnyTypeIdentity
-  ) -> AnyTypeIdentity {
+  public mutating func reduced(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
     self.map(n) { (s, t) in
       if let a = s[t] as? TypeApplication, let u = s[a.abstraction] as? UniversalType {
         assert(a.arguments.count == u.parameters.count)
-        let ss = TypeApplication.arguments(mapping: u.parameters, to: a.arguments.values)
+        let ss = TypeArguments(mapping: u.parameters, to: a.arguments.values)
         return .stepInto(s.substitute(ss, in: u.body))
       } else {
         return .stepInto(t)
@@ -439,7 +447,7 @@ public struct TypeStore: Sendable {
 
   /// Returns `n` with the keys in `substitutions` substituted for their corresponding values.
   public mutating func substitute(
-    _ substitutions: TypeApplication.Arguments, in n: AnyTypeIdentity
+    _ substitutions: TypeArguments, in n: AnyTypeIdentity
   ) -> AnyTypeIdentity {
     self.map(n) { (s, t) in
       // The uncheked cast is okay because type of an identity is irrelevant to `Hashable`.

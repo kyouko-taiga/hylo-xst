@@ -1,6 +1,8 @@
+import Archivist
 import Utilities
 
 /// The type of an implicit abstraction.
+@Archivable
 public struct Implication: TypeTree {
 
   /// The left-hand side of the implication, which is not empty.

@@ -72,6 +72,15 @@ public struct Program: Sendable {
     modules.values.indices
   }
 
+  /// Returns `true` iff the module containing the sources of the standard library are present.
+  public var containsStandardLibrarySources: Bool {
+    if let i = identity(module: .standardLibrary) {
+      return !self[i].sources.isEmpty
+    } else {
+      return false
+    }
+  }
+
   /// Returns the identity of the module named `moduleName`.
   public mutating func demandModule(_ moduleName: Module.Name) -> ModuleIdentity {
     if let m = modules.index(forKey: moduleName) {
@@ -196,16 +205,7 @@ public struct Program: Sendable {
   ///
   /// - Rquires: The module containing `n` is scoped.
   public func isRequirement<T: SyntaxIdentity>(_ n: T) -> Bool {
-    switch tag(of: n) {
-    case AssociatedTypeDeclaration.self:
-      return true
-    case BindingDeclaration.self:
-      return parent(containing: n, as: TraitDeclaration.self) != nil
-    case FunctionDeclaration.self:
-      return parent(containing: n, as: TraitDeclaration.self) != nil
-    default:
-      return false
-    }
+    traitRequiring(n) != nil
   }
 
   /// Returns `true` iff `n` introduces entities in the implicit scope.
@@ -345,6 +345,22 @@ public struct Program: Sendable {
     }
   }
 
+  /// If `n` is a requirement, returns the traits that introduces it. Otherwise, returns `nil`.
+  ///
+  /// - Requires: The module containing `n` is scoped.
+  public func traitRequiring<T: SyntaxIdentity>(_ n: T) -> TraitDeclaration.ID? {
+    switch tag(of: n) {
+    case AssociatedTypeDeclaration.self:
+      return parent(containing: n, as: TraitDeclaration.self)
+    case BindingDeclaration.self:
+      return parent(containing: n, as: TraitDeclaration.self)
+    case FunctionDeclaration.self:
+      return parent(containing: n, as: TraitDeclaration.self)
+    default:
+      return nil
+    }
+  }
+
   /// Returns the innermost scope that contains `n` iff it is an instance of `U`. Otherwise,
   /// returns `nil`.
   ///
@@ -439,11 +455,24 @@ public struct Program: Sendable {
     }
   }
 
-  /// Returns the declarations direactly contained in `s` that identify nodes of type `T`.
+  /// Returns the declarations directly contained in `s` that identify nodes of type `T`.
   ///
   /// - Requires: The module containing `s` is scoped.
   public func declarations<T: Declaration>(of t: T.Type, lexicallyIn s: ScopeIdentity) -> [T.ID] {
     collect(t, in: declarations(lexicallyIn: s))
+  }
+
+  /// Returns the declarations of the stored properties of `d`.
+  ///
+  /// The declarations are returned in the order of their occurrence in `d`. This order does not
+  /// necessarily matches the layout of the struct after code generation.
+  public func storedProperties(of d: StructDeclaration.ID) -> [VariableDeclaration.ID] {
+    var result: [VariableDeclaration.ID] = []
+    for m in self[d].members {
+      guard let b = cast(m, to: BindingDeclaration.self) else { continue }
+      forEachVariable(introducedBy: b, do: { (v, _) in result.append(v) })
+    }
+    return result
   }
 
   /// Returns the binding declaration that contains `d`, if any.

@@ -422,7 +422,7 @@ internal struct Solver {
         return invalidArgumentCount(k, expected: u.parameters.count)
       }
 
-      let ss = TypeApplication.arguments(mapping: u.parameters, to: k.arguments)
+      let ss = TypeArguments(mapping: u.parameters, to: k.arguments)
       let t = program.types.substitute(ss, in: u.body)
       let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: t, site: k.site))
       return delegate([subgoal])
@@ -435,7 +435,7 @@ internal struct Solver {
         return invalidArgumentCount(k, expected: parameters.count)
       }
 
-      let ss = TypeApplication.arguments(mapping: parameters, to: k.arguments)
+      let ss = TypeArguments(mapping: parameters, to: k.arguments)
       let t = program.types.demand(TypeApplication(abstraction: u.erased, arguments: ss)).erased
       let subgoal = schedule(EqualityConstraint(lhs: k.output, rhs: t, site: k.site))
       return delegate([subgoal])
