@@ -1,3 +1,5 @@
+//! no-std
+
 fun f(x: Void = (), y: Void) {}
 
 fun main() {

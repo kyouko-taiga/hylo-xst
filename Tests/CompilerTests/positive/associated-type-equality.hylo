@@ -1,3 +1,5 @@
+//! no-std
+
 trait P { type X }
 
 given Void: P { typealias X = Void }

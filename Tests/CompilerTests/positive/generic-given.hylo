@@ -1,3 +1,5 @@
+//! no-std
+
 trait P { fun g() }
 
 struct A<T> { fun g() {} }

@@ -1,3 +1,5 @@
+//! no-std
+
 struct A<T> {
   memberwise init
 }

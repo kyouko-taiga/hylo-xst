@@ -1,25 +1,59 @@
+import Driver
+import Foundation
 import FrontEnd
+import StandardLibrary
+import Utilities
 import XCTest
 
 final class CompilerTests: XCTestCase {
 
   /// The input of a compiler test.
-  struct ProgramDescription {
+  struct TestDescription {
 
-    /// The name of the program.
+    /// A test manifest.
+    struct Manifest: Decodable {
+
+      /// The options with which the input should be compiled.
+      let options: [String]?
+
+    }
+
+    /// The name of the test.
     let name: String
 
     /// The root path of the program's sources.
     let root: URL
 
+    /// The manifest of the test.
+    let manifest: Manifest
+
     /// Creates an instance with the given properties.
     init(_ name: String, _ path: String) {
       self.name = name
       self.root = URL(filePath: path)
+
+      if root.pathExtension == "package" {
+        self.manifest = (try? Self.manifest(root)) ?? .init(options: [])
+      } else if let s = try? String(contentsOf: root).firstLine, s.starts(with: "//!") {
+        self.manifest = .init(options: s.split(separator: " ").dropFirst().map(String.init(_:)))
+      } else {
+        self.manifest = .init(options: [])
+      }
     }
 
-    /// `true` iff `self` describes a pacakge.
-    var isPackage: Bool { root.pathExtension == "package" }
+    /// `true` iff `self` describes a package.
+    var isPackage: Bool {
+      root.pathExtension == "package"
+    }
+
+    /// `true` iff `self` requires a standard library.
+    var requiresStandardLibrary: Bool {
+      if let options = manifest.options {
+        return !options.contains("no-std")
+      } else {
+        return true
+      }
+    }
 
     /// Calls `action` on each Hylo source URL in the program described by `self`.
     func forEachSourceURL(_ action: (URL) throws -> Void) throws {
@@ -30,30 +64,75 @@ final class CompilerTests: XCTestCase {
       }
     }
 
+    /// Returns the manifest of the test case at `root`.
+    private static func manifest(_ root: URL) throws -> Manifest {
+      // Try to read the actual manifest.
+      if root.pathExtension == "package" {
+        let json = try Data(contentsOf: root.appendingPathComponent("package.json"))
+        return try JSONDecoder().decode(Manifest.self, from: json)
+      }
+
+      // Try to read the manifest's properties from the first line.
+      else if let s = try? String(contentsOf: root).firstLine, s.starts(with: "//!") {
+        return .init(options: s.split(separator: " ").dropFirst().map(String.init(_:)))
+      }
+
+      // Return a default manifest.
+      else { return .init(options: []) }
+    }
+
+  }
+
+  /// A temporary folder for caching compilation artifacts during testing.
+  ///
+  /// An new directory is generated every time this property is initialized and removed once all
+  /// tests have run.
+  private static let moduleCachePath: (url: URL, delete: @Sendable () -> ()) = {
+    let m = FileManager.default
+    let u = try! m.url(
+      for: .itemReplacementDirectory,
+      in: .userDomainMask,
+      appropriateFor: m.currentDirectoryURL,
+      create: true)
+    return (u, { try? FileManager.default.removeItem(at: u) })
+  }()
+
+  /// Deletes cached compilation artifacts.
+  override class func tearDown() {
+    moduleCachePath.delete()
   }
 
   /// Compiles `input` expecting no compilation error.
-  func positive(_ input: ProgramDescription) async throws {
+  func positive(_ input: TestDescription) async throws {
     let (program, _) = try await compile(input)
     assertSansError(program)
   }
 
   /// Compiles `input` expecting at least one compilation error.
-  func negative(_ input: ProgramDescription) async throws {
+  func negative(_ input: TestDescription) async throws {
     let (program, expectations) = try await compile(input)
     XCTAssert(program.containsError, "program compiled but an error was expected")
     assertExpectations(expectations, program.diagnostics)
   }
 
   /// Compiles `input` into `p` and returns expected diagnostics for each compiled source file.
-  private func compile(_ input: ProgramDescription) async throws -> (Program, [FileName: String]) {
-    var p = Program()
-    let m = p.demandModule(.init("Test"))
+  private func compile(_ input: TestDescription) async throws -> (Program, [FileName: String]) {
+    var driver = Driver(moduleCachePath: CompilerTests.moduleCachePath.url)
+
+    let requiresStandardLibrary = input.requiresStandardLibrary
+    if requiresStandardLibrary {
+      try await driver.load(.standardLibrary, withSourcesAt: standardLibrarySources)
+    }
+
+    let m = driver.program.demandModule(.init("Test"))
+    if requiresStandardLibrary {
+      driver.program[m].addDependency(.standardLibrary)
+    }
 
     var expectations: [FileName: String] = [:]
     try input.forEachSourceURL { (u) in
       let source = try SourceFile(contentsOf: u)
-      _ = p[m].addSource(source)
+      driver.program[m].addSource(source)
 
       let v = u.deletingPathExtension().appendingPathExtension("expected")
       let expected = try? String(contentsOf: v, encoding: .utf8)
@@ -61,13 +140,13 @@ final class CompilerTests: XCTestCase {
     }
 
     // Exit if there are parsing errors.
-    if p.containsError { return (p, expectations) }
+    if driver.program[m].containsError { return (driver.program, expectations) }
 
     // Semantic analysis.
-    await p.assignScopes(m)
-    p.assignTypes(m)
+    await driver.assignScopes(of: m)
+    await driver.assignTypes(of: m)
 
-    return (p, expectations)
+    return (driver.program, expectations)
   }
 
   /// Asserts that the expected diagnostics of each source file in `expectations` matches those

@@ -1,3 +1,3 @@
-negative/invalid-wildcard.hylo:1.15: error: expected '='
+negative/invalid-wildcard.hylo:3.15: error: expected '='
 fun main() { _ }
               ^

@@ -1,3 +1,5 @@
+//! no-std
+
 typealias X = Y
 typealias Y = Z
 typealias Z = X

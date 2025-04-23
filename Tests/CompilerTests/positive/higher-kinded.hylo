@@ -1,3 +1,5 @@
+//! no-std
+
 struct A<T> {
   public let x: T
   public memberwise init

@@ -1,3 +1,0 @@
-negative/missing-identifiers.package/main.hylo:1.11: error: expected parameter declaration
-fun f(a b, , d: true) {}
-          ^

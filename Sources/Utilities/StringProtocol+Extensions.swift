@@ -21,6 +21,15 @@ extension StringProtocol {
 
 }
 
+extension StringProtocol where SubSequence == Substring {
+
+  /// Returns the longest prefix of `self` that doesn't contain a newline.
+  public var firstLine: Substring {
+    prefix(while: { (c) in !c.isNewline })
+  }
+
+}
+
 extension Substring {
 
   /// Returns `true` and removes the first element in `self` if it satisfies `predicate`.

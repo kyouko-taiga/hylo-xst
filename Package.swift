@@ -36,10 +36,19 @@ let package = Package(
     .executableTarget(
       name: "hc",
       dependencies: [
+        .target(name: "Driver"),
+        .target(name: "FrontEnd"),
+        .target(name: "Utilities"),
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+      ]),
+
+    .target(
+      name: "Driver",
+      dependencies: [
         .target(name: "FrontEnd"),
         .target(name: "StandardLibrary"),
         .target(name: "Utilities"),
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Archivist", package: "archivist"),
       ]),
 
     .target(
@@ -63,7 +72,9 @@ let package = Package(
     .testTarget(
       name: "CompilerTests",
       dependencies: [
+        .target(name: "Driver"),
         .target(name: "FrontEnd"),
+        .target(name: "Utilities"),
       ],
       exclude: ["negative", "positive"]),
 

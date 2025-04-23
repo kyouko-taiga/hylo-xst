@@ -1,3 +1,5 @@
+//! no-std
+
 fun f() {
   return return
 }

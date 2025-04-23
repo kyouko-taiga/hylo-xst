@@ -1,3 +1,5 @@
+//! no-std
+
 struct A {}
 
 fun f<T, U>(x: sink U) -> U { x }

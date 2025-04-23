@@ -1,6 +1,6 @@
-negative/ambiguous-overload.hylo:8.3-4: error: ambiguous use of 'f'
+negative/ambiguous-overload.hylo:10.3-4: error: ambiguous use of 'f'
   f(x: ())
   ^
-negative/ambiguous-overload.hylo:8.8-10: error: cannot pass value of type 'Void' to parameter 'A'
+negative/ambiguous-overload.hylo:10.8-10: error: cannot pass value of type 'Void' to parameter 'A'
   f(x: ())
        ~~

@@ -1,3 +1,5 @@
+//! no-std
+
 public fun main() {
   var a: Void
   var b: a

@@ -1,3 +1,5 @@
+//! no-std
+
 fun main() {
   _ = () as {Void, Void}
 }

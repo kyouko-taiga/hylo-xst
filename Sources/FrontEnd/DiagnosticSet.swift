@@ -27,4 +27,10 @@ public struct DiagnosticSet: Hashable, Sendable {
     self.containsError = false
   }
 
+  /// Creates an instance with the given diagnostics.
+  public init<S: Sequence<Diagnostic>>(_ ds: S) {
+    self.init()
+    for d in ds { insert(d) }
+  }
+
 }

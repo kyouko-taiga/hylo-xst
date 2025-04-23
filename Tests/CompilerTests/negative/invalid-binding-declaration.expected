@@ -1,6 +1,6 @@
-negative/invalid-binding-declaration.hylo:4.7-13: error: tuple pattern cannot match values of type 'A'
+negative/invalid-binding-declaration.hylo:6.7-13: error: tuple pattern cannot match values of type 'A'
   let (x, y): A = a
       ~~~~~~
-negative/invalid-binding-declaration.hylo:5.7-15: error: incompatible labels: found '(abc:)', expected '(bca:)'
+negative/invalid-binding-declaration.hylo:7.7-15: error: incompatible labels: found '(abc:)', expected '(bca:)'
   let (abc: z) = (bca: a)
       ~~~~~~~~

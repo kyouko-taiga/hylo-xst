@@ -1,3 +1,5 @@
+//! no-std
+
 trait P<T> {
   fun f() -> T
 }

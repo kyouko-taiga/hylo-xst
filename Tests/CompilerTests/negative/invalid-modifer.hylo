@@ -1,3 +1,5 @@
+//! no-std
+
 static trait P {
 
   public type X

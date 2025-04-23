@@ -1,0 +1,25 @@
+// An indestructivble struct.
+struct Indestructible {}
+
+// A generic struct.
+struct Box<T> { var x: T }
+
+// Conformance is structurally synthesizable.
+struct A: Deinitializable {}
+
+// Conformance is structurally synthesizable.
+struct B: Deinitializable {
+  var x: {x: Void}  // structural conformance
+  var y: A          // user-defined conformance
+}
+
+// Conformance is synthesizable using the where clause.
+given <X where X: Deinitializable> Box<X>: Deinitializable {}
+
+// Conformance is not synthesizable.
+given <X> Box<X>: Deinitializable {}
+
+// A struct whose contents isn't structurally deinitializable.
+struct NotStructurallyDeinitializable: Deinitializable {
+  var x: Indestructible
+}

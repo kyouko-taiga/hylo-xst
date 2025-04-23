@@ -1,3 +1,5 @@
+//! no-std
+
 fun f0(x: Void) {}
 
 fun f1<T>(x: T) { }

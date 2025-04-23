@@ -1,3 +1,5 @@
+//! no-std
+
 trait P { fun f() }
 
 extension <T> {a: T} {

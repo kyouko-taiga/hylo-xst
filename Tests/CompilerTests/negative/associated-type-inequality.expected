@@ -1,3 +1,3 @@
-negative/associated-type-inequality.hylo:9.14-15: error: cannot pass value of type '(U::P).X' to parameter '(T::P).X'
+negative/associated-type-inequality.hylo:11.14-15: error: cannot pass value of type '(U::P).X' to parameter '(T::P).X'
   check<T.X>(x)
              ^

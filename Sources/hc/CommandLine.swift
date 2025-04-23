@@ -1,12 +1,11 @@
-import Archivist
 import ArgumentParser
+import Driver
 import Foundation
 import FrontEnd
 import Utilities
-import StandardLibrary
 
 /// The top-level command of `hc`.
-@main struct Driver: AsyncParsableCommand {
+@main struct CommandLine: AsyncParsableCommand {
 
   /// Configuration for this command.
   public static let configuration = CommandConfiguration(commandName: "hc")
@@ -29,6 +28,7 @@ import StandardLibrary
     transform: URL.init(fileURLWithPath:))
   private var moduleCachePath: URL?
 
+  /// `true` iff the driver should not read/write modules from/to the cache.
   @Flag(help: "Disable caching.")
   private var noCaching: Bool = false
 
@@ -58,36 +58,49 @@ import StandardLibrary
   public init() {}
 
   /// Executes the command.
-  @MainActor
   public mutating func run() async throws {
     try configureSearchPaths()
 
-    // Load the standard library.
-    var program = Program()
-    try await load(.standardLibrary, withSourcesAt: standardLibrarySources, into: &program)
+    var driver = Driver(moduleCachePath: noCaching ? nil : moduleCachePath!)
+
+    note("load Hylo's standard library")
+    do {
+      try await driver.loadStandardLibrary()
+    } catch let e as CompilationError {
+      render(e.diagnostics.elements)
+      CommandLine.exit(withError: ExitCode.failure)
+    }
 
     // Create a module for the product being compiled.
     let product = productName(inputs)
     note("start compiling \(product)")
-    let module = program.demandModule(product)
-    program[module].addDependency(.standardLibrary)
+    let module = driver.program.demandModule(product)
+    driver.program[module].addDependency(.standardLibrary)
 
+    // Compile from sources.
     let sources = try sourceFiles(recursivelyContainedIn: inputs)
-    parse(sources, into: &program[module])
-
-    await assignScopes(of: module, in: &program)
-    assignTypes(of: module, in: &program)
+    await perform("parsing", { await driver.parse(sources, into: module) })
+    await perform("scoping", { await driver.assignScopes(of: module) })
+    await perform("typing", { await driver.assignTypes(of: module) })
 
     let c = treePrinterConfiguration(for: treePrinterFlags)
-    for d in program.select(from: module, .satisfies({ program.parent(containing: $0).isFile })) {
-      print(program.show(d, configuration: c))
+    for d in driver.program.select(from: module, .satisfies({ driver.program.parent(containing: $0).isFile })) {
+      print(driver.program.show(d, configuration: c))
     }
 
-    let a = try program.archive(module: module)
+    let a = try driver.program.archive(module: module)
     print(a.count)
+
+    func perform(
+      _ phase: String, _ action: () async -> (elapsed: Duration, containsError: Bool)
+    ) async {
+      let a = await action()
+      note("\(phase) completed in \(a.elapsed.human)")
+      exitOnError(driver.program[module])
+    }
   }
 
-  /// Sets up the value of search paths for locating libraries and cached artefacts.
+  /// Sets up the value of search paths for locating libraries and cached artifacts.
   private mutating func configureSearchPaths() throws {
     let fm = FileManager.default
     if let m = moduleCachePath {
@@ -101,51 +114,6 @@ import StandardLibrary
 
     librarySearchPaths = .init(librarySearchPaths.uniqued())
     librarySearchPaths.removeDuplicates()
-  }
-
-  /// Loads `module`, whose sources are in `root`, into `program`.
-  ///
-  /// If `noCaching` is not set, the module is loaded from cache if an archive is found and its
-  /// fingerprint matches the fingerprint of the source files in `root`. Otherwise, the module is
-  /// compiled from sources and an archive is stored at `moduleCachePath`. If `noCaching` is set,
-  /// the module is unconditionally compiled from sources and no archive is stored.
-  private mutating func load(
-    _ module: Module.Name, withSourcesAt root: URL,
-    into program: inout Program
-  ) async throws {
-    note("start loading \(module)")
-
-    // Compute a fingerprint of all source files.
-    var sources: [SourceFile] = []
-    try SourceFile.forEach(in: root) { (s) in
-      sources.append(s)
-    }
-
-    // Attempt to load the module from disk.
-    if !noCaching, let data = archive(of: module) {
-      let h = SourceFile.fingerprint(contentsOf: sources)
-      var a = ReadableArchive(data)
-      let (_, fingerprint) = try Module.header(&a)
-      if h == fingerprint {
-        a = ReadableArchive(data)
-        try program.load(module: module, from: &a)
-        return
-      } else {
-        note("archive is out of date")
-      }
-    }
-
-    // Compile the module from sources.
-    let m = program.demandModule(module)
-    await parse(sources, into: &program[m])
-    await assignScopes(of: m, in: &program)
-    await assignTypes(of: m, in: &program)
-
-    if !noCaching {
-      let archive = try program.archive(module: m)
-      try archive.write(
-        into: moduleCachePath!.appending(component: module.rawValue + ".hylomodule"))
-    }
   }
 
   /// Returns an array with all the source files in `inputs` and their subdirectories.
@@ -163,69 +131,24 @@ import StandardLibrary
     return sources
   }
 
-  /// Searches for an archive of `module` in `librarySearchPaths`, returning it if found.
-  private func archive(of module: Module.Name) -> Data? {
-    for prefix in librarySearchPaths {
-      let path = prefix.appending(path: module.rawValue + ".hylomodule")
-      return try? Data(contentsOf: path)
-    }
-    return nil
-  }
-
   /// If `module` contains errors, renders all its diagnostics and exits with `ExitCode.failure`.
   /// Otherwise, does nothing.
-  @MainActor
   private func exitOnError(_ module: Module) {
     if module.containsError {
       render(module.diagnostics)
-      Driver.exit(withError: ExitCode.failure)
+      CommandLine.exit(withError: ExitCode.failure)
     }
   }
 
   /// Renders the given diagnostics to the standard error.
-  @MainActor
   private func render<T: Sequence<Diagnostic>>(_ ds: T) {
     let s: Diagnostic.TextOutputStyle = ProcessInfo.ansiTerminalIsConnected ? .styled : .unstyled
     var o = ""
     for d in ds {
       d.render(into: &o, showingPaths: .absolute, style: s)
     }
-    print(o, to: &Driver.standardError)
-  }
-
-  /// Parses the source files in `inputs` and adds them to `module`.
-  @MainActor
-  private func parse(_ sources: [SourceFile], into module: inout Module) {
-    let clock = ContinuousClock()
-    let elapsed = clock.measure {
-      for s in sources {
-        module.addSource(s)
-      }
-    }
-    note("parsed \(module.sourceFileIdentities.count) files in \(elapsed.human)")
-    exitOnError(module)
-  }
-
-  /// Assignes the trees in `module` to their scopes, exiting if an error occurred.
-  @MainActor
-  private func assignScopes(of module: Program.ModuleIdentity, in program: inout Program) async {
-    let clock = ContinuousClock()
-    let elapsed = await clock.measure {
-      await program.assignScopes(module)
-    }
-    note("scoping completed in \(elapsed.human)")
-    exitOnError(program[module])
-  }
-
-  /// Assigns the trees in `module` to their types, exiting if an error occured.
-  @MainActor
-  private func assignTypes(of module: Program.ModuleIdentity, in program: inout Program) {
-    let clock = ContinuousClock()
-    let elapsed = clock.measure {
-      program.assignTypes(module)
-    }
-    note("typing completed in \(elapsed.human)")
-    exitOnError(program[module])
+    var stderr = StandardError()
+    print(o, to: &stderr)
   }
 
   /// Writes `message` to the standard output iff `self.verbose` is `true`.
@@ -233,6 +156,13 @@ import StandardLibrary
     if verbose {
       print(message())
     }
+  }
+
+  /// Writes `message` to the standard error and exit.
+  private func fatal(_ message: String) {
+    var stderr = StandardError()
+    print(message, to: &stderr)
+    CommandLine.exit(withError: ExitCode.failure)
   }
 
   /// Returns the configuration corresponding to the given `flags`.

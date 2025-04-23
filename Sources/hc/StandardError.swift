@@ -8,10 +8,3 @@ internal struct StandardError: TextOutputStream, Sendable {
   }
 
 }
-
-extension Driver {
-
-  /// The standard error.
-  @MainActor internal static var standardError = StandardError()
-
-}
