@@ -24,7 +24,7 @@ private func testCases(_ suite: URL) throws -> [URL] {
   return urls.filter { (u) in u.pathExtension == "hylo" || u.pathExtension == "package" }
 }
 
-func testCaseIdentifier(_ testCase: URL) -> String {
+private func testCaseIdentifier(_ testCase: URL) -> String {
   testCase.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "-", with: "_")
 }
 
@@ -36,7 +36,7 @@ private func main() throws {
     result += """
 
       func test_negative_\(i)() async throws {
-        try await negative(.init("\(i)", "\(u.absoluteURL.path())"))
+        try await negative(.init("\(u.absoluteURL.path())"))
       }
 
     """
@@ -47,7 +47,7 @@ private func main() throws {
     result += """
 
       func test_positive_\(i)() async throws {
-        try await positive(.init("\(i)", "\(u.absoluteURL.path())"))
+        try await positive(.init("\(u.absoluteURL.path())"))
       }
 
     """

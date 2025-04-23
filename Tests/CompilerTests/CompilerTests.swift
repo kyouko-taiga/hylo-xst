@@ -18,9 +18,6 @@ final class CompilerTests: XCTestCase {
 
     }
 
-    /// The name of the test.
-    let name: String
-
     /// The root path of the program's sources.
     let root: URL
 
@@ -28,8 +25,7 @@ final class CompilerTests: XCTestCase {
     let manifest: Manifest
 
     /// Creates an instance with the given properties.
-    init(_ name: String, _ path: String) {
-      self.name = name
+    init(_ path: String) {
       self.root = URL(filePath: path)
 
       if root.pathExtension == "package" {
