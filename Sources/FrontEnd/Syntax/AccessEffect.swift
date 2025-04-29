@@ -18,7 +18,7 @@ public enum AccessEffect: UInt8, Sendable {
   case sink = 8
 
   /// Value may be accessed with any of the other effects, depending on the context.
-  case yielded = 16
+  case auto = 16
 
   /// Creates an instance corresponding to the capability of a binding introduced by `i`.
   public init(_ i: BindingPattern.Introducer) {
@@ -28,6 +28,16 @@ public enum AccessEffect: UInt8, Sendable {
     case .inout: self = .inout
     case .sinklet, .var: self = .sink
     }
+  }
+
+  /// `true` iff `self` is `let` or `sink`.
+  public var isNonMutating: Bool {
+    (self == .let) || (self == .sink)
+  }
+
+  /// `true` iff `self` is `inout` or `set`.
+  public var isMutating: Bool {
+    (self == .inout) || (self == .set)
   }
 
 }

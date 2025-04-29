@@ -32,6 +32,12 @@ import Utilities
   @Flag(help: "Disable caching.")
   private var noCaching: Bool = false
 
+  /// `true` iff the driver should not load the standard library.
+  @Flag(
+    name: [.customLong("no-std")],
+    help: "Do not load the standard library")
+  private var noStandardLibrary: Bool = false
+
   /// The kind of output that should be produced by the compiler.
   @Option(
     name: [.customLong("emit")],
@@ -60,22 +66,26 @@ import Utilities
   /// Executes the command.
   public mutating func run() async throws {
     try configureSearchPaths()
-
     var driver = Driver(moduleCachePath: noCaching ? nil : moduleCachePath!)
 
-    note("load Hylo's standard library")
-    do {
-      try await driver.loadStandardLibrary()
-    } catch let e as CompilationError {
-      render(e.diagnostics.elements)
-      CommandLine.exit(withError: ExitCode.failure)
+    // Load the standard library.
+    if !noStandardLibrary {
+      note("load Hylo's standard library")
+      do {
+        try await driver.loadStandardLibrary()
+      } catch let e as CompilationError {
+        render(e.diagnostics.elements)
+        CommandLine.exit(withError: ExitCode.failure)
+      }
     }
 
     // Create a module for the product being compiled.
     let product = productName(inputs)
     note("start compiling \(product)")
     let module = driver.program.demandModule(product)
-    driver.program[module].addDependency(.standardLibrary)
+    if !noStandardLibrary {
+      driver.program[module].addDependency(.standardLibrary)
+    }
 
     // Compile from sources.
     let sources = try sourceFiles(recursivelyContainedIn: inputs)

@@ -52,8 +52,9 @@ public struct Parser {
   ///     declaration ::=
   ///       associated-type-declaration
   ///       binding-declaration
-  ///       conformance-declaration
   ///       extension-declaration
+  ///       function-declaration
+  ///       given-declaration
   ///       struct-declaration
   ///       trait-declaration
   ///
@@ -66,12 +67,14 @@ public struct Parser {
     switch head.tag {
     case .inout, .let, .set, .sink, .var:
       return try .init(parseBindingDeclaration(after: prologue, in: &file))
+    case .fun:
+      return try parseFunctionOrBundleDeclaration(after: prologue, in: &file)
     case .given:
       return try parseGivenDeclaration(after: prologue, in: &file)
     case .extension:
       return try .init(parseExtensionDeclaration(after: prologue, in: &file))
-    case .fun, .`init`:
-      return try .init(parseFunctionDeclaration(after: prologue, in: &file))
+    case .`init`:
+      return try .init(parseInitializerDeclaration(after: prologue, in: &file))
     case .struct:
       return try .init(parseStructDeclaration(after: prologue, in: &file))
     case .trait:
@@ -81,7 +84,7 @@ public struct Parser {
     case .typealias:
       return try .init(parseTypeAliasDeclaration(after: prologue, in: &file))
     case .name where head.text == "memberwise":
-      return try .init(parseFunctionDeclaration(after: prologue, in: &file))
+      return try .init(parseInitializerDeclaration(after: prologue, in: &file))
     default:
       throw expected("declaration", at: .empty(at: head.site.start))
     }
@@ -238,39 +241,91 @@ public struct Parser {
   /// Parses a function declaration.
   ///
   ///     function-declaration ::=
-  ///       'fun' function-identifier parameter-clauses return-type-ascription? callable-body?
-  ///       'init' parameter-clauses callable-body?
-  ///       'memberwise' 'init'
-  ///     parameter-clauses ::=
-  ///       compile-time-parameters? run-time-parameters
+  ///       function-declaration-head callable-body?
+  ///     function-declaration-head ::=
+  ///       'fun' function-identifier parameter-clauses return-type-ascription?
   ///
   private mutating func parseFunctionDeclaration(
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> FunctionDeclaration.ID {
-    let introducer = try parseFunctionIntroducer()
+    let head = try take(.fun) ?? expected("'fun'")
+    let introducer = Parsed(FunctionDeclaration.Introducer.fun, at: head.site)
 
-    // Custom function?
-    if introducer.value == .fun {
-      let n = try parseFunctionIdentifier()
-      let s = try parseOptionalCompileTimeParameters(in: &file)
-      let r = try parseParenthesizedParameterList(in: &file)
-      let e = parseOptionalAccessEffect() ?? .init(.let, at: .empty(at: position))
-      let o = try parseOptionalReturnTypeAscription(in: &file)
+    let n = try parseFunctionIdentifier()
+    let (s, r) = try parseParameterClauses(in: &file)
+    let e = parseOptionalAccessEffect() ?? .init(.let, at: .empty(at: position))
+    let o = try parseOptionalReturnTypeAscription(in: &file)
+    let b = try parseOptionalCallableBody(in: &file)
+    return file.insert(
+      FunctionDeclaration(
+        modifiers: prologue,
+        introducer: introducer, identifier: n,
+        staticParameters: s, parameters: r,
+        effect: e,
+        output: o, body: b,
+        site: introducer.site.extended(upTo: position.index)))
+  }
+
+  /// Parses a function bundle declaration.
+  ///
+  ///     function-declaration ::=
+  ///       function-head callable-body?
+  ///     function-head ::=
+  ///       'fun' function-identifier parameter-clauses access-effect? return-type-ascription?
+  ///     function-bundle-declaration ::=
+  ///       function-bundle-head bundle-body?
+  ///     function-bundle-head ::=
+  ///       'fun' function-identifier parameter-clauses 'auto' return-type-ascription?
+  ///
+  private mutating func parseFunctionOrBundleDeclaration(
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
+  ) throws -> DeclarationIdentity {
+    let head = try take(.fun) ?? expected("'fun'")
+    let introducer = Parsed(FunctionDeclaration.Introducer.fun, at: head.site)
+
+    let identifier = try parseFunctionIdentifier()
+    let (ss, ps) = try parseParameterClauses(in: &file)
+    let effect = parseOptionalAccessEffect() ?? .init(.let, at: .empty(at: position))
+    let output = try parseOptionalReturnTypeAscription(in: &file)
+
+    if effect.value == .auto {
+      let b = try parseBundleBody(in: &file)
+      let i = asBundleIdentifier(identifier)
+      let n = file.insert(
+        FunctionBundleDeclaration(
+          modifiers: prologue,
+          introducer: .init(head, at: head.site), identifier: i,
+          staticParameters: ss, parameters: ps, effect: effect,
+          output: output, variants: b,
+          site: introducer.site.extended(upTo: position.index)))
+      return .init(n)
+    } else {
       let b = try parseOptionalCallableBody(in: &file)
-      return file.insert(
+      let n = file.insert(
         FunctionDeclaration(
           modifiers: prologue,
-          introducer: introducer, identifier: n,
-          staticParameters: s, parameters: r,
-          effect: e,
-          output: o, body: b,
+          introducer: introducer, identifier: identifier,
+          staticParameters: ss, parameters: ps, effect: effect,
+          output: output, body: b,
           site: introducer.site.extended(upTo: position.index)))
+      return .init(n)
     }
+  }
+
+  /// Parses an initializer declaration.
+  ///
+  ///     initializer-declaration ::=
+  ///       'init' parameter-clauses callable-body?
+  ///       'memberwise' 'init'
+  ///
+  private mutating func parseInitializerDeclaration(
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
+  ) throws -> FunctionDeclaration.ID {
+    let introducer = try parseInitializerIntroducer()
 
     // Custom initializer?
-    else if introducer.value == .`init` {
-      let s = try parseOptionalCompileTimeParameters(in: &file)
-      let r = try parseParenthesizedParameterList(in: &file)
+    if introducer.value == .`init` {
+      let (s, r) = try parseParameterClauses(in: &file)
       let b = try parseOptionalCallableBody(in: &file)
       return file.insert(
         FunctionDeclaration(
@@ -297,24 +352,35 @@ public struct Parser {
     else { unreachable("invalid introducer") }
   }
 
-  /// Parses the introducer of a binding pattern.
+  /// Parses the introducer of an initializer declaration.
   ///
-  ///     function-introducer ::=
-  ///       'fun'
+  ///     initializer-introducer ::=
   ///       'memberwise'? 'init'
   ///
-  private mutating func parseFunctionIntroducer(
-  ) throws -> Parsed<FunctionDeclaration.Introducer> {
-    if let t = take(.fun) {
-      return .init(.fun, at: t.site)
-    } else if let t = take(.`init`) {
+  private mutating func parseInitializerIntroducer() throws
+    -> Parsed<FunctionDeclaration.Introducer>
+  {
+    if let t = take(.`init`) {
       return .init(.`init`, at: t.site)
     } else if let t = take(contextual: "memberwise") {
       let u = take(.`init`) ?? fix(expected("'init'"), with: t)
       return .init(.memberwiseinit, at: t.site.extended(toCover: u.site))
     } else {
-      throw expected("'fun'")
+      throw expected("'init'")
     }
+  }
+
+  /// Parses the parameter clauses of a callable declaration.
+  ///
+  ///     parameter-clauses ::=
+  ///       compile-time-parameters? run-time-parameters
+  ///
+  private mutating func parseParameterClauses(
+    in file: inout Module.SourceContainer
+  ) throws -> (StaticParameters, [ParameterDeclaration.ID]) {
+    let s = try parseOptionalCompileTimeParameters(in: &file)
+    let r = try parseParenthesizedParameterList(in: &file)
+    return (s, r)
   }
 
   /// Parses a compile-time parameter list iff the next token is a left angle bracket. Otherwise,
@@ -520,6 +586,31 @@ public struct Parser {
         try m1.parseStatement(in: &file)
       }
     }
+  }
+
+  private mutating func parseBundleBody(
+    in file: inout Module.SourceContainer
+  ) throws -> [VariantDeclaration.ID] {
+    let start = position
+    let vs = try inBraces { (m0) in
+      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
+        try m1.parseVariant(in: &file)
+      }
+    }
+
+    if vs.isEmpty {
+      report(.init("bundle requires at least one variant declaration", at: .empty(at: start)))
+    }
+    return vs
+  }
+
+  /// Parses the body of a variant in a function or subscript bundle.
+  private mutating func parseVariant(
+    in file: inout Module.SourceContainer
+  ) throws -> VariantDeclaration.ID {
+    let k = try parseOptionalAccessEffect() ?? expected("access effect")
+    let b = try parseOptionalCallableBody(in: &file)
+    return file.insert(VariantDeclaration(effect: k, body: b, site: span(from: k.site.start)))
   }
 
   /// Parses a struct declaration.
@@ -850,7 +941,7 @@ public struct Parser {
       return try .init(parseImplicitlyQualifiedNameExpression(in: &file))
     case .name:
       return try .init(parseUnqualifiedNameExpression(in: &file))
-    case .inout, .let, .set, .sink:
+    case .auto, .inout, .let, .set, .sink:
       return try .init(parseRemoteTypeExpression(in: &file))
     case .leftBrace:
       return try .init(parseTupleTypeExpression(in: &file))
@@ -878,7 +969,7 @@ public struct Parser {
   /// Parses an access effect.
   ///
   ///     access-effect ::= (one of)
-  ///       let inout set sink
+  ///       auto let inout set sink
   ///
   private mutating func parseAccessEffect() -> Parsed<AccessEffect> {
     if let k = parseOptionalAccessEffect() {
@@ -891,10 +982,12 @@ public struct Parser {
   /// Parses an access effect iff the next token denotes one.
   private mutating func parseOptionalAccessEffect() -> Parsed<AccessEffect>? {
     switch peek()?.tag {
-    case .let:
-      return Parsed(.let, at: take()!.site)
+    case .auto:
+      return Parsed(.auto, at: take()!.site)
     case .inout:
       return Parsed(.inout, at: take()!.site)
+    case .let:
+      return Parsed(.let, at: take()!.site)
     case .set:
       return Parsed(.set, at: take()!.site)
     case .sink:
@@ -1284,7 +1377,7 @@ public struct Parser {
   ///       operator-identifier
   ///
   private mutating func parseFunctionIdentifier(
-  ) throws -> Parsed<FunctionDeclaration.Identifier> {
+  ) throws -> Parsed<FunctionIdentifier> {
     if let t = peek() {
       if t.isOperatorNotation {
         return try parseOperatorIdentifier()
@@ -1299,13 +1392,23 @@ public struct Parser {
     return .init(.simple(identifier.value), at: identifier.site)
   }
 
+  /// Returns `i` asa bundle identifier, reporting an error if it's an operator.
+  private mutating func asBundleIdentifier(_ i: Parsed<FunctionIdentifier>) -> Parsed<String> {
+    if case .simple(let s) = i.value {
+      return .init(s, at: i.site)
+    } else {
+      report(.init("operator identifier cannot be used to name bundle", at: i.site))
+      return .init(i.value.description, at: i.site)
+    }
+  }
+
   /// Parses an operator identifier.
   ///
   ///     operator-identifier ::= (token)
   ///       operator-notation operator
   ///
   private mutating func parseOperatorIdentifier(
-  ) throws -> Parsed<FunctionDeclaration.Identifier> {
+  ) throws -> Parsed<FunctionIdentifier> {
     let head = try take(if: \.isOperatorNotation) ?? expected("operator notation")
     let notation: OperatorNotation = switch head.tag {
     case .infix: .infix
@@ -1616,7 +1719,7 @@ public struct Parser {
     try commaSeparated(until: { (t) in t.tag == rightDelimiter }, parse)
   }
 
-  /// Parses a list of instances of `T` separated by semicolons.
+  /// Parses a list of instances of `T` separated by newlines or semicolons.
   private mutating func semicolonSeparated<T>(
     until rightDelimiter: Token.Tag?, _ parse: (inout Self) throws -> T
   ) throws -> [T] {
@@ -1663,7 +1766,7 @@ public struct Parser {
   }
 
   /// Ensures there is a statement delimiter before the next token, reporting an error otherwise.
-  private mutating  func ensureStatementDelimiter() {
+  private mutating func ensureStatementDelimiter() {
     if !statementDelimiterBeforeNextToken() {
       report(missingSemicolon(at: .empty(at: position)))
     }

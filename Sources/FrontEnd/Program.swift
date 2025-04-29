@@ -139,8 +139,8 @@ public struct Program: Sendable {
   /// Returns the elements in `ns` that identify nodes of type `T`.
   public func collect<S: Sequence, T: Syntax>(
     _ t: T.Type, in ns: S
-  ) -> [T.ID] where S.Element: SyntaxIdentity {
-    ns.compactMap({ (n) in cast(n, to: t) })
+  ) -> (some Sequence<ConcreteSyntaxIdentity<T>>) where S.Element: SyntaxIdentity {
+    ns.lazy.compactMap({ (n) in cast(n, to: t) })
   }
 
   /// Returns a textual representation of `item` using the given configuration.
@@ -237,11 +237,12 @@ public struct Program: Sendable {
   /// Returns `true` iff `n` declares a member entity.
   ///
   /// - Requires: The module containing `s` is scoped.
-  public func isMember(_ n: FunctionDeclaration.ID) -> Bool {
-    if let m = parent(containing: n).node {
-      return isTypeDeclaration(m) || isTypeExtendingDeclaration(m)
+  public func isMember<T: SyntaxIdentity>(_ n: T) -> Bool {
+    guard let m = parent(containing: n).node else { return false }
+    if tag(of: n) == VariantDeclaration.self {
+      return isMember(m)
     } else {
-      return false
+      return isTypeDeclaration(m) || isTypeExtendingDeclaration(m)
     }
   }
 
@@ -345,6 +346,18 @@ public struct Program: Sendable {
     }
   }
 
+  /// Returns the innermost scope that contains `n` iff it is an instance of `U`. Otherwise,
+  /// returns `nil`.
+  ///
+  /// - Requires: The module containing `n` is scoped.
+  public func parent<T: SyntaxIdentity, U: Syntax>(containing n: T, as: U.Type) -> U.ID? {
+    if let m = parent(containing: n).node {
+      return cast(m, to: U.self)
+    } else {
+      return nil
+    }
+  }
+
   /// If `n` is a requirement, returns the traits that introduces it. Otherwise, returns `nil`.
   ///
   /// - Requires: The module containing `n` is scoped.
@@ -357,18 +370,6 @@ public struct Program: Sendable {
     case FunctionDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)
     default:
-      return nil
-    }
-  }
-
-  /// Returns the innermost scope that contains `n` iff it is an instance of `U`. Otherwise,
-  /// returns `nil`.
-  ///
-  /// - Requires: The module containing `n` is scoped.
-  public func parent<T: SyntaxIdentity, U: Syntax>(containing n: T, as: U.Type) -> U.ID? {
-    if let m = parent(containing: n).node {
-      return cast(m, to: U.self)
-    } else {
       return nil
     }
   }
@@ -458,7 +459,9 @@ public struct Program: Sendable {
   /// Returns the declarations directly contained in `s` that identify nodes of type `T`.
   ///
   /// - Requires: The module containing `s` is scoped.
-  public func declarations<T: Declaration>(of t: T.Type, lexicallyIn s: ScopeIdentity) -> [T.ID] {
+  public func declarations<T: Declaration>(
+    of t: T.Type, lexicallyIn s: ScopeIdentity
+  ) -> some Sequence<ConcreteSyntaxIdentity<T>> {
     collect(t, in: declarations(lexicallyIn: s))
   }
 
@@ -524,6 +527,8 @@ public struct Program: Sendable {
 
   /// Returns the name of the unique entity declared by `d`, or `nil` if `d` declares zero or more
   /// than one named entity.
+  ///
+  /// - Requires: The module containing `d` is scoped.
   public func name(of d: DeclarationIdentity) -> Name? {
     switch tag(of: d) {
     case AssociatedTypeDeclaration.self:
@@ -532,6 +537,8 @@ public struct Program: Sendable {
       return name(of: castUnchecked(d, to: ParameterDeclaration.self))
     case TraitDeclaration.self:
       return name(of: castUnchecked(d, to: TraitDeclaration.self))
+    case FunctionBundleDeclaration.self:
+      return name(of: castUnchecked(d, to: FunctionBundleDeclaration.self))
     case FunctionDeclaration.self:
       return name(of: castUnchecked(d, to: FunctionDeclaration.self))
     case GenericParameterDeclaration.self:
@@ -542,6 +549,8 @@ public struct Program: Sendable {
       return name(of: castUnchecked(d, to: TypeAliasDeclaration.self))
     case VariableDeclaration.self:
       return name(of: castUnchecked(d, to: VariableDeclaration.self))
+    case VariantDeclaration.self:
+      return name(of: castUnchecked(d, to: VariantDeclaration.self))
     default:
       return nil
     }
@@ -549,6 +558,11 @@ public struct Program: Sendable {
 
   /// Returns the name of `d`.
   public func name<T: TypeDeclaration>(of d: T.ID) -> Name {
+    Name(identifier: self[d].identifier.value)
+  }
+
+  /// Returns the name of `d`.
+  public func name(of d: FunctionBundleDeclaration.ID) -> Name {
     Name(identifier: self[d].identifier.value)
   }
 
@@ -582,6 +596,14 @@ public struct Program: Sendable {
   /// Returns the name of `d`.
   public func name(of d: VariableDeclaration.ID) -> Name {
     Name(identifier: self[d].identifier.value)
+  }
+
+  /// Returns the name of `d`.
+  ///
+  /// - Requires: The module containing `d` is scoped.
+  public func name(of d: VariantDeclaration.ID) -> Name {
+    let n = parent(containing: d).node.flatMap(castToDeclaration(_:)).flatMap(name(of:))!
+    return .init(identifier: n.identifier, labels: n.labels, introducer: self[d].effect.value)
   }
 
   /// If `n` is a function or subscript call, returns its callee. Otherwise, returns `nil`.

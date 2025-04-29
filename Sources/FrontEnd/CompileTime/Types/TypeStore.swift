@@ -231,7 +231,7 @@ public struct TypeStore: Sendable {
     }
   }
 
-  /// Returns `(C, [A...], T)` iff `n` has the form `C ==> [{self: set T}](A...) -> Void`.
+  /// Returns `(CTX, [A...], T)` iff `n` has the form `CTX ==> [{self: set T}](A...) -> Void`.
   public func seenAsConstructor<T: TypeIdentity>(
     _ n: T
   ) -> (context: ContextClause, inputs: [Parameter], output: AnyTypeIdentity)? {
@@ -245,6 +245,68 @@ public struct TypeStore: Sendable {
     return (context: c, inputs: f.inputs, output: p.projectee)
   }
 
+  /// Returns the type of the variant `k` of a bundle of type `n`.
+  ///
+  /// This method returns a copy of `n` in which occurrences of the `auto` effect are substituted
+  /// for `k` and, iff `k` is non-mutating, the return type is the original return type along with
+  /// the types of the values notionally modified by the bundle.
+  ///
+  /// For example, given a type `[{x: auto A}](y: auto B) auto -> C`, this method returns
+  /// - `[{x: let A}](y: let B) let -> {A, B, C}` with `k == .let`; and
+  /// - `[{x: set A}](y: set B) set -> C` with `k == .set`.
+  ///
+  /// If `k` is a non-mutating effect and `C` is equal to `Void`, then `C` is excluded from the
+  /// return type of the result. For instance, if `C` is `Void` in the above example, this method
+  /// returns `[{x: let A}](y: let B) let -> {A, B}` with `k == .let`.
+  ///
+  /// - Requires: `n` is the type of a function bundle.
+  public mutating func variant(_ k: AccessEffect, of n: Arrow.ID) -> Arrow.ID {
+    assert(k != .auto, "invalid variant effect")
+    assert(self[n].effect == .auto, "not a bundle")
+
+    /// The types of the adapted inputs.
+    var inputs: [Parameter] = []
+    /// The type of the adapted environment.
+    var environment: AnyTypeIdentity = .never
+    /// The types of the values that appear in the return type of a non-mutating variant.
+    var updates: [Tuple.Element] = []
+
+    if let x = self[self[n].environment] as? Tuple {
+      var es: [Tuple.Element] = []
+      for e in x.elements {
+        if let t = self[e.type] as? RemoteType, t.access == .auto {
+          let u = demand(RemoteType(projectee: t.projectee, access: k)).erased
+          es.append(.init(label: e.label, type: u))
+          if k.isNonMutating { updates.append(.init(label: nil, type: t.projectee)) }
+        } else {
+          es.append(e)
+        }
+      }
+      environment = demand(Tuple(elements: es)).erased
+    } else {
+      environment = self[n].environment
+    }
+
+    for p in self[n].inputs {
+      if p.access == .auto {
+        inputs.append(.init(label: p.label, access: k, type: p.type, defaultValue: p.defaultValue))
+        if k.isNonMutating { updates.append(.init(label: nil, type: p.type)) }
+      } else {
+        inputs.append(p)
+      }
+    }
+
+    let output = if k.isMutating {
+      self[n].output
+    } else if dealiased(self[n].output) == .void {
+      demand(Tuple(elements: updates)).erased
+    } else {
+      demand(Tuple(elements: updates + [.init(label: nil, type: self[n].output)])).erased
+    }
+
+    assert(!self[n].isByName)
+    return demand(Arrow(effect: k, environment: environment, inputs: inputs, output: output))
+  }
 
   /// Returns the value at `p` on the type identified by `n` if that type is an instance of `T`.
   /// Otherwise, returns `nil`.

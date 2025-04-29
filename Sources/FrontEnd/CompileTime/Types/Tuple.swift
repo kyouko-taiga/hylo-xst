@@ -35,8 +35,8 @@ public struct Tuple: TypeTree {
   public let elements: [Element]
 
   /// Creates an instance with the given properties.
-  public init(elements: [Element]) {
-    self.elements = elements
+  public init<S: Sequence<Element>>(elements: S) {
+    self.elements = Array(elements)
   }
 
   /// Properties about `self`.

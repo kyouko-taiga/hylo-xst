@@ -12,6 +12,7 @@ public struct Token: Hashable, Sendable {
     case underscore
 
     // Reserved keywords
+    case auto
     case `extension`
     case `false`
     case fun
@@ -156,7 +157,7 @@ public struct Token: Hashable, Sendable {
   /// `true` iff `self` is an access effect.
   public var isAccessEffect: Bool {
     switch tag {
-    case .let, .inout, .set, .sink:
+    case .auto, .inout, .let, .set, .sink:
       return true
     default:
       return false

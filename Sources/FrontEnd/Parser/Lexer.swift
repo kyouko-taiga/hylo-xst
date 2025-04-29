@@ -54,6 +54,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     let tag: Token.Tag
     switch word {
     case "_": tag = .underscore
+    case "auto": tag = .auto
     case "extension": tag = .extension
     case "false": tag = .false
     case "fun": tag = .fun

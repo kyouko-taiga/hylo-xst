@@ -53,6 +53,8 @@ extension Program {
       traverse(castUnchecked(n, to: ConformanceDeclaration.self), calling: &v)
     case ExtensionDeclaration.self:
       traverse(castUnchecked(n, to: ExtensionDeclaration.self), calling: &v)
+    case FunctionBundleDeclaration.self:
+      traverse(castUnchecked(n, to: FunctionBundleDeclaration.self), calling: &v)
     case FunctionDeclaration.self:
       traverse(castUnchecked(n, to: FunctionDeclaration.self), calling: &v)
     case GenericParameterDeclaration.self:
@@ -71,6 +73,10 @@ extension Program {
       traverse(castUnchecked(n, to: UsingDeclaration.self), calling: &v)
     case VariableDeclaration.self:
       break
+    case VariantDeclaration.self:
+      traverse(castUnchecked(n, to: VariantDeclaration.self), calling: &v)
+    case UsingDeclaration.self:
+      traverse(castUnchecked(n, to: UsingDeclaration.self), calling: &v)
 
     case BooleanLiteral.self:
       break
@@ -165,6 +171,14 @@ extension Program {
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: FunctionBundleDeclaration.ID, calling v: inout T) {
+    visit(self[n].staticParameters, calling: &v)
+    visit(self[n].parameters, calling: &v)
+    visit(self[n].output, calling: &v)
+    visit(self[n].variants, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: FunctionDeclaration.ID, calling v: inout T) {
     visit(self[n].staticParameters, calling: &v)
     visit(self[n].parameters, calling: &v)
@@ -204,6 +218,11 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: UsingDeclaration.ID, calling v: inout T) {
     visit(self[n].witness, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: VariantDeclaration.ID, calling v: inout T) {
+    if let b = self[n].body { visit(b, calling: &v) }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

@@ -184,6 +184,8 @@ public struct Typer {
       check(castUnchecked(d, to: ConformanceDeclaration.self))
     case ExtensionDeclaration.self:
       check(castUnchecked(d, to: ExtensionDeclaration.self))
+    case FunctionBundleDeclaration.self:
+      check(castUnchecked(d, to: FunctionBundleDeclaration.self))
     case FunctionDeclaration.self:
       check(castUnchecked(d, to: FunctionDeclaration.self))
     case GenericParameterDeclaration.self:
@@ -351,6 +353,17 @@ public struct Typer {
   }
 
   /// Type checks `d`.
+  private mutating func check(_ d: FunctionBundleDeclaration.ID) {
+    let t = declaredType(of: d)
+
+    check(program[d].staticParameters)
+    check(program[d].parameters)
+    for v in program[d].variants { check(v) }
+
+    // TODO: Redeclarations
+  }
+
+  /// Type checks `d`.
   private mutating func check(_ d: FunctionDeclaration.ID) {
     let t = declaredType(of: d)
 
@@ -430,6 +443,17 @@ public struct Typer {
   /// Type checks `d`.
   private mutating func check(_ d: UsingDeclaration.ID) {
     _ = declaredType(of: d)
+  }
+
+  /// Type checks `d`.
+  private mutating func check(_ d: VariantDeclaration.ID) {
+    let t = declaredType(of: d)
+
+    if let a = program.types[program.types.head(t)] as? Arrow {
+      check(body: program[d].body, of: .init(d), expectingOutputType: a.output)
+    } else {
+      assert(t[.hasError])
+    }
   }
 
   /// Type checks `ps`.
@@ -713,6 +737,8 @@ public struct Typer {
       return declaredType(of: castUnchecked(d, to: BindingDeclaration.self))
     case ConformanceDeclaration.self:
       return declaredType(of: castUnchecked(d, to: ConformanceDeclaration.self))
+    case FunctionBundleDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: FunctionBundleDeclaration.self))
     case FunctionDeclaration.self:
       return declaredType(of: castUnchecked(d, to: FunctionDeclaration.self))
     case GenericParameterDeclaration.self:
@@ -729,6 +755,8 @@ public struct Typer {
       return declaredType(of: castUnchecked(d, to: VariableDeclaration.self))
     case UsingDeclaration.self:
       return declaredType(of: castUnchecked(d, to: UsingDeclaration.self))
+    case VariantDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: VariantDeclaration.self))
     default:
       program.unexpected(d)
     }
@@ -799,6 +827,18 @@ public struct Typer {
   }
 
   /// Returns the declared type of `d` without checking.
+  private mutating func declaredType(of d: FunctionBundleDeclaration.ID) -> AnyTypeIdentity {
+    if let memoized = program[d.module].type(assignedTo: d) { return memoized }
+    assert(d.module == module, "dependency is not typed")
+
+    initializeContext(program[d].staticParameters)
+    let inputs = declaredTypes(of: program[d].parameters)
+    let result = declaredArrowType(of: d, taking: inputs)
+    program[module].setType(result, for: d)
+    return result
+  }
+
+  /// Returns the declared type of `d` without checking.
   private mutating func declaredType(of d: FunctionDeclaration.ID) -> AnyTypeIdentity {
     if let memoized = program[d.module].type(assignedTo: d) { return memoized }
     assert(d.module == module, "dependency is not typed")
@@ -827,23 +867,7 @@ public struct Typer {
       inputs = declaredTypes(of: program[d].parameters)
     }
 
-    let output = program[d].output.map({ (a) in evaluateTypeAscription(a) }) ?? .void
-    var result: AnyTypeIdentity
-
-    if program.isMember(d) {
-      let p = program.parent(containing: d)
-      let receiver = typeOfSelf(in: p)!
-
-      var e = demand(RemoteType(projectee: receiver, access: program[d].effect.value)).erased
-      e = demand(Tuple(elements: [.init(label: "self", type: e)])).erased
-
-      result = demand(Arrow(environment: e, inputs: inputs, output: output)).erased
-      result = introduce(program[d].staticParameters, into: result)
-    } else {
-      result = demand(Arrow(environment: .void, inputs: inputs, output: output)).erased
-      result = introduce(program[d].staticParameters, into: result)
-    }
-
+    let result = declaredArrowType(of: d, taking: inputs)
     program[module].setType(result, for: d)
     return result
   }
@@ -962,6 +986,29 @@ public struct Typer {
     return t
   }
 
+  /// Returns the declared type of `d` without checking.
+  private mutating func declaredType(of d: VariantDeclaration.ID) -> AnyTypeIdentity {
+    if let memoized = program[d.module].type(assignedTo: d) { return memoized }
+    assert(d.module == module, "dependency is not typed")
+
+    let parent = program.castToDeclaration(program.parent(containing: d).node!)!
+    let bundle = declaredType(of: parent)
+
+    // Is the containing bundle declaring a function?
+    if let t = program.types.cast(bundle, to: Arrow.self) {
+      let u = program.types.variant(program[d].effect.value, of: t).erased
+      program[module].setType(u, for: d)
+      return u
+    }
+
+    // Something wrong happened.
+    else {
+      assert(bundle[.hasError])
+      program[module].setType(.error, for: d)
+      return .error
+    }
+  }
+
   /// Returns the declared properties of the parameters in `ds` without checking.
   private mutating func declaredTypes(of ps: [ParameterDeclaration.ID]) -> [Parameter] {
     var result: [Parameter] = []
@@ -994,6 +1041,26 @@ public struct Typer {
       let t = declaredType(of: p)
       return program.types.select(t, \Metatype.inhabitant, as: GenericParameter.self)
     }
+  }
+
+  /// Returns the declared type of `d`, which introduces a function that accepts `inputs`.
+  private mutating func declaredArrowType<T: RoutineDeclaration>(
+    of d: T.ID, taking inputs: [Parameter],
+  ) -> AnyTypeIdentity {
+    let output = program[d].output.map({ (a) in evaluateTypeAscription(a) }) ?? .void
+    let effect = program[d].effect.value
+
+    var t: AnyTypeIdentity
+    if program.isMember(d) {
+      let p = program.parent(containing: d)
+      let s = typeOfSelf(in: p)!
+      t = demand(RemoteType(projectee: s, access: effect)).erased
+      t = demand(Tuple(elements: [.init(label: "self", type: t)])).erased
+      t = demand(Arrow(effect: effect, environment: t, inputs: inputs, output: output)).erased
+    } else {
+      t = demand(Arrow(effect: effect, environment: .void, inputs: inputs, output: output)).erased
+    }
+    return introduce(program[d].staticParameters, into: t)
   }
 
   /// Returns the declared type of `g` without checking.
@@ -2516,7 +2583,7 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let scopeOfUse = program.parent(containing: e)
     let site = program.spanForDiagnostic(about: e)
-    let cs: [NameResolutionCandidate]
+    let candidates: [NameResolutionCandidate]
 
     // Is the name qualified?
     if let q = resolveQualification(of: e, in: &context) {
@@ -2530,8 +2597,8 @@ public struct Typer {
         return context.obligations.assume(e, hasType: .error, at: site)
       }
 
-      cs = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
-      if cs.isEmpty {
+      candidates = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
+      if candidates.isEmpty {
         report(program.undefinedSymbol(program[e].name, memberOf: q))
         return context.obligations.assume(e, hasType: .error, at: site)
       }
@@ -2539,14 +2606,14 @@ public struct Typer {
 
     // Unqualified case.
     else {
-      cs = resolve(program[e].name.value, unqualifiedIn: scopeOfUse)
-      if cs.isEmpty {
+      candidates = resolve(program[e].name.value, unqualifiedIn: scopeOfUse)
+      if candidates.isEmpty {
         report(program.undefinedSymbol(program[e].name))
         return context.obligations.assume(e, hasType: .error, at: site)
       }
     }
 
-    switch assume(e, boundTo: cs, for: context.role, at: site, in: &context.obligations) {
+    switch assume(e, boundTo: candidates, for: context.role, at: site, in: &context.obligations) {
     case .left(let t):
       return t
     case .right(let d):
@@ -2733,11 +2800,11 @@ public struct Typer {
       return resolve(builtin: n)
 
     case .module(let m):
-      var result: [NameResolutionCandidate] = []
+      var candidates: [NameResolutionCandidate] = []
       for s in program[m].sourceFileIdentities {
-        result.append(contentsOf: resolve(n, unqualifiedIn: .init(file: s)))
+        candidates.append(contentsOf: resolve(n, unqualifiedIn: .init(file: s)))
       }
-      return result
+      return candidates
     }
   }
 
@@ -2770,28 +2837,27 @@ public struct Typer {
   ) -> [NameResolutionCandidate] {
     // Are we in the scope of a syntax tree?
     if let p = program.parent(containing: scopeOfUse) {
-      var result = resolve(n, memberInExtensionOf: q, visibleFrom: p)
-      appendMatchingMembers(in: extensions(lexicallyIn: scopeOfUse), to: &result)
-      return result
+      var candidates = resolve(n, memberInExtensionOf: q, visibleFrom: p)
+      appendMatchingMembers(in: extensions(lexicallyIn: scopeOfUse), to: &candidates)
+      return candidates
     }
 
     // We are at the top-level.
     else {
-      var result: [NameResolutionCandidate] = []
+      var candidates: [NameResolutionCandidate] = []
       let ms = imports(of: scopeOfUse.file) + [scopeOfUse.file.module]
       for m in ms {
         appendMatchingMembers(
           in: program.collect(ExtensionDeclaration.self, in: program[m].topLevelDeclarations),
-          to: &result)
+          to: &candidates)
       }
-      return result
+      return candidates
     }
 
     /// For each declaration in `es` that applies to `q`, adds to `result` the members of that
     /// declaration that are named `n`.
-    func appendMatchingMembers(
-      in es: [ExtensionDeclaration.ID],
-      to result: inout [NameResolutionCandidate]
+    func appendMatchingMembers<S: Sequence<ExtensionDeclaration.ID>>(
+      in es: S, to candidates: inout [NameResolutionCandidate]
     ) {
       for e in es where !declarationsOnStack.contains(.init(e)) {
         if let a = applies(e, to: q, in: scopeOfUse) {
@@ -2806,7 +2872,7 @@ public struct Typer {
             if case .typeApplication(_, let arguments) = w.value {
               member = program.types.substitute(arguments, in: member)
             }
-            result.append(.init(reference: .inherited(w, m), type: member))
+            candidates.append(.init(reference: .inherited(w, m), type: member))
           }
         }
       }
@@ -2922,7 +2988,7 @@ public struct Typer {
     if let ds = cache.scopeToExtensions[s] {
       return ds
     } else {
-      let ds = program.declarations(of: ExtensionDeclaration.self, lexicallyIn: s)
+      let ds = Array(program.declarations(of: ExtensionDeclaration.self, lexicallyIn: s))
       cache.scopeToExtensions[s] = ds
       return ds
     }
@@ -3023,7 +3089,7 @@ public struct Typer {
     // We are at the top-level.
     else {
       let ds = program[scopeOfUse.file.module].topLevelDeclarations
-      var ts = program.collect(TraitDeclaration.self, in: ds)
+      var ts = Array(program.collect(TraitDeclaration.self, in: ds))
       for m in imports(of: scopeOfUse.file) {
         ts.append(
           contentsOf: program.collect(TraitDeclaration.self, in: program[m].topLevelDeclarations))

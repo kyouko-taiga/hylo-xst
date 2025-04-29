@@ -3,7 +3,7 @@ import Utilities
 
 /// The declaration of a function.
 @Archivable
-public struct FunctionDeclaration: Declaration, Scope {
+public struct FunctionDeclaration: RoutineDeclaration, Scope {
 
   /// The introducer of an initializer declaration.
   @Archivable
@@ -20,18 +20,6 @@ public struct FunctionDeclaration: Declaration, Scope {
 
   }
 
-  /// The identifier of a function.
-  @Archivable
-  public enum Identifier: Equatable, Sendable {
-
-    /// A simple identifier.
-    case simple(String)
-
-    /// An operator with its notation.
-    case `operator`(OperatorNotation, String)
-
-  }
-
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]
 
@@ -39,7 +27,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   public let introducer: Parsed<Introducer>
 
   /// The name of the declared function.
-  public let identifier: Parsed<Identifier>
+  public let identifier: Parsed<FunctionIdentifier>
 
   /// The compile-time parameters of the function.
   public let staticParameters: StaticParameters
@@ -63,7 +51,7 @@ public struct FunctionDeclaration: Declaration, Scope {
   public init(
     modifiers: [Parsed<DeclarationModifier>],
     introducer: Parsed<Introducer>,
-    identifier: Parsed<Identifier>,
+    identifier: Parsed<FunctionIdentifier>,
     staticParameters: StaticParameters,
     parameters: [ParameterDeclaration.ID],
     effect: Parsed<AccessEffect>,
@@ -121,19 +109,6 @@ extension FunctionDeclaration: Showable {
     }
 
     return result
-  }
-
-}
-
-extension FunctionDeclaration.Identifier: CustomStringConvertible {
-
-  public var description: String {
-    switch self {
-    case .simple(let s):
-      return s
-    case .operator(let n, let s):
-      return "\(n)\(s)"
-    }
   }
 
 }

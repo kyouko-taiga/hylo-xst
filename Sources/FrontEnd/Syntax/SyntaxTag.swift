@@ -32,6 +32,7 @@ public struct SyntaxTag: Sendable {
     BindingDeclaration.self,
     ConformanceDeclaration.self,
     ExtensionDeclaration.self,
+    FunctionBundleDeclaration.self,
     FunctionDeclaration.self,
     GenericParameterDeclaration.self,
     ImportDeclaration.self,
@@ -41,6 +42,7 @@ public struct SyntaxTag: Sendable {
     TypeAliasDeclaration.self,
     UsingDeclaration.self,
     VariableDeclaration.self,
+    VariantDeclaration.self,
 
     // Expressions
     BooleanLiteral.self,
