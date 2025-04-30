@@ -1312,6 +1312,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: Conversion.self), in: &context)
     case EqualityWitnessExpression.self:
       return inferredType(of: castUnchecked(e, to: EqualityWitnessExpression.self), in: &context)
+    case ImplicitQualification.self:
+      return inferredType(of: castUnchecked(e, to: ImplicitQualification.self), in: &context)
     case InoutExpression.self:
       return inferredType(of: castUnchecked(e, to: InoutExpression.self), in: &context)
     case NameExpression.self:
@@ -1368,15 +1370,27 @@ public struct Typer {
 
   /// Returns the inferred type of `e`'s callee.
   ///
-  /// If `e`'s callee is implicitly qualified, it is resolved as a member of the expected type
-  /// stored in `context`.
+  /// If the expression of `e`'s callee starts with implicit qualification, its left-most symbol
+  /// is resolved as a member of the expected type in `context`. For example, if the callee is
+  /// expressed as `.foo().bar()` and the expected type is `T`, it is resolved as `T.foo().bar`.
   private mutating func inferredType(
     calleeOf e: Call.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     let callee = program[e].callee
-    let o = program.isConstructorReference(callee) ? context.expectedType : nil
+
+    // Set the type of the left-most symbol's qualification if it is implicit using the call's
+    // expected type. The callee itself has no expected type.
+    if
+      let n = program.cast(callee, to: NameExpression.self),
+      let q = program.rootQualification(of: n),
+      let t = context.expectedType,
+      program.tag(of: q) == ImplicitQualification.self
+    {
+      _ = context.withSubcontext(expectedType: t) { (ctx) in inferredType(of: q, in: &ctx) }
+    }
+
     let r = SyntaxRole(program[e].style, labels: program[e].labels)
-    let f = context.withSubcontext(expectedType: o, role: r) { (ctx) in
+    let f = context.withSubcontext(role: r) { (ctx) in
       inferredType(of: callee, in: &ctx)
     }
 
@@ -1469,6 +1483,25 @@ public struct Typer {
     // All is well.
     else {
       return metatype(of: EqualityWitness(lhs: l, rhs: r)).erased
+    }
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: ImplicitQualification.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    if let t = context.expectedType {
+      context.obligations.assume(e, hasType: t, at: program[e].site)
+      return t
+    }
+
+    // We may have already inferred the type of this tree if it occurs in the expression of some
+    // callee. In that case, we should just reuse what was inferred.
+    else if let t = context.obligations.syntaxToType[e.erased] {
+      return t
+    } else {
+      report(.init(.error, "no context to resolve implicit qualification", at: program[e].site))
+      return .error
     }
   }
 
@@ -2606,22 +2639,31 @@ public struct Typer {
     let site = program.spanForDiagnostic(about: e)
     let candidates: [NameResolutionCandidate]
 
-    // Is the name qualified?
-    if let q = resolveQualification(of: e, in: &context) {
+    // Qualified case.
+    if let m = program[e].qualification {
+      let q = inferredType(of: m, in: &context)
+
+      // Is the qualification a unification variable?
       if q.isVariable || program.types.isMetatype(q, of: \.isVariable) {
         let t = context.expectedType ?? fresh().erased
         let k = MemberConstraint(
           member: e, role: context.role, qualification: q, type: t, site: site)
         context.obligations.assume(k)
         return context.obligations.assume(e, hasType: t, at: site)
-      } else if q == .error {
+      }
+
+      // Is the qualification ill-typed?
+      else if q == .error {
         return context.obligations.assume(e, hasType: .error, at: site)
       }
 
-      candidates = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
-      if candidates.isEmpty {
-        report(program.undefinedSymbol(program[e].name, memberOf: q))
-        return context.obligations.assume(e, hasType: .error, at: site)
+      // Qualification can be used to resolve the identifier.
+      else {
+        candidates = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
+        if candidates.isEmpty {
+          report(program.undefinedSymbol(program[e].name, memberOf: q))
+          return context.obligations.assume(e, hasType: .error, at: site)
+        }
       }
     }
 
@@ -2645,42 +2687,12 @@ public struct Typer {
 
   /// Resolves and returns the qualification of `e`, which occurs in `context`.
   private mutating func resolveQualification(
-    of e: NameExpression.ID, in context: inout InferenceContext
-  ) -> AnyTypeIdentity? {
-    // No qualification?
-    guard let q = program[e].qualification else { return nil }
-
-    if program.tag(of: q) == ImplicitQualification.self {
-      if let t = context.expectedType {
-        context.obligations.assume(q, hasType: t, at: program[q].site)
-        return t
-      } else {
-        let n = program[e].name
-        report(.init(.error, "no context to resolve '\(n)'", at: n.site))
-        return .error
-      }
-    } else {
-      return inferredType(of: q, in: &context)
-    }
-  }
-
-  /// Resolves and returns the qualification of `e`, which occurs in `context`.
-  private mutating func resolveQualification(
     of e: New.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    let q = program[e].qualification
-
-    if program.tag(of: q) == ImplicitQualification.self {
-      if let t = context.expectedType {
-        context.obligations.assume(q, hasType: t, at: program[q].site)
-        return t
-      } else {
-        let s = program.spanForDiagnostic(about: e)
-        report(.init(.error, "no context to resolve constructor reference", at: s))
-        return .error
-      }
+    if let q = program.cast(program[e].qualification, to: ImplicitQualification.self) {
+      return inferredType(of: q, in: &context)
     } else {
-      return evaluatePartialTypeAscription(q, in: &context).result
+      return evaluatePartialTypeAscription(program[e].qualification, in: &context).result
     }
   }
 

@@ -305,11 +305,25 @@ public struct Program: Sendable {
 
   /// Returns `true` iff `n` is a name expression of the form  `.new` or `q.new`, where `q` is any
   /// arbitrary qualification.
-  public func isConstructorReference<T: SyntaxIdentity>(_ n: T) -> Bool {
+  public func isConstructorReference(_ n: NameExpression.ID) -> Bool {
     if let m = cast(n, to: NameExpression.self) {
       return self[m].name.value.identifier == "new"
     } else {
       return false
+    }
+  }
+
+  /// Returns the left-most tree in the qualification of `n`.
+  public func rootQualification(of n: NameExpression.ID) -> ExpressionIdentity? {
+    guard var q = self[n].qualification else { return nil }
+    while true {
+      if let x = cast(q, to: NameExpression.self) {
+        if let y = self[x].qualification { q = y } else { return nil }
+      } else if let x = cast(q, to: Call.self) {
+        q = self[x].callee
+      } else {
+        return q
+      }
     }
   }
 
