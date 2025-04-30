@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// The declaration of a trait.
-public struct TraitDeclaration: TypeDeclaration, Scope {
+public struct TraitDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
 
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]

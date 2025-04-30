@@ -2,7 +2,7 @@ import Archivist
 import Utilities
 
 /// The declaration of a type alias.
-public struct TypeAliasDeclaration: TypeDeclaration, Scope {
+public struct TypeAliasDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
 
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]

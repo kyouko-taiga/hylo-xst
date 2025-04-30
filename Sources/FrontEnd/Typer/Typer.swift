@@ -157,7 +157,7 @@ public struct Typer {
   /// Returns the types of stored parts of `t`.
   private mutating func storage(of t: Struct.ID) -> [AnyTypeIdentity] {
     program.storedProperties(of: program.types[t].declaration).map { (v) in
-      typeOfName(boundTo: .init(v))
+      typeOfName(referringTo: .init(v), statically: false)
     }
   }
 
@@ -254,6 +254,7 @@ public struct Typer {
 
     let concept = program.types[witness.concept].declaration
     let conformer = witness.arguments.values[0]
+    let qualification = demand(Metatype(inhabitant: conformer)).erased
 
     // The expected types of implementations satisfying the concept's requirements are computed by
     // substituting the abstract types of the concept by their corresponding assignment.
@@ -306,7 +307,7 @@ public struct Typer {
 
       if viable.isEmpty {
         // Is there an implementation that is already member of the conforming type?
-        for c in resolve(requiredName, memberOf: conformer, visibleFrom: .init(node: d)) {
+        for c in resolve(requiredName, memberOf: qualification, visibleFrom: .init(node: d)) {
           if !unifiable(c.type, requiredType) { continue }
 
           // If we resolved the requirement, make sure it has a default implementation.
@@ -354,7 +355,7 @@ public struct Typer {
 
   /// Type checks `d`.
   private mutating func check(_ d: FunctionBundleDeclaration.ID) {
-    let t = declaredType(of: d)
+    _ = declaredType(of: d)
 
     check(program[d].staticParameters)
     check(program[d].parameters)
@@ -584,16 +585,6 @@ public struct Typer {
   ) {
     let n = program[requirement].identifier.value
     let m = "no implementation of associated type requirement '\(n)'"
-    report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
-  }
-
-  /// Reports that `requirement` has no implementation.
-  private mutating func reportMissingImplementation(
-    of requirement: FunctionDeclaration.ID,
-    in conformance: ConformanceDeclaration.ID
-  ) {
-    let n = program.name(of: requirement)
-    let m = "no implementation of '\(n)'"
     report(.init(.error, m, at: program.spanForDiagnostic(about: conformance)))
   }
 
@@ -1047,20 +1038,23 @@ public struct Typer {
   private mutating func declaredArrowType<T: RoutineDeclaration>(
     of d: T.ID, taking inputs: [Parameter],
   ) -> AnyTypeIdentity {
-    let output = program[d].output.map({ (a) in evaluateTypeAscription(a) }) ?? .void
-    let effect = program[d].effect.value
+    let e: AccessEffect
+    var i: [Parameter]
 
-    var t: AnyTypeIdentity
     if program.isMember(d) {
       let p = program.parent(containing: d)
       let s = typeOfSelf(in: p)!
-      t = demand(RemoteType(projectee: s, access: effect)).erased
-      t = demand(Tuple(elements: [.init(label: "self", type: t)])).erased
-      t = demand(Arrow(effect: effect, environment: t, inputs: inputs, output: output)).erased
+      i = [.init(label: "self", access: program[d].effect.value, type: s)]
+      e = .let
     } else {
-      t = demand(Arrow(effect: effect, environment: .void, inputs: inputs, output: output)).erased
+      i = []
+      e = program[d].effect.value
     }
-    return introduce(program[d].staticParameters, into: t)
+    i.append(contentsOf: inputs)
+
+    let o = program[d].output.map({ (a) in evaluateTypeAscription(a) }) ?? .void
+    let a = demand(Arrow(effect: e, environment: .void, inputs: i, output: o)).erased
+    return introduce(program[d].staticParameters, into: a)
   }
 
   /// Returns the declared type of `g` without checking.
@@ -1516,11 +1510,12 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let site = program.spanForDiagnostic(about: e)
 
-    let q = resolveQualification(of: e, in: &context)
+    let s = resolveQualification(of: e, in: &context)
+    let t = demand(Metatype(inhabitant: s)).erased
     let u = fresh().erased
     context.obligations.assume(
       MemberConstraint(
-        member: program[e].target, role: context.role, qualification: q, type: u, site: site))
+        member: program[e].target, role: context.role, qualification: t, type: u, site: site))
     context.obligations.assume(program[e].target, hasType: u, at: site)
 
     let v = fresh().erased
@@ -1683,35 +1678,36 @@ public struct Typer {
     return context.obligations.assume(d, hasType: t, at: program[d].site)
   }
 
-  /// Binds `n` to candidates in `cs` suitable for the given `role` and returns the inferred type
-  /// of `n`, or a diagnostic reported at `site` if `cs` contains no viable candidate.
+  /// Either binds `n` to declarations in `candidates` suitable for the given `role` and returns
+  /// the inferred type of `n`, or returns a diagnostic reported at `site` if there isn't any
+  /// viable candidate.
   ///
   /// If binding succeeds, `o` is extended with either a assignment mapping `n` to a declaration
   /// reference or an overload constrain mapping `n` to one of the viable candidates. If binding
   /// failed, `o` is left unchanged and a diagnostic is returned.
   ///
-  /// - Requires: `cs` is not empty.
+  /// - Requires: `candidates` is not empty.
   internal mutating func assume(
-    _ n: NameExpression.ID, boundTo cs: consuming [NameResolutionCandidate],
+    _ n: NameExpression.ID, boundTo candidates: consuming [NameResolutionCandidate],
     for role: SyntaxRole, at site: SourceSpan, in o: inout Obligations
   ) -> Either<AnyTypeIdentity, Diagnostic> {
-    assert(!cs.isEmpty)
+    assert(!candidates.isEmpty)
 
     // No candidate survived filtering?
-    if let d = filter(&cs, for: role, at: site) {
+    if let d = filter(&candidates, for: role, at: site) {
       return .right(d)
     }
 
     // There is only one candidate left?
-    else if cs.count == 1 {
-      o.assume(n, boundTo: cs[0].reference)
-      return .left(cs[0].type)
+    else if candidates.count == 1 {
+      o.assume(n, boundTo: candidates[0].reference)
+      return .left(candidates[0].type)
     }
 
     // Otherwise, create an overload set.
     else {
       let t = fresh().erased
-      o.assume(OverloadConstraint(name: n, type: t, candidates: cs, site: site))
+      o.assume(OverloadConstraint(name: n, type: t, candidates: candidates, site: site))
       return .left(t)
     }
   }
@@ -1847,10 +1843,35 @@ public struct Typer {
     }
   }
 
-  /// Returns the type of a name expression bound to `d`.
-  private mutating func typeOfName(boundTo d: DeclarationIdentity) -> AnyTypeIdentity {
-    let t = declaredType(of: d)
-    return (program.types[t] as? RemoteType)?.projectee ?? t
+  /// Returns the type of a name expression referring to `target`, which was resolved as a bound
+  /// member if `selectionIsStatic` is `false`.
+  private mutating func typeOfName(
+    referringTo target: DeclarationIdentity, statically selectionIsStatic: Bool
+  ) -> AnyTypeIdentity {
+    var t = declaredType(of: target)
+
+    // Strip the remoteness of the entity's type.
+    if let u = program.types[t] as? RemoteType {
+      t = u.projectee
+    }
+
+    if !selectionIsStatic {
+      return typeOfBoundMember(referringTo: target, withUnboundType: t)
+    } else {
+      return t
+    }
+  }
+
+  /// Returns `unbound` modified as the type of a bound member iff `target` declares a non-static
+  /// member. Otherwise, returns `unbound` unchanged.
+  private mutating func typeOfBoundMember(
+    referringTo target: DeclarationIdentity, withUnboundType unbound: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
+    if program.isMemberFunction(target) {
+      return program.types.asBoundMemberFunction(unbound)!
+    } else {
+      return unbound
+    }
   }
 
   /// Returns the type of an instance of `Self` in `s`, or `nil` if `s` isn't notionally in the
@@ -2587,7 +2608,7 @@ public struct Typer {
 
     // Is the name qualified?
     if let q = resolveQualification(of: e, in: &context) {
-      if q.isVariable {
+      if q.isVariable || program.types.isMetatype(q, of: \.isVariable) {
         let t = context.expectedType ?? fresh().erased
         let k = MemberConstraint(
           member: e, role: context.role, qualification: q, type: t, site: site)
@@ -2632,15 +2653,14 @@ public struct Typer {
     if program.tag(of: q) == ImplicitQualification.self {
       if let t = context.expectedType {
         context.obligations.assume(q, hasType: t, at: program[q].site)
-        return qualificationForSelection(on: t)
+        return t
       } else {
         let n = program[e].name
         report(.init(.error, "no context to resolve '\(n)'", at: n.site))
         return .error
       }
     } else {
-      let t = inferredType(of: q, in: &context)
-      return qualificationForSelection(on: t)
+      return inferredType(of: q, in: &context)
     }
   }
 
@@ -2653,7 +2673,7 @@ public struct Typer {
     if program.tag(of: q) == ImplicitQualification.self {
       if let t = context.expectedType {
         context.obligations.assume(q, hasType: t, at: program[q].site)
-        return qualificationForSelection(on: t)
+        return t
       } else {
         let s = program.spanForDiagnostic(about: e)
         report(.init(.error, "no context to resolve constructor reference", at: s))
@@ -2665,23 +2685,28 @@ public struct Typer {
   }
 
   /// Returns the type in which qualified name lookup is performed to select a member of a value
-  /// having type `t`.
-  internal mutating func qualificationForSelection(on t: AnyTypeIdentity) -> AnyTypeIdentity {
+  /// having type `t` along with a Boolean indicating whether static members should be resolved.
+  ///
+  /// If this method returns `(s, true)`, then selections on a term of type `s` denote non-static
+  /// and unbound members of `s`.
+  private mutating func qualificationForSelection(
+    on t: AnyTypeIdentity
+  ) -> (type: AnyTypeIdentity, isStatic: Bool) {
     // If the qualification has a remote type, name resolution proceeds with the projectee.
     if let u = program.types[t] as? RemoteType {
-      return u.projectee
+      return (u.projectee, false)
     }
 
     // If the qualification has a metatype, name resolution proceeds with the inhabitant so that
     // expressions of the form `T.m` can denote entities introduced as members of `T` (rather
-    // than `Metatype<T>`). If context clause of the qualification is preserved to support member
+    // than `Metatype<T>`). The context clause of the qualification is preserved to support member
     // selection on unapplied type constructors (e.g., `Array.new`).
     let (context, head) = program.types.contextAndHead(t)
     if let m = program.types[head] as? Metatype {
       let u = program.types.introduce(context, into: m.inhabitant)
-      return u
+      return (u, true)
     } else {
-      return t
+      return (t, false)
     }
   }
 
@@ -2693,7 +2718,8 @@ public struct Typer {
 
     var candidates: [NameResolutionCandidate] = []
     for d in ds {
-      candidates.append(.init(reference: .direct(d), type: typeOfName(boundTo: d)))
+      let t = typeOfName(referringTo: d, statically: true)
+      candidates.append(.init(reference: .direct(d), type: t))
     }
 
     // Predefined names are resolved iff no other candidate has been found.
@@ -2770,23 +2796,15 @@ public struct Typer {
       return resolve(n, memberOf: s, visibleFrom: scopeOfUse)
     }
 
-    // Gather for native members.
-    var candidates = resolve(n, nativeMemberOf: q)
-    candidates.append(contentsOf: resolve(n, memberInExtensionOf: q, visibleFrom: scopeOfUse))
+    var candidates: [NameResolutionCandidate] = []
+    let (r, s) = qualificationForSelection(on: q)
 
-    // Gather symbols declared in extensions or inherited by conformance.
-    for (concept, ms) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
-      let vs = program[concept].parameters.map({ _ in fresh().erased })
-      let model = typeOfModel(of: q, conformingTo: concept, with: vs)
-      for a in summon(model.erased, in: scopeOfUse) {
-        for m in ms {
-          let w = program.types.reify(
-            a.witness, applying: a.substitutions, withVariables: .substitutedByError)
-          let u = typeOfImplementation(satisfying: m, in: w)
-          candidates.append(.init(reference: .inherited(w, m), type: u))
-        }
-      }
-    }
+    candidates.append(
+      contentsOf: resolve(n, nativeMemberOf: r, statically: s))
+    candidates.append(
+      contentsOf: resolve(n, memberInExtensionOf: r, visibleFrom: scopeOfUse, statically: s))
+    candidates.append(
+      contentsOf: resolve(n, inheritedMemberOf: r, visibleFrom: scopeOfUse, statically: s))
 
     return candidates
   }
@@ -2809,35 +2827,45 @@ public struct Typer {
   }
 
   /// Returns candidates for resolving `n` as a member declared in the primary declaration of the
-  /// type identified by `q`.
+  /// type identified by `q`, selected statically iff `selectionIsStatic` is `true`.
+  ///
+  /// Non-static members are resolved as unbound members if `selectionIsStatic` is `true` and as
+  /// bound members if `selectionIsStatic` is `false`.
   ///
   /// - Requires: `q.type` is not a unification variable.
   private mutating func resolve(
-    _ n: Name, nativeMemberOf q: AnyTypeIdentity
+    _ n: Name, nativeMemberOf q: AnyTypeIdentity, statically selectionIsStatic: Bool
   ) -> [NameResolutionCandidate] {
     assert(!q.isVariable)
     let (context, receiver) = program.types.contextAndHead(q)
     var candidates: [NameResolutionCandidate] = []
 
     for m in declarations(nativeMembersOf: q)[n.identifier] ?? [] {
-      var member = typeOfName(boundTo: m)
+      var member = typeOfName(referringTo: m, statically: selectionIsStatic)
       if let a = program.types[receiver] as? TypeApplication {
         member = program.types.substitute(a.arguments, in: member)
       }
       member = program.types.introduce(context, into: member)
-      candidates.append(.init(reference: .member(m), type: member))
+      candidates.append(
+        .init(reference: selectionIsStatic ? .direct(m) : .member(m), type: member))
     }
 
     return candidates
   }
 
-  /// Returns candidates for resolving `n` as a member in an extension of `q` in `scopeOfUse`.
+  /// Returns candidates for resolving `n` as a member in an extension of `q` in `scopeOfUse`,
+  /// selected statically iff `selectionIsStatic` is `true`.
+  ///
+  /// Non-static members are resolved as unbound members if `selectionIsStatic` is `true` and as
+  /// bound members if `selectionIsStatic` is `false`.
   private mutating func resolve(
-    _ n: Name, memberInExtensionOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity
+    _ n: Name, memberInExtensionOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
+    statically selectionIsStatic: Bool
   ) -> [NameResolutionCandidate] {
     // Are we in the scope of a syntax tree?
     if let p = program.parent(containing: scopeOfUse) {
-      var candidates = resolve(n, memberInExtensionOf: q, visibleFrom: p)
+      var candidates = resolve(
+        n, memberInExtensionOf: q, visibleFrom: p, statically: selectionIsStatic)
       appendMatchingMembers(in: extensions(lexicallyIn: scopeOfUse), to: &candidates)
       return candidates
     }
@@ -2865,7 +2893,7 @@ public struct Typer {
             a.witness, applying: a.substitutions, withVariables: .substitutedByError)
 
           for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
-            var member = declaredType(of: m)
+            var member = typeOfName(referringTo: m, statically: selectionIsStatic)
 
             // Strip the context defined by the extension, apply type arguments from the matching
             // witness, and substitute the extendee for the receiver.
@@ -2877,6 +2905,36 @@ public struct Typer {
         }
       }
     }
+  }
+
+  /// Returns candidates for resolving `n` as a member of `q` via conformance in `scopeOfUse`,
+  /// selected statically iff `selectionIsStatic` is `true`.
+  ///
+  /// Non-static members are resolved as unbound members if `selectionIsStatic` is `true` and as
+  /// bound members if `selectionIsStatic` is `false`.
+  private mutating func resolve(
+    _ n: Name, inheritedMemberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
+    statically selectionIsStatic: Bool
+  ) -> [NameResolutionCandidate] {
+    var candidates: [NameResolutionCandidate] = []
+
+    for (concept, ms) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
+      let vs = program[concept].parameters.map({ _ in fresh().erased })
+      let model = typeOfModel(of: q, conformingTo: concept, with: vs)
+      for a in summon(model.erased, in: scopeOfUse) {
+        for m in ms {
+          let w = program.types.reify(
+            a.witness, applying: a.substitutions, withVariables: .substitutedByError)
+          var member = typeOfImplementation(satisfying: m, in: w)
+          if !selectionIsStatic {
+            member = typeOfBoundMember(referringTo: m, withUnboundType: member)
+          }
+          candidates.append(.init(reference: .inherited(w, m), type: member))
+        }
+      }
+    }
+
+    return candidates
   }
 
   /// Returns the declarations introducing `identifier` without qualification in `scopeOfUse`.

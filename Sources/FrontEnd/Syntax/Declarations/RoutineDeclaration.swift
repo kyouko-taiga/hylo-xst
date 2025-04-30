@@ -1,5 +1,5 @@
 /// The declaration of a callable entity.
-public protocol RoutineDeclaration: Declaration {
+public protocol RoutineDeclaration: ModifiableDeclaration {
 
   /// The compile-time parameters of the entity.
   var staticParameters: StaticParameters { get }

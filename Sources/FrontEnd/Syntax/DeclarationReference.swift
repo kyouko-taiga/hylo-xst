@@ -10,7 +10,11 @@ public enum DeclarationReference: Hashable, Sendable {
   /// A direct reference.
   case direct(DeclarationIdentity)
 
-  /// A reference to a member declaration.
+  /// A reference to a member declaration that is bound to a receiver.
+  ///
+  /// The reference was formed by an expression `receiver.member` where `member` is a non-static
+  /// member of `receiver`'s type. The whole expression is notionally a partial application of some
+  /// function or subscript to the receiver.
   case member(DeclarationIdentity)
 
   /// A reference to a member inherited by conformance or extension.

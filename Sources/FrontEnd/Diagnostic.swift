@@ -178,12 +178,18 @@ extension Program {
   internal func undefinedSymbol(
     _ n: Name, memberOf t: AnyTypeIdentity? = nil, at site: SourceSpan
   ) -> Diagnostic {
-    let m = if let u = t {
-      format("type '%T' has no member '\(n)'", [u])
-    } else {
-      "undefined symbol '\(n)'"
-    }
-    return .init(.error, m, at: site)
+    let message: String = {
+      if let u = t {
+        if let m = types[u] as? Metatype {
+          return format("type '%T' has no static member '\(n)'", [m.inhabitant])
+        } else {
+          return format("type '%T' has no member '\(n)'", [u])
+        }
+      } else {
+        return "undefined symbol '\(n)'"
+      }
+    }()
+    return .init(.error, message, at: site)
   }
 
   /// Returns an error diagnosing an undefined symbol.

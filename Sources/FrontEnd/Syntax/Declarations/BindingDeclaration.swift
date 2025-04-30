@@ -1,7 +1,7 @@
 import Archivist
 
 /// The declaration of a (possibly empty) set of bindings.
-public struct BindingDeclaration: Declaration {
+public struct BindingDeclaration: ModifiableDeclaration {
 
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]

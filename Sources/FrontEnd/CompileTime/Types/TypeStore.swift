@@ -89,6 +89,17 @@ public struct TypeStore: Sendable {
     }
   }
 
+  /// Returns `true` iff `n` identifies a metatype whose inhabitant satifies `predicate`.
+  public func isMetatype<T: TypeIdentity>(
+    _ n: T, of predicate: (AnyTypeIdentity) -> Bool
+  ) -> Bool {
+    if let m = self[n] as? Metatype {
+      return predicate(m.inhabitant)
+    } else {
+      return false
+    }
+  }
+
   /// Returns `true` iff `n` is a universal type or an implication.
   public func hasContext<T: TypeIdentity>(_ n: T) -> Bool {
     (tag(of: n) == UniversalType.self) || (tag(of: n) == Implication.self)
@@ -231,18 +242,42 @@ public struct TypeStore: Sendable {
     }
   }
 
-  /// Returns `(CTX, [A...], T)` iff `n` has the form `CTX ==> [{self: set T}](A...) -> Void`.
-  public func seenAsConstructor<T: TypeIdentity>(
-    _ n: T
-  ) -> (context: ContextClause, inputs: [Parameter], output: AnyTypeIdentity)? {
+  /// Returns `[Void](A...) -> T)` iff `n` has the form `[Void](self: set T, A...) -> Void`.
+  public mutating func asConstructor(_ n: AnyTypeIdentity) -> AnyTypeIdentity? {
     let (c, h) = contextAndHead(n.erased)
     guard
       let f = self[h] as? Arrow,
-      let e = (self[f.environment] as? Tuple)?.elements.uniqueElement,
-      let p = self[e.type] as? RemoteType,
-      (e.label == "self") && (p.access == .set) && (f.output == .void)
+      let s = f.inputs.first,
+      (f.environment == .void) && (f.output == .void) && (s.access == .set) && (s.label == "self")
     else { return nil }
-    return (context: c, inputs: f.inputs, output: p.projectee)
+
+    let adapted = Arrow(
+      inputs: Array(f.inputs[1...]),
+      output: s.type)
+
+    let t = demand(adapted).erased
+    return introduce(c, into: t).erased
+  }
+
+  /// Returns `[{self: k T}](A...) k -> B` iff `n` has the form `[Void](self: k T, A...) -> B`.
+  public mutating func asBoundMemberFunction(_ n: AnyTypeIdentity) -> AnyTypeIdentity? {
+    let (c, h) = contextAndHead(n.erased)
+    guard
+      let f = self[h] as? Arrow,
+      let s = f.inputs.first,
+      (f.environment == .void) && (f.effect == .let) && (s.label == "self")
+    else { return nil }
+
+    let capture = demand(RemoteType(projectee: s.type, access: s.access)).erased
+    let environment = demand(Tuple(elements: [.init(label: "self", type: capture)])).erased
+    let adapted = Arrow(
+      effect: f.effect,
+      environment: environment,
+      inputs: Array(f.inputs[1...]),
+      output: f.output)
+
+    let t = demand(adapted).erased
+    return introduce(c, into: t).erased
   }
 
   /// Returns the type of the variant `k` of a bundle of type `n`.

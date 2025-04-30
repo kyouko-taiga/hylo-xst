@@ -271,10 +271,8 @@ internal struct Solver {
     }
 
     // Is the source an initializer?
-    else if let (c, i, o) = program.types.seenAsConstructor(k.lhs) {
-      let t = program.types.demand(Arrow(inputs: i, output: o)).erased
-      let u = program.types.introduce(c, into: t)
-      let subgoal = schedule(EqualityConstraint(lhs: k.rhs, rhs: u, site: k.site))
+    else if let t = program.types.asConstructor(k.lhs) {
+      let subgoal = schedule(EqualityConstraint(lhs: k.rhs, rhs: t, site: k.site))
       return delegate([subgoal])
     }
 
@@ -502,24 +500,23 @@ internal struct Solver {
     let k = goals[g] as! MemberConstraint
 
     // Can't do anything before we've inferred the type of the qualification.
-    if k.qualification.isVariable {
+    if k.qualification.isVariable || program.types.isMetatype(k.qualification, of: \.isVariable) {
       return postpone(g)
     }
 
     let n = program[k.member].name
-    let q = typer.qualificationForSelection(on: k.qualification)
-    let cs = typer.resolve(
-      n.value, memberOf: q, visibleFrom: program.parent(containing: k.member))
+    let candidates = typer.resolve(
+      n.value, memberOf: k.qualification, visibleFrom: program.parent(containing: k.member))
 
-    if cs.isEmpty {
+    if candidates.isEmpty {
       return .failure { (ss, _, tp, ds) in
-        let q = tp.program.types.reify(k.qualification, applying: ss)
-        ds.insert(tp.program.undefinedSymbol(tp.program[k.member].name, memberOf: q))
+        let t = tp.program.types.reify(k.qualification, applying: ss)
+        ds.insert(tp.program.undefinedSymbol(tp.program[k.member].name, memberOf: t))
       }
     }
 
     var o = Obligations()
-    switch typer.assume(k.member, boundTo: cs, for: k.role, at: k.site, in: &o) {
+    switch typer.assume(k.member, boundTo: candidates, for: k.role, at: k.site, in: &o) {
     case .left(let t):
       bindings.merge(o.bindings, uniquingKeysWith: { (_, _) in unreachable() })
       var subgoals = [schedule(EqualityConstraint(lhs: t, rhs: k.type, site: k.site))]

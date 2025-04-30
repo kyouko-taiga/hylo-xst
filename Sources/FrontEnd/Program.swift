@@ -234,15 +234,49 @@ public struct Program: Sendable {
     }
   }
 
-  /// Returns `true` iff `n` declares a member entity.
+  /// Returns `true` iff `n` declares a non-static member entity.
   ///
   /// - Requires: The module containing `s` is scoped.
   public func isMember<T: SyntaxIdentity>(_ n: T) -> Bool {
     guard let m = parent(containing: n).node else { return false }
-    if tag(of: n) == VariantDeclaration.self {
+
+    switch tag(of: n) {
+    case VariantDeclaration.self:
       return isMember(m)
-    } else {
-      return isTypeDeclaration(m) || isTypeExtendingDeclaration(m)
+    default:
+      return !isStatic(n) && (isTypeDeclaration(m) || isTypeExtendingDeclaration(m))
+    }
+  }
+
+  /// Returns `true` iff `n` declares a non-static member function.
+  ///
+  /// - Requires: The module containing `s` is scoped.
+  public func isMemberFunction<T: SyntaxIdentity>(_ n: T) -> Bool {
+    switch tag(of: n) {
+    case FunctionBundleDeclaration.self:
+      return isMember(n)
+    case FunctionDeclaration.self:
+      return isMember(n)
+    case VariantDeclaration.self:
+      return isMember(n)
+    default:
+      return false
+    }
+  }
+
+  /// Returns `true` iff `n` declares a static member entity.
+  public func isStatic<T: SyntaxIdentity>(_ n: T) -> Bool {
+    // Note: the following relies on the fact that non-member declarations can't be `static`, which
+    // is an invariant of syntactically well-formed ASTs.
+    switch tag(of: n) {
+    case BindingDeclaration.self:
+      return self[castUnchecked(n, to: BindingDeclaration.self)].is(.static)
+    case FunctionBundleDeclaration.self:
+      return self[castUnchecked(n, to: FunctionBundleDeclaration.self)].is(.static)
+    case FunctionDeclaration.self:
+      return self[castUnchecked(n, to: FunctionDeclaration.self)].is(.static)
+    default:
+      return false
     }
   }
 

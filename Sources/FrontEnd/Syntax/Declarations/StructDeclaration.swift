@@ -2,7 +2,7 @@ import Archivist
 
 /// The declaration of a structure.
 @Archivable
-public struct StructDeclaration: TypeDeclaration, Scope {
+public struct StructDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
 
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]

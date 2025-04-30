@@ -1,0 +1,14 @@
+//! no-std
+
+struct A {
+  public static fun f() -> Void {}
+}
+
+struct B<T> {
+  public static fun f() -> Void {}
+}
+
+public fun main() {
+  A.f()
+  B<A>.f()
+}
