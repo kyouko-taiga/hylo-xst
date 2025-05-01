@@ -28,6 +28,9 @@ public struct AccessEffectSet: Hashable, Sendable {
   /// A set with `.inout` and `.set`.
   public static let inplace: Self = [.inout, .set]
 
+  /// A set with `.let` and `.sink`.
+  public static let functional: Self = [.let, .sink]
+
 }
 
 extension AccessEffectSet: OptionSet {

@@ -827,7 +827,10 @@ public struct Typer {
     let inputs = declaredTypes(of: program[d].parameters)
     let shape = declaredArrowType(of: d, taking: inputs)
 
-    let result = demand(Bundle(shape: shape, variants: variants)).erased
+    let (context, head) = program.types.contextAndHead(shape)
+    let bundle = demand(Bundle(shape: head, variants: variants)).erased
+    let result = program.types.introduce(context, into: bundle)
+
     program[module].setType(result, for: d)
     return result
   }
@@ -987,14 +990,15 @@ public struct Typer {
 
     let parent = program.castToDeclaration(program.parent(containing: d).node!)!
     let bundle = declaredType(of: parent)
+    let (context, head) = program.types.contextAndHead(bundle)
 
-    let shape = (program.types[bundle] as? Bundle)?.shape ?? .error
+    let shape = program.types.select(head, \Bundle.shape) ?? .error
     switch program.types.tag(of: shape) {
     case Arrow.self:
       let t = Arrow.ID(uncheckedFrom: shape)
       let u = program.types.variant(program[d].effect.value, of: t).erased
       program[module].setType(u, for: d)
-      return u
+      return program.types.introduce(context, into: u)
 
     default:
       assert(bundle[.hasError])
@@ -1360,10 +1364,7 @@ public struct Typer {
       i.append(.init(label: a.label?.value, type: t))
     }
 
-    let m = program.isMarkedMutating(program[e].callee)
-    let o = program.types.resultOfApplying(f, mutably: m)
-      ?? context.expectedType
-      ?? fresh().erased
+    let o = context.expectedType ?? fresh().erased
     let k = CallConstraint(
       callee: f, arguments: i, output: o, origin: e, site: program[e].site)
 

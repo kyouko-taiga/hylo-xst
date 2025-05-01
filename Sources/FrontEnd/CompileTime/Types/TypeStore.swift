@@ -304,6 +304,8 @@ public struct TypeStore: Sendable {
     return introduce(c, into: t).erased
   }
 
+  /// Returns the type of the result of applying an instance of `callable`, with a mutable callee
+  /// and/or arguments iff `isAppliedMutably` is `true`.
   public mutating func resultOfApplying(
     _ callable: AnyTypeIdentity, mutably isAppliedMutably: Bool
   ) -> AnyTypeIdentity? {
@@ -312,10 +314,21 @@ public struct TypeStore: Sendable {
       return t.output
 
     case let t as Bundle:
-      if isAppliedMutably, let u = cast(t.shape, to: Arrow.self) {
-        return t.variants.intersection(.inplace).first.map({ (k) in variant(k, of: u).erased })
-      } else {
+      // Are we looking for the result of applying a non-mutating variant of a function bundle?
+      if !isAppliedMutably, let u = cast(t.shape, to: Arrow.self) {
+        if let k = t.variants.intersection(.functional).first {
+          let adapted = variant(k, of: u)
+          return self[adapted].output
+        } else {
+          return nil
+        }
+      }
+
+      // Otherwise, the result is the same as that of the underlying shape.
+      else if !t.variants.intersection(.inplace).isEmpty {
         return resultOfApplying(t.shape, mutably: isAppliedMutably)
+      } else {
+        return nil
       }
 
     default:

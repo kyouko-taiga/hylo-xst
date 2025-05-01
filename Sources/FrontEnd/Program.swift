@@ -297,10 +297,24 @@ public struct Program: Sendable {
 
   /// Returns `true` iff `n` is the expression of a value marked for mutation.
   public func isMarkedMutating(_ n: ExpressionIdentity) -> Bool {
-    switch tag(of: n) {
-    default:
-      return false
+    var q = n
+    while true {
+      if tag(of: q) == InoutExpression.self {
+        return true
+      } else if let x = cast(q, to: NameExpression.self), let y = self[x].qualification {
+        q = y
+      } else if let x = cast(q, to: Call.self), self[x].style == .parenthesized {
+        q = self[x].callee
+      } else {
+        return false
+      }
     }
+  }
+
+  /// Returns `true` iff `n` is modifying its callee and/or one of its arguments in place.
+  public func isMutating(_ n: Call.ID) -> Bool {
+    isMarkedMutating(self[n].callee)
+      || self[n].arguments.contains(where: { (a) in isMarkedMutating(a.value) })
   }
 
   /// Returns `true` iff `n` is a name expression of the form  `.new` or `q.new`, where `q` is any

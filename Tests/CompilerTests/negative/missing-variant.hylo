@@ -1,0 +1,17 @@
+//! no-std
+
+struct A { public memberwise init }
+struct B { public memberwise init }
+
+fun f(x: auto A) auto -> B {
+  let { (A(), B()) }
+}
+fun g(x: auto A) auto -> B {
+  inout { B() }
+}
+
+public fun main() {
+  var a = A()
+  f(x: &a)
+  g(x: a)
+}

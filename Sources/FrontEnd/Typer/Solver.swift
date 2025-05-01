@@ -328,11 +328,20 @@ internal struct Solver {
       subgoals.append(coercion)
     }
 
-    // The callee's been fixed; next are the arguments and the output type.
-    let m = program.isMarkedMutating(program[k.origin].callee)
-    let o = program.types.resultOfApplying(callee, mutably: m)!
-    subgoals.append(schedule(EqualityConstraint(lhs: o, rhs: k.output, site: k.site)))
+    // The callee's been fixed; next is the output type.
+    let m = program.isMutating(k.origin)
+    if let o = program.types.resultOfApplying(callee, mutably: m) {
+      subgoals.append(schedule(EqualityConstraint(lhs: o, rhs: k.output, site: k.site)))
+    } else {
+      assert(program.types.tag(of: callee) == Bundle.self)
+      return .failure { (ss, _, tp, ds) in
+        let t = tp.program.types.reify(callee, applying: ss)
+        let e = tp.program.cannotCall(t, mutably: m, at: tp.program[k.origin].site)
+        ds.insert(e)
+      }
+    }
 
+    // Next are the arguments.
     let w = program.types.seenAsCallableAbstraction(callee)!
     guard let (bs, ss) = matches(k, inputs: w.inputs) else {
       return .failure { (_, _, tp, ds) in

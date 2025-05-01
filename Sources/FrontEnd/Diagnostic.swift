@@ -94,6 +94,15 @@ extension Program {
     }
   }
 
+  /// Returns an error diagnosing an illegal bundle application.
+  internal func cannotCall(
+    _ f: AnyTypeIdentity, mutably isAppliedMutably: Bool, at site: SourceSpan
+  ) -> Diagnostic {
+    let x = isAppliedMutably ? "mutably" : "immutably"
+    let m = format("cannot call bundle of type '%T' \(x)", [f])
+    return .init(.error, m, at: site)
+  }
+
   /// Returns an error diagnosing an invalid argument to a call.
   internal func cannotPass(
     argument t: AnyTypeIdentity, to u: AnyTypeIdentity, at site: SourceSpan
