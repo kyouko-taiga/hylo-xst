@@ -1,0 +1,21 @@
+//! no-std
+
+struct A {
+  public memberwise init
+  fun f(x: inout B) auto -> B {
+    let   { (A(), B()) }
+    inout { B() }
+  }
+}
+
+struct B { public memberwise init }
+
+fun check<T>(_ x: T) {}
+
+public fun main() {
+  var a = A()
+  var b = B()
+
+  check<B>(&a.f(x: &b))
+  check<{A, B}>(a.f(x: &b))
+}

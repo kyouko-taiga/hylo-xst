@@ -1042,6 +1042,10 @@ public struct Typer {
   }
 
   /// Returns the declared type of `d`, which introduces a function that accepts `inputs`.
+  ///
+  /// If `d` is a non-static member declaration, an additional "self" parameter is prepended to
+  /// `inputs`, having the type of `Self` resolved in the scope of `d` and the effect of `d`'s
+  /// call operator. The effect of the resulting arrow is `let` unless `d` declares a bundle.
   private mutating func declaredArrowType<T: RoutineDeclaration>(
     of d: T.ID, taking inputs: [Parameter],
   ) -> AnyTypeIdentity {
@@ -1052,7 +1056,7 @@ public struct Typer {
       let p = program.parent(containing: d)
       let s = typeOfSelf(in: p)!
       i = [.init(label: "self", access: program[d].effect.value, type: s)]
-      e = .let
+      e = (program[d].effect.value != .auto) ? .let : .auto
     } else {
       i = []
       e = program[d].effect.value

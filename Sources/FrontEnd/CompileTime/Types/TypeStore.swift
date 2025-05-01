@@ -283,14 +283,39 @@ public struct TypeStore: Sendable {
     return introduce(c, into: t).erased
   }
 
-  /// Returns `[{self: k T}](A...) k -> B` iff `n` has the form `[Void](self: k T, A...) -> B`.
+  /// Returns `[{self: k T}](A...) k -> B` iff `n` has the form `[Void](self: k T, A...) x -> B`.
   public mutating func asBoundMemberFunction(_ n: AnyTypeIdentity) -> AnyTypeIdentity? {
     let (c, h) = contextAndHead(n.erased)
-    guard
-      let f = self[h] as? Arrow,
-      let s = f.inputs.first,
-      (f.environment == .void) && (f.effect == .let) && (s.label == "self")
+
+    // `n` identifies a function?
+    if let a = cast(h, to: Arrow.self) {
+      if let adapted = asBoundMemberFunction(a) {
+        return introduce(c, into: adapted.erased)
+      } else {
+        return nil
+      }
+    }
+
+    // `n` identifies a function bundle?
+    else if let b = cast(h, to: Bundle.self) {
+      if let a = cast(self[b].shape, to: Arrow.self), let shape = asBoundMemberFunction(a) {
+        let adapted = demand(Bundle(shape: shape.erased, variants: self[b].variants))
+        return introduce(c, into: adapted.erased)
+      } else {
+        return nil
+      }
+    }
+
+    // `n` is not a member function.
     else { return nil }
+  }
+
+  /// Returns `[{self: k T}](A...) k -> B` iff `n` has the form `[Void](self: k T, A...) x -> B`.
+  private mutating func asBoundMemberFunction(_ n: Arrow.ID) -> Arrow.ID? {
+    let f = self[n]
+    guard let s = f.inputs.first, (f.environment == .void) && (s.label == "self") else {
+      return nil
+    }
 
     let capture = demand(RemoteType(projectee: s.type, access: s.access)).erased
     let environment = demand(Tuple(elements: [.init(label: "self", type: capture)])).erased
@@ -300,8 +325,7 @@ public struct TypeStore: Sendable {
       inputs: Array(f.inputs[1...]),
       output: f.output)
 
-    let t = demand(adapted).erased
-    return introduce(c, into: t).erased
+    return demand(adapted)
   }
 
   /// Returns the type of the result of applying an instance of `callable`, with a mutable callee

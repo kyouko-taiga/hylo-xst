@@ -328,8 +328,16 @@ internal struct Solver {
       subgoals.append(coercion)
     }
 
-    // The callee's been fixed; next is the output type.
-    let m = program.isMutating(k.origin)
+    // Argument list has the right shape?
+    let w = program.types.seenAsCallableAbstraction(callee)!
+    guard let (bs, ss, inplace) = matches(k, w) else {
+      return .failure { (_, _, tp, ds) in
+        ds.insert(tp.program.incompatibleLabels(found: k.labels, expected: w.labels, at: k.site))
+      }
+    }
+
+    // Infer the output type.
+    let m = inplace || program.isMarkedMutating(program[k.origin].callee)
     if let o = program.types.resultOfApplying(callee, mutably: m) {
       subgoals.append(schedule(EqualityConstraint(lhs: o, rhs: k.output, site: k.site)))
     } else {
@@ -338,14 +346,6 @@ internal struct Solver {
         let t = tp.program.types.reify(callee, applying: ss)
         let e = tp.program.cannotCall(t, mutably: m, at: tp.program[k.origin].site)
         ds.insert(e)
-      }
-    }
-
-    // Next are the arguments.
-    let w = program.types.seenAsCallableAbstraction(callee)!
-    guard let (bs, ss) = matches(k, inputs: w.inputs) else {
-      return .failure { (_, _, tp, ds) in
-        ds.insert(tp.program.incompatibleLabels(found: k.labels, expected: w.labels, at: k.site))
       }
     }
 
@@ -368,14 +368,22 @@ internal struct Solver {
   }
 
   /// Returns how the types of the arguments in `k` match the parameters of `f`.
+  ///
+  /// If the arguments in `k` match, this method returns a triple `(bs, ss, inplace)` where `bs`
+  /// maps each parameter of `f` to its value, `ss` contains coercion constraints resulting from
+  /// argument passing, and `inplace` is `true` iff at least one of the arguments passed to an
+  /// `auto` parameter is  marked for mutation.
+  ///
+  /// If the arguments in `k` do not match, this method returns `nil`.
   private mutating func matches(
-    _ k: CallConstraint, inputs ps: [Parameter]
-  ) -> (bingings: ParameterBindings, subgoals: [CoercionConstraint])? {
+    _ k: CallConstraint, _ f: Callable
+  ) -> (bingings: ParameterBindings, subgoals: [CoercionConstraint], inplace: Bool)? {
     var bindings = ParameterBindings()
     var subgoals: [CoercionConstraint] = []
 
+    var inplace = false
     var i = 0
-    for p in ps {
+    for p in f.inputs {
       // Is there's an explicit argument with the right label?
       if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
         let v = program[k.origin].arguments[i].value
@@ -385,6 +393,9 @@ internal struct Solver {
           CoercionConstraint(
             on: v, from: a.type, to: p.type, reason: .argument, at: program[v].site))
         i += 1
+
+        // Is the argument mutating an `auto` parameter?
+        if (p.access == .auto) && program.isMarkedMutating(v) { inplace = true }
       }
 
       // The parameter has a default value?
@@ -393,14 +404,12 @@ internal struct Solver {
         continue
       }
 
-      // TODO: Run-time implicits
-
       // Arguments do not match.
       else { return nil }
     }
 
-    assert(bindings.elements.count == ps.count)
-    return i == k.arguments.count ? (bindings, subgoals) : nil
+    assert(bindings.elements.count == f.inputs.count)
+    return i == k.arguments.count ? (bindings, subgoals, inplace) : nil
   }
 
   /// Returns a failure to solve a `k` due to an invalid callee type.

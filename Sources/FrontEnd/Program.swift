@@ -248,7 +248,7 @@ public struct Program: Sendable {
     }
   }
 
-  /// Returns `true` iff `n` declares a non-static member function.
+  /// Returns `true` iff `n` declares a non-static member function or function bundle.
   ///
   /// - Requires: The module containing `s` is scoped.
   public func isMemberFunction<T: SyntaxIdentity>(_ n: T) -> Bool {
