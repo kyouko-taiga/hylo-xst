@@ -823,8 +823,11 @@ public struct Typer {
     assert(d.module == module, "dependency is not typed")
 
     initializeContext(program[d].staticParameters)
+    let variants = AccessEffectSet(program[d].variants.map({ (v) in program[v].effect.value }))
     let inputs = declaredTypes(of: program[d].parameters)
-    let result = declaredArrowType(of: d, taking: inputs)
+    let shape = declaredArrowType(of: d, taking: inputs)
+
+    let result = demand(Bundle(shape: shape, variants: variants)).erased
     program[module].setType(result, for: d)
     return result
   }
@@ -985,15 +988,15 @@ public struct Typer {
     let parent = program.castToDeclaration(program.parent(containing: d).node!)!
     let bundle = declaredType(of: parent)
 
-    // Is the containing bundle declaring a function?
-    if let t = program.types.cast(bundle, to: Arrow.self) {
+    let shape = (program.types[bundle] as? Bundle)?.shape ?? .error
+    switch program.types.tag(of: shape) {
+    case Arrow.self:
+      let t = Arrow.ID(uncheckedFrom: shape)
       let u = program.types.variant(program[d].effect.value, of: t).erased
       program[module].setType(u, for: d)
       return u
-    }
 
-    // Something wrong happened.
-    else {
+    default:
       assert(bundle[.hasError])
       program[module].setType(.error, for: d)
       return .error
@@ -1358,9 +1361,9 @@ public struct Typer {
     }
 
     let m = program.isMarkedMutating(program[e].callee)
-    let o = (program.types[f] as? any Callable)?.output(calleeIsMutating: m)
-    ?? context.expectedType
-    ?? fresh().erased
+    let o = program.types.resultOfApplying(f, mutably: m)
+      ?? context.expectedType
+      ?? fresh().erased
     let k = CallConstraint(
       callee: f, arguments: i, output: o, origin: e, site: program[e].site)
 
@@ -1774,7 +1777,7 @@ public struct Typer {
   ) -> Diagnostic? {
     // Non-viable candidates moved at the end.
     let i = cs.stablePartition { (c) in
-      !program.isCallable(headOf: c.type, style, withLabels: labels)
+      !program.types.isCallable(c.type, style, withLabels: labels)
     }
     defer { cs.removeSubrange(i...) }
 
@@ -1788,8 +1791,8 @@ public struct Typer {
         let s = program.spanForDiagnostic(about: d)
         let h = program.types.head(c.type)
 
-        if let t = program.types[h] as? any Callable, t.style == style {
-          return program.incompatibleLabels(found: t.labels, expected: labels, at: s, as: .note)
+        if let w = program.types.seenAsCallableAbstraction(h), w.style == style {
+          return program.incompatibleLabels(found: w.labels, expected: labels, at: s, as: .note)
         } else {
           return .init(.note, "candidate not viable", at: s)
         }

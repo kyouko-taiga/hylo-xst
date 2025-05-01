@@ -308,36 +308,35 @@ internal struct Solver {
     }
 
     // Callee doesn't have the right shape?
-    else if !program.isCallable(headOf: head, program[k.origin].style) {
+    else if !program.types.isCallable(head, program[k.origin].style) {
       return invalidCallee(k)
     }
 
     var subgoals: [GoalIdentity] = []
     let coercion: GoalIdentity
-    let callee: any Callable
+    let callee: AnyTypeIdentity
 
     // Compile-time implicits missing?
     if context.isEmpty {
       coercion = -1
-      callee = program.types[head] as! any Callable
+      callee = head
     } else {
       let f = program[k.origin].callee
-      let (_, opened) = program.types.open(k.callee)
+      (_, callee) = program.types.open(k.callee)
       coercion = schedule(
-        CoercionConstraint(on: f, from: k.callee, to: opened, at: program[f].site))
+        CoercionConstraint(on: f, from: k.callee, to: callee, at: program[f].site))
       subgoals.append(coercion)
-      callee = program.types[opened] as! any Callable
     }
 
     // The callee's been fixed; next are the arguments and the output type.
     let m = program.isMarkedMutating(program[k.origin].callee)
-    let o = callee.output(calleeIsMutating: m)
+    let o = program.types.resultOfApplying(callee, mutably: m)!
     subgoals.append(schedule(EqualityConstraint(lhs: o, rhs: k.output, site: k.site)))
 
-    guard let (bs, ss) = matches(k, inputsOf: callee) else {
+    let w = program.types.seenAsCallableAbstraction(callee)!
+    guard let (bs, ss) = matches(k, inputs: w.inputs) else {
       return .failure { (_, _, tp, ds) in
-        ds.insert(
-          tp.program.incompatibleLabels(found: k.labels, expected: callee.labels, at: k.site))
+        ds.insert(tp.program.incompatibleLabels(found: k.labels, expected: w.labels, at: k.site))
       }
     }
 
@@ -361,13 +360,13 @@ internal struct Solver {
 
   /// Returns how the types of the arguments in `k` match the parameters of `f`.
   private mutating func matches(
-    _ k: CallConstraint, inputsOf f: any Callable
+    _ k: CallConstraint, inputs ps: [Parameter]
   ) -> (bingings: ParameterBindings, subgoals: [CoercionConstraint])? {
     var bindings = ParameterBindings()
     var subgoals: [CoercionConstraint] = []
 
     var i = 0
-    for p in f.inputs {
+    for p in ps {
       // Is there's an explicit argument with the right label?
       if (k.arguments.count > i) && (k.arguments[i].label == p.label) {
         let v = program[k.origin].arguments[i].value
@@ -391,7 +390,7 @@ internal struct Solver {
       else { return nil }
     }
 
-    assert(bindings.elements.count == f.inputs.count)
+    assert(bindings.elements.count == ps.count)
     return i == k.arguments.count ? (bindings, subgoals) : nil
   }
 

@@ -29,6 +29,7 @@ public struct TypeTag: Sendable {
   static let allValues: [any TypeTree.Type] = [
     Arrow.self,
     AssociatedType.self,
+    Bundle.self,
     EqualityWitness.self,
     ErrorType.self,
     GenericParameter.self,

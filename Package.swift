@@ -21,7 +21,7 @@ let package = Package(
       branch: "main"),
     .package(
       url: "https://github.com/kyouko-taiga/more-swift-collections.git",
-      from: "0.5.1"),
+      from: "0.6.0"),
     .package(
       url: "https://github.com/apple/swift-algorithms.git",
       from: "1.2.0"),

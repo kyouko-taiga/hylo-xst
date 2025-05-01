@@ -1,5 +1,4 @@
 import Archivist
-import Utilities
 
 /// An access effect, specifying how a parameter, receiver, or remote part is accessed.
 @Archivable

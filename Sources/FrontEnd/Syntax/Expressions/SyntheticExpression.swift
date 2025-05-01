@@ -1,9 +1,11 @@
 import Archivist
 
 /// The expression of a value synthesized during elaboration.
+@Archivable
 public struct SynthethicExpression: Expression {
 
   /// The value of a synthetic expression.
+  @Archivable
   public enum Value: Equatable, Sendable {
 
     /// A witness inferred by implicit resolution.
@@ -20,6 +22,12 @@ public struct SynthethicExpression: Expression {
   /// The site at which the synthesized expression is anchored.
   public let site: SourceSpan
 
+  /// Creates an instance with the given properties.
+  public init(value: Value, site: SourceSpan) {
+    self.value = value
+    self.site = site
+  }
+
 }
 
 extension SynthethicExpression: Showable {
@@ -31,46 +39,6 @@ extension SynthethicExpression: Showable {
       return printer.show(w)
     case .defaultArgument(let e):
       return "$default \(printer.show(e))"
-    }
-  }
-
-}
-
-extension SynthethicExpression: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.value = try archive.read(Value.self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(value, in: &context)
-    try archive.write(site, in: &context)
-  }
-
-}
-
-extension SynthethicExpression.Value: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    switch try archive.readByte() {
-    case 0:
-      self = try .witness(archive.read(WitnessExpression.self, in: &context))
-    case 1:
-      self = try .defaultArgument(archive.read(ExpressionIdentity.self, in: &context))
-    default:
-      throw ArchiveError.invalidInput
-    }
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    switch self {
-    case .witness(let w):
-      archive.write(byte: 0)
-      try archive.write(w, in: &context)
-    case .defaultArgument(let n):
-      archive.write(byte: 1)
-      try archive.write(n, in: &context)
     }
   }
 

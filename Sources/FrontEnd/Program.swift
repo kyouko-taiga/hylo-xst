@@ -719,51 +719,6 @@ public struct Program: Sendable {
     }
   }
 
-  /// Returns `true` iff `n` is the type of an entity callable with the given style.
-  public func isCallable(
-    headOf n: AnyTypeIdentity, _ style: Call.Style
-  ) -> Bool {
-    if let t = types[types.head(n)] as? any Callable {
-      return t.style == style
-    } else {
-      return false
-    }
-  }
-
-  /// Returns `true` iff `n` is the type of an entity callable with the given style and labels.
-  public func isCallable<S: Collection<String?>>(
-    headOf n: AnyTypeIdentity, _ style: Call.Style, withLabels labels: S
-  ) -> Bool {
-    if let t = types[types.head(n)] as? any Callable {
-      return (t.style == style) && labelsCompatible(t, with: labels)
-    } else {
-      return false
-    }
-  }
-
-  /// Reutnrs `true` iff an entity of type `n` can be applied with the given argument labels.
-  public func labelsCompatible<T: Callable, U: Collection<String?>>(
-    _ n: T, with labels: U
-  ) -> Bool {
-    var i = labels.startIndex
-    for p in n.inputs {
-      // Is there's an explicit argument with the right label?
-      if (labels.endIndex > i) && (labels[i] == p.label) {
-        labels.formIndex(after: &i)
-      }
-
-      // The parameter has a default value?
-      else if p.defaultValue != nil {
-        continue
-      }
-
-      // Arguments do not match.
-      else { return false }
-    }
-
-    return i == labels.endIndex
-  }
-
   /// Returns a lambda accessing `path` on an instance of `T`.
   public func read<T: Syntax, U>(_ path: KeyPath<T, U>) -> (_ n: T.ID) -> U {
     { (n) in self[n][keyPath: path] }

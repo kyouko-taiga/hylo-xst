@@ -69,16 +69,6 @@ public struct TypeStore: Sendable {
     tag(of: n) == EqualityWitness.self
   }
 
-  /// Returns `true` iff `n` identifies the type of an entity callable as a function.
-  public func isArrowLike<T: TypeIdentity>(_ n: T) -> Bool {
-    tag(of: n) == Arrow.self
-  }
-
-  /// Returns `true` iff `n` identifies the type of an entity callable as a subscript.
-  public func isSubscriptLike<T: TypeIdentity>(_ n: T) -> Bool {
-    return false
-  }
-
   /// Returns `true` iff `n` identifies a non-nominal type (e.g., a tuple).
   public func isStructural<T: TypeIdentity>(_ n: T) -> Bool {
     switch tag(of: n) {
@@ -100,14 +90,34 @@ public struct TypeStore: Sendable {
     }
   }
 
+  /// Returns `true` iff `n` is the type of an entity callable with the given style.
+  public func isCallable<T: TypeIdentity>(_ n: T, _ style: Call.Style) -> Bool {
+    if let w = seenAsCallableAbstraction(n) {
+      return w.style == style
+    } else {
+      return false
+    }
+  }
+
+  /// Returns `true` iff `n` is the type of an entity callable with the given style and labels.
+  public func isCallable<T: TypeIdentity, S: Collection<String?>>(
+    _ n: T, _ style: Call.Style, withLabels labels: S
+  ) -> Bool {
+    if let w = seenAsCallableAbstraction(n) {
+      return (w.style == style) && w.labelsCompatible(with: labels)
+    } else {
+      return false
+    }
+  }
+
   /// Returns `true` iff `n` is a universal type or an implication.
   public func hasContext<T: TypeIdentity>(_ n: T) -> Bool {
     (tag(of: n) == UniversalType.self) || (tag(of: n) == Implication.self)
   }
 
   /// Returns `n` sans context clause.
-  public func head(_ n: AnyTypeIdentity) -> AnyTypeIdentity {
-    var h = n
+  public func head<T: TypeIdentity>(_ n: T) -> AnyTypeIdentity {
+    var h = n.erased
     while true {
       switch self[h] {
       case let t as UniversalType:
@@ -227,6 +237,20 @@ public struct TypeStore: Sendable {
     return .init(uncheckedFrom: n.erased)
   }
 
+  /// Returns properties of `n` iff it identifies the type of a callable abstraction.
+  public func seenAsCallableAbstraction<T: TypeIdentity>(
+    _ n: T
+  ) -> Callable? {
+    switch self[head(n)] {
+    case let t as Arrow:
+      return .init(style: .parenthesized, environment: t.environment, inputs: t.inputs)
+    case let t as Bundle:
+      return seenAsCallableAbstraction(t.shape)
+    default:
+      return nil
+    }
+  }
+
   /// Returns `(P, [A...])` iff `n` has the form `P<A...>`.
   public func seenAsTraitApplication<T: TypeIdentity>(
     _ n: T
@@ -280,6 +304,25 @@ public struct TypeStore: Sendable {
     return introduce(c, into: t).erased
   }
 
+  public mutating func resultOfApplying(
+    _ callable: AnyTypeIdentity, mutably isAppliedMutably: Bool
+  ) -> AnyTypeIdentity? {
+    switch self[callable] {
+    case let t as Arrow:
+      return t.output
+
+    case let t as Bundle:
+      if isAppliedMutably, let u = cast(t.shape, to: Arrow.self) {
+        return t.variants.intersection(.inplace).first.map({ (k) in variant(k, of: u).erased })
+      } else {
+        return resultOfApplying(t.shape, mutably: isAppliedMutably)
+      }
+
+    default:
+      return nil
+    }
+  }
+
   /// Returns the type of the variant `k` of a bundle of type `n`.
   ///
   /// This method returns a copy of `n` in which occurrences of the `auto` effect are substituted
@@ -289,10 +332,6 @@ public struct TypeStore: Sendable {
   /// For example, given a type `[{x: auto A}](y: auto B) auto -> C`, this method returns
   /// - `[{x: let A}](y: let B) let -> {A, B, C}` with `k == .let`; and
   /// - `[{x: set A}](y: set B) set -> C` with `k == .set`.
-  ///
-  /// If `k` is a non-mutating effect and `C` is equal to `Void`, then `C` is excluded from the
-  /// return type of the result. For instance, if `C` is `Void` in the above example, this method
-  /// returns `[{x: let A}](y: let B) let -> {A, B}` with `k == .let`.
   ///
   /// - Requires: `n` is the type of a function bundle.
   public mutating func variant(_ k: AccessEffect, of n: Arrow.ID) -> Arrow.ID {
@@ -333,13 +372,10 @@ public struct TypeStore: Sendable {
 
     let output = if k.isMutating {
       self[n].output
-    } else if dealiased(self[n].output) == .void {
-      demand(Tuple(elements: updates)).erased
     } else {
       demand(Tuple(elements: updates + [.init(label: nil, type: self[n].output)])).erased
     }
 
-    assert(!self[n].isByName)
     return demand(Arrow(effect: k, environment: environment, inputs: inputs, output: output))
   }
 
@@ -609,6 +645,8 @@ public struct TypeStore: Sendable {
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (_ as AssociatedType, _ as AssociatedType):
       result = false
+    case (let t as Bundle, let u as Bundle):
+      result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (let t as EqualityWitness, let u as EqualityWitness):
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (_ as ErrorType, _ as ErrorType):
@@ -654,7 +692,7 @@ public struct TypeStore: Sendable {
     _ lhs: Arrow, _ rhs: Arrow, extending ss: inout SubstitutionTable,
     handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
-    (lhs.effect == rhs.effect) && (lhs.isByName == rhs.isByName)
+    (lhs.effect == rhs.effect)
       && lhs.labels.elementsEqual(rhs.labels)
       && unifiable(
         lhs.environment, rhs.environment, extending: &ss, handlingCoercionsWith: areCoercible)
@@ -663,6 +701,15 @@ public struct TypeStore: Sendable {
         by: { (a, b, s) in unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible) })
       && unifiable(
         lhs.output, rhs.output, extending: &ss, handlingCoercionsWith: areCoercible)
+  }
+
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
+  private func unifiable(
+    _ lhs: Bundle, _ rhs: Bundle, extending ss: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
+  ) -> Bool {
+    (lhs.variants == rhs.variants)
+      && unifiable(lhs.shape, rhs.shape, extending: &ss, handlingCoercionsWith: areCoercible)
   }
 
   /// Returns `true` if `lhs` and `rhs` are unifiable.
