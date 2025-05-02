@@ -122,18 +122,7 @@ public struct Parser {
   ///       static private internal private
   ///
   private mutating func parseOptionalDeclarationModifiers() -> Parsed<DeclarationModifier>? {
-    switch peek()?.tag {
-    case .static:
-      return .init(.static, at: take()!.site)
-    case .private:
-      return .init(.private, at: take()!.site)
-    case .internal:
-      return .init(.internal, at: take()!.site)
-    case .public:
-      return .init(.public, at: take()!.site)
-    default:
-      return nil
-    }
+    parseExpressibleByTokenTag(DeclarationModifier.self)
   }
 
   /// Parses an associated type declaration.
@@ -479,8 +468,7 @@ public struct Parser {
     /// Returns a name expression referring to the conforming type.
     func conformer() -> [ExpressionIdentity] {
       let s = SourceSpan.empty(at: position)
-      let e = file.insert(
-        NameExpression(qualification: nil, name: .init("Self", at: s), site: s))
+      let e = file.insert(NameExpression(qualification: nil, name: .init("Self", at: s), site: s))
       return [.init(e)]
     }
   }
@@ -861,7 +849,7 @@ public struct Parser {
     to h: inout ExpressionIdentity, in file: inout Module.SourceContainer
   ) throws -> Bool {
     if take(.dot) == nil { return false }
-    let n = try parseNominalComponent()
+    let n = try parseName()
     let s = span(from: file[h].site.start)
     let m = file.insert(NameExpression(qualification: h, name: n, site: s))
     h = .init(m)
@@ -981,20 +969,7 @@ public struct Parser {
 
   /// Parses an access effect iff the next token denotes one.
   private mutating func parseOptionalAccessEffect() -> Parsed<AccessEffect>? {
-    switch peek()?.tag {
-    case .auto:
-      return Parsed(.auto, at: take()!.site)
-    case .inout:
-      return Parsed(.inout, at: take()!.site)
-    case .let:
-      return Parsed(.let, at: take()!.site)
-    case .set:
-      return Parsed(.set, at: take()!.site)
-    case .sink:
-      return Parsed(.sink, at: take()!.site)
-    default:
-      return nil
-    }
+    parseExpressibleByTokenTag(AccessEffect.self)
   }
 
   /// Parses a name expression with an implicit qualification.
@@ -1006,27 +981,47 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> NameExpression.ID {
     let dot = try take(.dot) ?? expected("'.'")
-    let n = try parseNominalComponent()
+    let n = try parseName()
     let q = file.insert(ImplicitQualification(site: dot.site))
     return file.insert(NameExpression(qualification: .init(q), name: n, site: span(from: dot)))
   }
 
   /// Parses an unqualified name expression.
   ///
-  ///     unqualified-name-expression ::=
-  ///       identifier
+  ///     unqualified-name-expression ::= (token)
+  ///       identifier ('@' access-effect)?
   ///
   private mutating func parseUnqualifiedNameExpression(
     in file: inout Module.SourceContainer
   ) throws -> NameExpression.ID {
-    let name = try parseNominalComponent()
-    return file.insert(NameExpression(qualification: .none, name: name, site: name.site))
+    let n = try parseName()
+    return file.insert(NameExpression(qualification: .none, name: n, site: n.site))
   }
 
-  /// Parses a name and its optional compile-time arguments.
-  private mutating func parseNominalComponent() throws -> Parsed<Name> {
-    let identifier = try take(.name) ?? expected("identifier")
-    return .init(Name(identifier: String(identifier.text)), at: identifier.site)
+  /// Parses a name.
+  private mutating func parseName() throws -> Parsed<Name> {
+    let head = try peek() ?? expected("name")
+
+    var identifier: String
+    var notation: OperatorNotation = .none
+    var introducer: AccessEffect? = nil
+
+    if head.isOperatorNotation {
+      (notation, identifier) = try parseOperatorIdentifier().value
+    } else if head.tag == .name {
+      _ = take()
+      identifier = String(head.text)
+    } else {
+      throw expected("name")
+    }
+
+    if take(affixed: .at) != nil {
+      introducer = parseAccessEffect().value
+    }
+
+    return .init(
+      Name(identifier: identifier, notation: notation, introducer: introducer),
+      at: span(from: head.site.start))
   }
 
   /// Parses a tuple type expression.
@@ -1380,11 +1375,12 @@ public struct Parser {
   ) throws -> Parsed<FunctionIdentifier> {
     if let t = peek() {
       if t.isOperatorNotation {
-        return try parseOperatorIdentifier()
+        let i = try parseOperatorIdentifier()
+        return .init(.operator(i.value.notation, i.value.identifier), at: i.site)
       } else if t.isOperator {
         report(.init("missing operator notation", at: .empty(at: t.site.start)))
-        let identifier = try parseOperator()
-        return .init(.operator(.none, String(identifier.text)), at: identifier)
+        let o = try parseOperator()
+        return .init(.operator(.none, String(o.text)), at: o)
       }
     }
 
@@ -1408,23 +1404,20 @@ public struct Parser {
   ///       operator-notation operator
   ///
   private mutating func parseOperatorIdentifier(
-  ) throws -> Parsed<FunctionIdentifier> {
-    let head = try take(if: \.isOperatorNotation) ?? expected("operator notation")
-    let notation: OperatorNotation = switch head.tag {
-    case .infix: .infix
-    case .postfix: .postfix
-    case .prefix: .postfix
-    default: unreachable()
+  ) throws -> Parsed<(notation: OperatorNotation, identifier: String)> {
+    let n = try parseOperatorNotation()
+    let i = try parseOperator()
+
+    if n.site.end != i.start {
+      report(.init("illegal space between after operator notation", at: i))
     }
 
-    let identifier = try parseOperator()
-    if head.site.end != identifier.start {
-      report(.init("illegal space between after operator notation", at: identifier))
-    }
+    return .init((n.value, String(i.text)), at: n.site.extended(toCover: i))
+  }
 
-    return .init(
-      .operator(notation, String(identifier.text)),
-      at: head.site.extended(toCover: identifier))
+  /// Parses an operator notation.
+  private mutating func parseOperatorNotation() throws -> Parsed<OperatorNotation> {
+    try parseExpressibleByTokenTag(OperatorNotation.self) ?? expected("operator notation")
   }
 
   /// Parses an operator and returns the region of the file from which it has been extracted.
@@ -1470,6 +1463,18 @@ public struct Parser {
     } else {
       report(expected("identifier"))
       return .init("$!", at: .empty(at: position))
+    }
+  }
+
+  /// Parses an instance of `T` if it can be constructed from the next token.
+  private mutating func parseExpressibleByTokenTag<T: ExpressibleByTokenTag>(
+    _: T.Type
+  ) -> Parsed<T>? {
+    if let h = peek(), let v = T(tag: h.tag) {
+      _ = take()
+      return .init(v, at: h.site)
+    } else {
+      return nil
     }
   }
 
@@ -1571,22 +1576,27 @@ public struct Parser {
     return next
   }
 
-  /// Consumes and returns the next token iff it has tag `k`; otherwise, returns `nil`.
+  /// Consumes and returns the next token iff it has tag `k`.
   private mutating func take(_ k: Token.Tag) -> Token? {
     next(is: k) ? take() : nil
   }
 
-  /// Consumes and returns the next token iff it satisifies `predicate`; otherwise, returns `nil`.
+  /// Consumes and returns the next token iff it has tag `k` and no leading whitespace.
+  private mutating func take(affixed k: Token.Tag) -> Token? {
+    (next(is: k) && !whitespaceBeforeNextToken()) ? take() : nil
+  }
+
+  /// Consumes and returns the next token iff it satisifies `predicate`.
   private mutating func take(if predicate: (Token) -> Bool) -> Token? {
     next(satisfies: predicate) ? take() : nil
   }
 
-  /// COnsumes and returns the next token iff it is a contextual keyword withe the given value.
+  /// Consumes and returns the next token iff it is a contextual keyword withe the given value.
   private mutating func take(contextual s: String) -> Token? {
     take(if: { (t) in (t.tag == .name) && (t.text == s) })
   }
 
-  /// Consumes and returns the next token iff its tag is in `ks`; otherwise, returns `nil`.
+  /// Consumes and returns the next token iff its tag is in `ks`.
   private mutating func take<T: Collection<Token.Tag>>(oneOf ks: T) -> Token? {
     take(if: { (t) in ks.contains(t.tag) })
   }
@@ -1621,10 +1631,15 @@ public struct Parser {
 
   /// Parses an instance of `T` or restores `self` to its current state if that fails.
   private mutating func attempt<T>(_ parse: (inout Self) throws -> T) -> T? {
+    attemptOptional({ (me) in try? parse(&me) })
+  }
+
+  /// Parses an instance of `T` or restores `self` to its current state if that fails.
+  private mutating func attemptOptional<T>(_ parse: (inout Self) -> T?) -> T? {
     var backup = self
-    do {
-      return try parse(&self)
-    } catch {
+    if let result = parse(&self) {
+      return result
+    } else {
       swap(&self, &backup)
       return nil
     }
@@ -1868,6 +1883,48 @@ extension Token.Tag {
     case .leftParenthesis: "'('"
     case .rightParenthesis: "')'"
     default: "\(self)"
+    }
+  }
+
+}
+
+extension AccessEffect: ExpressibleByTokenTag {
+
+  internal init?(tag: Token.Tag) {
+    switch tag {
+    case .auto: self = .auto
+    case .inout: self = .inout
+    case .let: self = .let
+    case .set: self = .set
+    case .sink: self = .sink
+    default: return nil
+    }
+  }
+
+}
+
+extension DeclarationModifier: ExpressibleByTokenTag {
+
+  internal init?(tag: Token.Tag) {
+    switch tag {
+    case .static: self = .static
+    case .private: self = .private
+    case .internal: self = .internal
+    case .public: self = .public
+    default: return nil
+    }
+  }
+
+}
+
+extension OperatorNotation: ExpressibleByTokenTag {
+
+  internal init?(tag: Token.Tag) {
+    switch tag {
+    case .infix: self = .infix
+    case .postfix: self = .postfix
+    case .prefix: self = .prefix
+    default: return nil
     }
   }
 

@@ -733,6 +733,16 @@ public struct Program: Sendable {
     }
   }
 
+  /// Returns the declaration of the variant with effect `k` in the bundle `d`, or `nil` if `d`
+  /// does not declare a bundle or `d` does not contain such a variant.
+  public func variant(_ k: AccessEffect, of d: DeclarationIdentity) -> VariantDeclaration.ID? {
+    if let b = cast(d, to: FunctionBundleDeclaration.self) {
+      return self[b].variants.first(where: { (v) in self[v].effect.value == k })
+    } else {
+      return nil
+    }
+  }
+
   /// Returns a lambda accessing `path` on an instance of `T`.
   public func read<T: Syntax, U>(_ path: KeyPath<T, U>) -> (_ n: T.ID) -> U {
     { (n) in self[n][keyPath: path] }

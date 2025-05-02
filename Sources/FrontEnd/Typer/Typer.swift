@@ -300,7 +300,7 @@ public struct Typer {
       var viable: [DeclarationReference] = []
 
       // Is there a unique implementation in the conformance declaration?
-      for c in lookup(requiredName.identifier, lexicallyIn: .init(node: d)) {
+      for c in lookup(requiredName, lexicallyIn: .init(node: d)) {
         let candidateType = declaredType(of: c)
         if unifiable(candidateType, requiredType) { viable.append(.direct(c)) }
       }
@@ -516,7 +516,8 @@ public struct Typer {
   private mutating func implementation(
     of requirement: AssociatedTypeDeclaration.ID, in d: ConformanceDeclaration.ID
   ) -> DeclarationIdentity? {
-    lookup(program[requirement].identifier.value, lexicallyIn: .init(node: d)).uniqueElement
+    let n = Name(identifier: program[requirement].identifier.value)
+    return lookup(n, lexicallyIn: .init(node: d)).uniqueElement
   }
 
   /// Returns an implementation of `requirement` for `conformer` iff one can be synthesized.
@@ -823,7 +824,7 @@ public struct Typer {
     assert(d.module == module, "dependency is not typed")
 
     initializeContext(program[d].staticParameters)
-    let variants = AccessEffectSet(program[d].variants.map({ (v) in program[v].effect.value }))
+    let variants = AccessEffectSet(program[d].variants.map(program.read(\.effect.value)))
     let inputs = declaredTypes(of: program[d].parameters)
     let shape = declaredArrowType(of: d, taking: inputs)
 
@@ -1786,24 +1787,23 @@ public struct Typer {
     }
     defer { cs.removeSubrange(i...) }
 
-    if i != 0 {
-      return nil
-    } else {
-      // Only candidates having a declaration in source are added to the notes. Other candidates
-      // are not overloadable and so we can assume that another error will be diagnosed.
-      let notes = cs.compactMap { (c) -> Diagnostic? in
-        guard let d = c.reference.target else { return nil }
-        let s = program.spanForDiagnostic(about: d)
-        let h = program.types.head(c.type)
+    // Are there viable candidates left?
+    if i != 0 { return nil }
 
-        if let w = program.types.seenAsCallableAbstraction(h), w.style == style {
-          return program.incompatibleLabels(found: w.labels, expected: labels, at: s, as: .note)
-        } else {
-          return .init(.note, "candidate not viable", at: s)
-        }
+    // Only candidates having a declaration in source are added to the notes. Other candidates are
+    // not overloadable and so we can assume that another error will be diagnosed.
+    let notes = cs.compactMap { (c) -> Diagnostic? in
+      guard let d = c.reference.target else { return nil }
+      let s = program.spanForDiagnostic(about: d)
+      let h = program.types.head(c.type)
+
+      if let w = program.types.seenAsCallableAbstraction(h), w.style == style {
+        return program.incompatibleLabels(found: w.labels, expected: labels, at: s, as: .note)
+      } else {
+        return .init(.note, "candidate not viable", at: s)
       }
-      return .init(.error, "no candidate matches the argument list", at: site, notes: notes)
     }
+    return .init(.error, "no candidate matches the argument list", at: site, notes: notes)
   }
 
   /// Proves the obligations `o`, which relate to the well-typedness of `n`, returning the best
@@ -2734,7 +2734,7 @@ public struct Typer {
   private mutating func resolve(
     _ n: Name, unqualifiedIn scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
-    let ds = lookup(n.identifier, unqualifiedIn: scopeOfUse)
+    let ds = lookup(n, unqualifiedIn: scopeOfUse)
 
     var candidates: [NameResolutionCandidate] = []
     for d in ds {
@@ -2754,6 +2754,9 @@ public struct Typer {
   private mutating func resolve(
     predefined n: Name, unqualifiedIn scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
+    // Predefed names names have no argument labels, operator notation, or introducer.
+    if !n.isSimple { return [] }
+
     switch n.identifier {
     case "Self":
       if let t = typeOfSelf(in: scopeOfUse) {
@@ -2790,8 +2793,11 @@ public struct Typer {
 
   /// Resolves `n` as a member of the built-in module.
   private mutating func resolve(builtin n: Name) -> [NameResolutionCandidate] {
+    // Built-in names have no argument labels, operator notation, or introducer.
+    if !n.isSimple { return [] }
+
     // Are we selecting a machine type?
-    if let m = MachineType(n.identifier) {
+    else if let m = MachineType(n.identifier) {
       return [.init(reference: .builtin(.alias), type: metatype(of: m).erased)]
     }
 
@@ -2860,7 +2866,10 @@ public struct Typer {
     let (context, receiver) = program.types.contextAndHead(q)
     var candidates: [NameResolutionCandidate] = []
 
-    for m in declarations(nativeMembersOf: q)[n.identifier] ?? [] {
+    var ds = declarations(nativeMembersOf: q)[n.identifier] ?? []
+    refineLookupResults(&ds, matching: n)
+
+    for m in ds {
       var member = typeOfName(referringTo: m, statically: selectionIsStatic)
       if let a = program.types[receiver] as? TypeApplication {
         member = program.types.substitute(a.arguments, in: member)
@@ -2927,18 +2936,18 @@ public struct Typer {
     }
   }
 
-  /// Returns candidates for resolving `n` as a member of `q` via conformance in `scopeOfUse`,
+  /// Returns candidates for resolving `name` as a member of `q` via conformance in `scopeOfUse`,
   /// selected statically iff `selectionIsStatic` is `true`.
   ///
   /// Non-static members are resolved as unbound members if `selectionIsStatic` is `true` and as
   /// bound members if `selectionIsStatic` is `false`.
   private mutating func resolve(
-    _ n: Name, inheritedMemberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
+    _ name: Name, inheritedMemberOf q: AnyTypeIdentity, visibleFrom scopeOfUse: ScopeIdentity,
     statically selectionIsStatic: Bool
   ) -> [NameResolutionCandidate] {
     var candidates: [NameResolutionCandidate] = []
 
-    for (concept, ms) in lookup(n.identifier, memberOfTraitVisibleFrom: scopeOfUse) {
+    for (concept, ms) in lookup(name, memberOfTraitVisibleFrom: scopeOfUse) {
       let vs = program[concept].parameters.map({ _ in fresh().erased })
       let model = typeOfModel(of: q, conformingTo: concept, with: vs)
       for a in summon(model.erased, in: scopeOfUse) {
@@ -2957,9 +2966,9 @@ public struct Typer {
     return candidates
   }
 
-  /// Returns the declarations introducing `identifier` without qualification in `scopeOfUse`.
+  /// Returns the declarations introducing `name` without qualification in `scopeOfUse`.
   private mutating func lookup(
-    _ identifier: String, unqualifiedIn scopeOfUse: ScopeIdentity
+    _ name: Name, unqualifiedIn scopeOfUse: ScopeIdentity
   ) -> [DeclarationIdentity] {
     var result: [DeclarationIdentity] = []
 
@@ -2979,7 +2988,7 @@ public struct Typer {
 
     // Look for declarations in `scopeOfUse` and its ancestors.
     for s in program.scopes(from: scopeOfUse) {
-      if append(lookup(identifier, lexicallyIn: s)) {
+      if append(lookup(name, lexicallyIn: s)) {
         return result
       }
     }
@@ -2987,52 +2996,78 @@ public struct Typer {
     // Look for top-level declarations in other source files.
     let f = scopeOfUse.file
     for s in program[f.module].sourceFileIdentities where s != f {
-      if append(lookup(identifier, lexicallyIn: .init(file: s))) {
+      if append(lookup(name, lexicallyIn: .init(file: s))) {
         return result
       }
     }
 
     // Look for imports.
     for n in imports(of: f) {
-      result.append(contentsOf: lookup(identifier, atTopLevelOf: n))
+      result.append(contentsOf: lookup(name, atTopLevelOf: n))
     }
     return result
   }
 
-  /// Returns the top-level declarations of `m` introducing `identifier`.
+  /// Returns the top-level declarations of `m` introducing `name`.
   private mutating func lookup(
-    _ identifier: String, atTopLevelOf m: Program.ModuleIdentity
+    _ name: Name, atTopLevelOf m: Program.ModuleIdentity
   ) -> [DeclarationIdentity] {
+    var ds: [DeclarationIdentity] = []
+
     if let table = cache.moduleToIdentifierToDeclaration[m] {
-      return table[identifier] ?? []
+      ds = table[name.identifier] ?? []
     } else {
       var table = Memos.LookupTable()
       extendLookupTable(&table, with: program[m].topLevelDeclarations)
       cache.moduleToIdentifierToDeclaration[m] = table
-      return table[identifier] ?? []
+      ds = table[name.identifier] ?? []
     }
+
+    refineLookupResults(&ds, matching: name)
+    return ds
   }
 
-  /// Returns the declarations introducing `identifier` in `s`.
+  /// Returns the declarations introducing `name` in `s`.
   private mutating func lookup(
-    _ identifier: String, lexicallyIn s: ScopeIdentity
+    _ name: Name, lexicallyIn s: ScopeIdentity
   ) -> [DeclarationIdentity] {
-    declarations(lexicallyIn: s)[identifier] ?? []
+    var ds = declarations(lexicallyIn: s)[name.identifier] ?? []
+    refineLookupResults(&ds, matching: name)
+    return ds
   }
 
-  /// Returns the declarations that introduce `identifier` as a member of a trait that is visible
-  /// from `scopeOfUse`.
+  /// Returns the declarations introducing `name` as a member of a trait visible from `scopeOfUse`.
   private mutating func lookup(
-    _ identifier: String, memberOfTraitVisibleFrom scopeOfUse: ScopeIdentity
+    _ name: Name, memberOfTraitVisibleFrom scopeOfUse: ScopeIdentity
   ) -> [(concept: TraitDeclaration.ID, members: [DeclarationIdentity])] {
     var result: [(concept: TraitDeclaration.ID, members: [DeclarationIdentity])] = []
     for d in traits(visibleFrom: scopeOfUse) {
-      let ms = lookup(identifier, lexicallyIn: .init(node: d))
+      let ms = lookup(name, lexicallyIn: .init(node: d))
       if !ms.isEmpty {
         result.append((concept: d, members: ms))
       }
     }
     return result
+  }
+
+  /// Removes from `results` the declarations whose names do not match `name`, substituting bundle
+  /// declarations by the variant corresponding to `name.introducer` if it is defined.
+  private mutating func refineLookupResults(
+    _ results: inout [DeclarationIdentity], matching name: Name
+  ) {
+    // There's nothing to do if the name is simple.
+    if name.isSimple || results.isEmpty { return }
+
+    // Otherwise, remove results whose names do no match or select variants in bundles.
+    results.compactMapInPlace { (d) in
+      if name ~= program.name(of: d) {
+        return d
+      } else if let k = name.introducer, let v = program.variant(k, of: d) {
+        return .init(v)
+      } else {
+        return nil
+      }
+    }
   }
 
   /// Returns the declarations lexically contained in the declaration of `t`.

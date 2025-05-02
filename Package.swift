@@ -67,7 +67,11 @@ let package = Package(
       path: "StandardLibrary",
       resources: [.copy("Sources")]),
 
-    .target(name: "Utilities"),
+    .target(
+      name: "Utilities",
+      dependencies: [
+        .product(name: "Algorithms", package: "swift-algorithms"),
+      ]),
 
     .testTarget(
       name: "CompilerTests",

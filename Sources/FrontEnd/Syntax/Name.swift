@@ -97,16 +97,17 @@ public struct Name: Hashable, Sendable {
     self.introducer = introducer
   }
 
-  /// Returns `self` appending `x` or `nil` if `self` already has an introducer.
-  public func appending(_ x: AccessEffect) -> Name? {
-    introducer == nil
-      ? Name(identifier: identifier, labels: labels, notation: notation, introducer: x)
-      : nil
+  /// `true` iff `self` has no argument labels, operator notation, or introducer.
+  public var isSimple: Bool {
+    labels.isEmpty && (notation == .none) && (introducer == .none)
   }
 
-  /// Returns `self` sans access effect.
-  public func removingIntroducer() -> Name {
-    Name(identifier: identifier, labels: labels, notation: notation)
+  /// Returns `true` iff `scrutinee` can be used to refer to a declaration named after `pattern`.
+  public static func ~= (pattern: Name, scrutinee: Name) -> Bool {
+    pattern.identifier == scrutinee.identifier
+      && (pattern.labels.isEmpty || pattern.labels.elementsEqual(scrutinee.labels))
+      && (pattern.notation == .none || pattern.notation == scrutinee.notation)
+      && (pattern.introducer == .none || pattern.notation == scrutinee.notation)
   }
 
 }
@@ -126,10 +127,10 @@ extension Name: CustomStringConvertible {
     if notation != .none {
       return "\(notation)\(identifier)"
     } else if labels.isEmpty {
-      let introducer = introducer.map({ ".\($0)" }) ?? ""
+      let introducer = introducer.map({ "@\($0)" }) ?? ""
       return identifier + introducer
     } else {
-      let introducer = introducer.map({ ".\($0)" }) ?? ""
+      let introducer = introducer.map({ "@\($0)" }) ?? ""
       return "\(identifier)(\(labels))" + introducer
     }
   }

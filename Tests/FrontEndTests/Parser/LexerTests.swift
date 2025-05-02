@@ -133,7 +133,8 @@ final class LexerTests: XCTestCase {
   }
 
   func testPunctuation() throws {
-    var scanner = Lexer(tokenizing: ",.: :: ;")
+    var scanner = Lexer(tokenizing: "@,.: :: ;")
+    try assertNext(from: &scanner, is: .at)
     try assertNext(from: &scanner, is: .comma)
     try assertNext(from: &scanner, is: .dot)
     try assertNext(from: &scanner, is: .colon)

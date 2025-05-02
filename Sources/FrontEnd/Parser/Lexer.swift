@@ -142,6 +142,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "]": tag = .rightBracket
     case "(": tag = .leftParenthesis
     case ")": tag = .rightParenthesis
+    case "@": tag = .at
     case ",": tag = .comma
     case ".": tag = .dot
     case ";": tag = .semicolon
