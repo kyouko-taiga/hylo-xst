@@ -40,12 +40,12 @@ public struct TypeTag: Sendable {
     Namespace.self,
     RemoteType.self,
     Struct.self,
+    Sum.self,
     Trait.self,
     Tuple.self,
     TypeAlias.self,
     TypeApplication.self,
     TypeVariable.self,
-    Union.self,
     UniversalType.self,
   ]
 

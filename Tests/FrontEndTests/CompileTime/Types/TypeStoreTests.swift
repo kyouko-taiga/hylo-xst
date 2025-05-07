@@ -21,7 +21,7 @@ final class TypeStoreTests: XCTestCase {
 
   func testDemandNever() {
     var store = TypeStore()
-    let t = Union(elements: [])
+    let t = Sum(elements: [])
     let i = store.demand(t)
     XCTAssertEqual(i.erased, AnyTypeIdentity.never)
     XCTAssertEqual(store[i], t)

@@ -247,10 +247,8 @@ internal struct Solver {
     case is TypeVariable:
       return postpone(g)
 
-    case let u as Union:
-      if u.elements.isEmpty {
-        return .success
-      } else if k.lhs.isVariable || u.elements.contains(where: \.isVariable) {
+    case let u as Sum:
+      if k.lhs.isVariable || u.elements.contains(where: \.isVariable) {
         return postpone(g)
       } else {
         fatalError("TODO")

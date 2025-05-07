@@ -1,5 +1,7 @@
-/// A union of types.
-public struct Union: TypeTree {
+import Utilities
+
+/// A tagged union of types.
+public struct Sum: TypeTree {
 
   /// The elements of the union.
   public let elements: [AnyTypeIdentity]
@@ -13,17 +15,18 @@ public struct Union: TypeTree {
   public func modified(
     in store: inout TypeStore,
     by transform: (inout TypeStore, AnyTypeIdentity) -> TypeTransformAction
-  ) -> Union {
+  ) -> Sum {
     .init(elements: elements.map({ (e) in store.map(e, transform) }))
   }
 
 }
 
-extension Union: Showable {
+extension Sum: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    elements.isEmpty ? "Never" : "Union<\(printer.show(elements))>"
+    let es = elements.map({ (e) in printer.show(e) })
+    return es.isEmpty ? "Never" : "{\(list: es, joinedBy: " + ")}"
   }
 
 }

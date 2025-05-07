@@ -48,7 +48,7 @@ public struct TypeStore: Sendable {
       return AnyTypeIdentity.error
     case let u as Tuple where u.elements.isEmpty:
       return AnyTypeIdentity.void
-    case let u as Union where u.elements.isEmpty:
+    case let u as Sum where u.elements.isEmpty:
       return AnyTypeIdentity.never
     case let u as TypeVariable:
       return AnyTypeIdentity(variable: u.identifier)
@@ -457,7 +457,7 @@ public struct TypeStore: Sendable {
       case AnyTypeIdentity.void.offset:
         yield Tuple(elements: [])
       case AnyTypeIdentity.never.offset:
-        yield Union(elements: [])
+        yield Sum(elements: [])
       case let i where n.isVariable:
         yield TypeVariable(identifier: Int(UInt64(i) & ((1 << 54) - 1)))
       case let i:
@@ -708,11 +708,11 @@ public struct TypeStore: Sendable {
       result = false
     case (_ as Trait, _ as Trait):
       result = false
+    case (let t as Sum, let u as Sum):
+      result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (let t as Tuple, let u as Tuple):
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (let t as TypeApplication, let u as TypeApplication):
-      result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
-    case (let t as Union, let u as Union):
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
     case (let t as UniversalType, let u as UniversalType):
       result = unifiable(t, u, extending: &ss, handlingCoercionsWith: areCoercible)
@@ -807,6 +807,14 @@ public struct TypeStore: Sendable {
 
   /// Returns `true` if `lhs` and `rhs` are unifiable.
   private func unifiable(
+    _ lhs: Sum, _ rhs: Sum, extending ss: inout SubstitutionTable,
+    handlingCoercionsWith areCoercible: CoercionHandler
+  ) -> Bool {
+    unifiable(lhs.elements, rhs.elements, extending: &ss, handlingCoercionsWith: areCoercible)
+  }
+
+  /// Returns `true` if `lhs` and `rhs` are unifiable.
+  private func unifiable(
     _ lhs: TypeApplication, _ rhs: TypeApplication, extending ss: inout SubstitutionTable,
     handlingCoercionsWith areCoercible: CoercionHandler
   ) -> Bool {
@@ -815,14 +823,6 @@ public struct TypeStore: Sendable {
       && unifiable(
         lhs.arguments.values, rhs.arguments.values, extending: &ss,
         by: { (a, b, s) in unifiable(a, b, extending: &s, handlingCoercionsWith: areCoercible) })
-  }
-
-  /// Returns `true` if `lhs` and `rhs` are unifiable.
-  private func unifiable(
-    _ lhs: Union, _ rhs: Union, extending ss: inout SubstitutionTable,
-    handlingCoercionsWith areCoercible: CoercionHandler
-  ) -> Bool {
-    unifiable(lhs.elements, rhs.elements, extending: &ss, handlingCoercionsWith: areCoercible)
   }
 
   /// Returns `true` if `lhs` and `rhs` are unifiable.
