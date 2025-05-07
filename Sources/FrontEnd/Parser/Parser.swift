@@ -3,6 +3,17 @@ import Utilities
 /// The parsing of a source file.
 public struct Parser {
 
+  /// The context in which a parser is being used.
+  private enum Context {
+
+    /// The default context.
+    case `default`
+
+    /// The parsing of the subpattern of binding pattern.
+    case bindingSubpattern
+
+  }
+
   /// The tokens in the input.
   private var tokens: Lexer
 
@@ -15,8 +26,8 @@ public struct Parser {
   /// The position immediately after the last consumed token.
   private var position: SourcePosition
 
-  /// `true` iff we're parsing the subpattern of binding pattern.
-  private var isParsingBindingSubpattern = false
+  /// The context in which the parser is being used.
+  private var context: Context = .default
 
   /// Creates an instance parsing `source`.
   public init(_ source: SourceFile) {
@@ -1183,7 +1194,7 @@ public struct Parser {
     switch peek()?.tag {
     case .inout, .let, .set, .sink:
       return try .init(parseBindingPattern(in: &file))
-    case .name where isParsingBindingSubpattern:
+    case .name where context == .bindingSubpattern:
       return try .init(parseVariableDeclaration(in: &file))
     case .leftParenthesis:
       return try parseTuplePatternOrParenthesizedPattern(in: &file)
@@ -1201,13 +1212,12 @@ public struct Parser {
     let i = try parseBindingIntroducer()
 
     // Identifiers occurring in binding subpatterns denote variable declarations.
-    isParsingBindingSubpattern = true
-    defer { isParsingBindingSubpattern = false }
-
-    let p = try parsePattern(in: &file)
-    let a = try parseOptionalTypeAscription(in: &file)
-    let s = i.site.extended(upTo: position.index)
-    return file.insert(BindingPattern(introducer: i, pattern: p, ascription: a, site: s))
+    return try entering(.bindingSubpattern) { (me) in
+      let p = try me.parsePattern(in: &file)
+      let a = try me.parseOptionalTypeAscription(in: &file)
+      let s = i.site.extended(upTo: me.position.index)
+      return file.insert(BindingPattern(introducer: i, pattern: p, ascription: a, site: s))
+    }
   }
 
   /// Parses the introducer of a binding pattern.
@@ -1627,6 +1637,15 @@ public struct Parser {
       }
       _ = take()
     }
+  }
+
+  /// Parses an instance of `T` in the given context.
+  private mutating func entering<T>(
+    _ context: consuming Context, _ parse: (inout Self) throws -> T
+  ) rethrows -> T {
+    swap(&context, &self.context)
+    defer { swap(&context, &self.context) }
+    return try parse(&self)
   }
 
   /// Parses an instance of `T` or restores `self` to its current state if that fails.
