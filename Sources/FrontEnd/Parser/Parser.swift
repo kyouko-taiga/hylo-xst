@@ -752,8 +752,10 @@ public struct Parser {
   private mutating func parseInfixExpression(
     minimumPrecedence p: PrecedenceGroup = .assignment, in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity {
+    let s = position
     var l = try parseConversionExpression(in: &file)
 
+    // Can we parse a term operator?
     while p < .max {
       // Next token isn't considered an infix operator unless it is surrounded by whitespaces.
       guard let h = peek(), h.isOperator, whitespaceBeforeNextToken() else { break }
@@ -769,10 +771,21 @@ public struct Parser {
         Call(
           callee: .init(f),
           arguments: [.init(label: nil, value: r)], style: .parenthesized,
-          site: file[l].site.extended(upTo: position.index)))
+          site: span(from: s)))
       l = .init(n)
     }
 
+    // Can we parse a type operator?
+    if next(is: .oplus) {
+      var elements = [l]
+      while take(.oplus) != nil {
+        try elements.append(parseConversionExpression(in: &file))
+      }
+      let n = file.insert(SumTypeExpression(elements: elements, site: span(from: s)))
+      l = .init(n)
+    }
+
+    // Done.
     return l
   }
 

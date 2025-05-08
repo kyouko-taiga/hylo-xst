@@ -100,6 +100,8 @@ extension Program {
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
     case StaticCall.self:
       traverse(castUnchecked(n, to: StaticCall.self), calling: &v)
+    case SumTypeExpression.self:
+      traverse(castUnchecked(n, to: SumTypeExpression.self), calling: &v)
     case SynthethicExpression.self:
       break
     case TupleLiteral.self:
@@ -276,6 +278,11 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: StaticCall.ID, calling v: inout T) {
     visit(self[n].callee, calling: &v)
     visit(self[n].arguments, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: SumTypeExpression.ID, calling v: inout T) {
+    visit(self[n].elements, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

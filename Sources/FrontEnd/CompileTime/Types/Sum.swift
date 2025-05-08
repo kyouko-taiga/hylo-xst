@@ -1,10 +1,17 @@
+import Archivist
 import Utilities
 
 /// A tagged union of types.
+@Archivable
 public struct Sum: TypeTree {
 
   /// The elements of the union.
   public let elements: [AnyTypeIdentity]
+
+  /// Creates an instance with the given properties.
+  public init(elements: [AnyTypeIdentity]) {
+    self.elements = elements
+  }
 
   /// Properties about `self`.
   public var properties: ValueProperties {
@@ -26,7 +33,7 @@ extension Sum: Showable {
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
     let es = elements.map({ (e) in printer.show(e) })
-    return es.isEmpty ? "Never" : "{\(list: es, joinedBy: " + ")}"
+    return es.isEmpty ? "Never" : "(\(list: es, joinedBy: " (+) "))"
   }
 
 }

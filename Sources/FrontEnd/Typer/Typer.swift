@@ -1336,6 +1336,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
     case StaticCall.self:
       return inferredType(of: castUnchecked(e, to: StaticCall.self), in: &context)
+    case SumTypeExpression.self:
+      return inferredType(of: castUnchecked(e, to: SumTypeExpression.self), in: &context)
     case TupleLiteral.self:
       return inferredType(of: castUnchecked(e, to: TupleLiteral.self), in: &context)
     case TupleTypeExpression.self:
@@ -1606,6 +1608,15 @@ public struct Typer {
         callee: f, arguments: i, output: o, origin: e, site: program[e].site)
       context.obligations.assume(k)
     }
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: SumTypeExpression.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let es = program[e].elements.map({ (e) in evaluateTypeAscription(e) })
+    let t = metatype(of: Sum(elements: es)).erased
+    return context.obligations.assume(e, hasType: t, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`.

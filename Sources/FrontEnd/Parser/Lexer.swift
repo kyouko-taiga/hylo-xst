@@ -28,7 +28,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     } else if head.isOperator {
       return takeOperator()
     } else {
-      return takePunctuationOrDelimiter()
+      return takePunctuationOrParenthesizedOperator()
     }
   }
 
@@ -108,7 +108,7 @@ public struct Lexer: IteratorProtocol, Sequence {
 
     // Leading angle brackets are tokenized individually, to parse generic clauses.
     if peek()!.isAngleBracket {
-      return takePunctuationOrDelimiter()
+      return takePunctuationOrParenthesizedOperator()
     }
 
     // Stars are tokenized individually, to parse kinds.
@@ -128,9 +128,9 @@ public struct Lexer: IteratorProtocol, Sequence {
     return .init(tag: tag, site: span(start ..< position))
   }
 
-  /// Consumes and returns a punctuation token if the input starts with a punctuation symbol;
-  /// otherwise consumes a single character and returns an error token.
-  private mutating func takePunctuationOrDelimiter() -> Token {
+  /// Consumes and returns a punctuation token or parenthesized operator if possible; otherwise
+  /// consumes a single character and returns an error token.
+  private mutating func takePunctuationOrParenthesizedOperator() -> Token {
     let start = position
     let tag: Token.Tag
     switch take() {
@@ -140,7 +140,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "}": tag = .rightBrace
     case "[": tag = .leftBracket
     case "]": tag = .rightBracket
-    case "(": tag = .leftParenthesis
+    case "(": tag = take("+)") == nil ? .leftParenthesis : .oplus
     case ")": tag = .rightParenthesis
     case "@": tag = .at
     case ",": tag = .comma
