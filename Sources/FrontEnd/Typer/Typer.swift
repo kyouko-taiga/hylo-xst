@@ -855,7 +855,7 @@ public struct Typer {
     let p = program.parent(containing: d, as: EnumDeclaration.self)!
     let m = declaredType(of: p)
     let o = program.types.select(m, \Metatype.inhabitant) ?? .error
-    let i = declaredTypes(of: program[d].parameters)
+    let i = declaredTypes(of: program[d].parameters, defaultConvention: .sink)
 
     // If there aren't any parameters, the case defines a constant.
     if i.isEmpty {
@@ -1085,7 +1085,9 @@ public struct Typer {
   }
 
   /// Returns the declared properties of the parameters in `ds` without checking.
-  private mutating func declaredTypes(of ps: [ParameterDeclaration.ID]) -> [Parameter] {
+  private mutating func declaredTypes(
+    of ps: [ParameterDeclaration.ID], defaultConvention k: AccessEffect = .let
+  ) -> [Parameter] {
     var result: [Parameter] = []
     for p in ps {
       let t = declaredType(of: p)
@@ -1096,7 +1098,7 @@ public struct Typer {
         access = u.access
         projectee = u.projectee
       } else {
-        access = .let
+        access = k
         projectee = .error
       }
 
@@ -1255,6 +1257,30 @@ public struct Typer {
     let u = introduce(program[d].staticParameters, into: t)
     program[module].setType(u, for: d)
     return u
+  }
+
+  /// Returns the type used to represent instances of the given enumeration.
+  internal mutating func underlyingType(of d: EnumDeclaration.ID) -> AnyTypeIdentity {
+    if let e = program[d].representation {
+      return check(e)
+    } else {
+      var elements: [AnyTypeIdentity] = []
+      for m in program[d].members {
+        guard let c = program.cast(m, to: EnumCaseDeclaration.self) else { continue }
+        elements.append(underlyingType(of: c).erased)
+      }
+      return demand(Sum(elements: elements)).erased
+    }
+  }
+
+  /// Returns the type used to represent an instance of the given case.
+  private mutating func underlyingType(of d: EnumCaseDeclaration.ID) -> Tuple.ID {
+    let elements = program[d].parameters.map { (p) -> Tuple.Element in
+      let t = declaredType(of: p)
+      let u = (program.types[t] as? RemoteType)?.projectee ?? .error
+      return .init(label: program[p].identifier.value, type: u)
+    }
+    return demand(Tuple(elements: elements))
   }
 
   /// Computes the types of the given context parameters, introducing them in order.

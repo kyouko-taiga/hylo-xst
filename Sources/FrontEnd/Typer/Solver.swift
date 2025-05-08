@@ -242,7 +242,7 @@ internal struct Solver {
   private mutating func solve(widening g: GoalIdentity) -> GoalOutcome {
     let k = goals[g] as! WideningConstraint
 
-    // Otherwise, check that the left-hand side can be widened to the right-hand side.
+    // Check that the left-hand side can be widened to the right-hand side.
     switch program.types[k.rhs] {
     case is TypeVariable:
       return postpone(g)

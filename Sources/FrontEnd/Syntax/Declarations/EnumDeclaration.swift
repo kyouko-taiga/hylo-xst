@@ -16,7 +16,7 @@ public struct EnumDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
   /// The compile-time parameters of the struct.
   public let staticParameters: StaticParameters
 
-  /// The raw representation of the structure, if any.
+  /// The raw representation of the enumeration, if any.
   public let representation: ExpressionIdentity?
 
   /// The conformances declared along with the struct.
