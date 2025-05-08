@@ -55,6 +55,8 @@ public struct Lexer: IteratorProtocol, Sequence {
     switch word {
     case "_": tag = .underscore
     case "auto": tag = .auto
+    case "case": tag = .case
+    case "enum": tag = .enum
     case "extension": tag = .extension
     case "false": tag = .false
     case "fun": tag = .fun

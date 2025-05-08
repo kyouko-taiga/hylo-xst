@@ -1,14 +1,14 @@
 import Archivist
 
-/// A nominal product type.
+/// A nominal sum type.
 @Archivable
-public struct Struct: TypeTree {
+public struct Enum: TypeTree {
 
   /// The declaration introducing this type.
-  public let declaration: StructDeclaration.ID
+  public let declaration: EnumDeclaration.ID
 
   /// Creates an instance with the given properties.
-  public init(declaration: StructDeclaration.ID) {
+  public init(declaration: EnumDeclaration.ID) {
     self.declaration = declaration
   }
 
@@ -19,7 +19,7 @@ public struct Struct: TypeTree {
 
 }
 
-extension Struct: Showable {
+extension Enum: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {

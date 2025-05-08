@@ -4,7 +4,7 @@ import Utilities
 /// The expression of a tuple type.
 public struct TupleTypeExpression: Expression {
 
-  /// The elements of the literal.
+  /// The elements of the tuple.
   public let elements: [LabeledExpression]
 
   /// The site from which `self` was parsed.

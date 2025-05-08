@@ -549,30 +549,6 @@ public struct Program: Sendable {
   }
 
   /// Returns the names introduced by `d`.
-  public func names(introducedBy d: DeclarationIdentity) -> [Name] {
-    switch tag(of: d) {
-    case AssociatedTypeDeclaration.self:
-      return [name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))]
-    case BindingDeclaration.self:
-      return names(introducedBy: castUnchecked(d, to: BindingDeclaration.self))
-    case ParameterDeclaration.self:
-      return [name(of: castUnchecked(d, to: ParameterDeclaration.self))]
-    case TraitDeclaration.self:
-      return [name(of: castUnchecked(d, to: TraitDeclaration.self))]
-    case FunctionDeclaration.self:
-      return [name(of: castUnchecked(d, to: FunctionDeclaration.self))]
-    case GenericParameterDeclaration.self:
-      return [name(of: castUnchecked(d, to: GenericParameterDeclaration.self))]
-    case StructDeclaration.self:
-      return [name(of: castUnchecked(d, to: StructDeclaration.self))]
-    case TypeAliasDeclaration.self:
-      return [name(of: castUnchecked(d, to: TypeAliasDeclaration.self))]
-    default:
-      return []
-    }
-  }
-
-  /// Returns the names introduced by `d`.
   public func names(introducedBy d: BindingDeclaration.ID) -> [Name] {
     var result: [Name] = []
     forEachVariable(introducedBy: self[self[d].pattern].pattern) { (v, _) in
@@ -595,18 +571,22 @@ public struct Program: Sendable {
     switch tag(of: d) {
     case AssociatedTypeDeclaration.self:
       return name(of: castUnchecked(d, to: AssociatedTypeDeclaration.self))
-    case ParameterDeclaration.self:
-      return name(of: castUnchecked(d, to: ParameterDeclaration.self))
-    case TraitDeclaration.self:
-      return name(of: castUnchecked(d, to: TraitDeclaration.self))
+    case EnumCaseDeclaration.self:
+      return name(of: castUnchecked(d, to: EnumCaseDeclaration.self))
+    case EnumDeclaration.self:
+      return name(of: castUnchecked(d, to: EnumDeclaration.self))
     case FunctionBundleDeclaration.self:
       return name(of: castUnchecked(d, to: FunctionBundleDeclaration.self))
     case FunctionDeclaration.self:
       return name(of: castUnchecked(d, to: FunctionDeclaration.self))
     case GenericParameterDeclaration.self:
       return name(of: castUnchecked(d, to: GenericParameterDeclaration.self))
+    case ParameterDeclaration.self:
+      return name(of: castUnchecked(d, to: ParameterDeclaration.self))
     case StructDeclaration.self:
       return name(of: castUnchecked(d, to: StructDeclaration.self))
+    case TraitDeclaration.self:
+      return name(of: castUnchecked(d, to: TraitDeclaration.self))
     case TypeAliasDeclaration.self:
       return name(of: castUnchecked(d, to: TypeAliasDeclaration.self))
     case VariableDeclaration.self:
@@ -620,6 +600,11 @@ public struct Program: Sendable {
 
   /// Returns the name of `d`.
   public func name<T: TypeDeclaration>(of d: T.ID) -> Name {
+    Name(identifier: self[d].identifier.value)
+  }
+
+  /// Returns the name of `d`.
+  public func name(of d: EnumCaseDeclaration.ID) -> Name {
     Name(identifier: self[d].identifier.value)
   }
 

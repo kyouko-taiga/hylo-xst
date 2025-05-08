@@ -183,7 +183,6 @@ extension WideningConstraint: Showable {
 
 }
 
-
 /// a constraint stating that `T` is the type of an initializer that is convertible to a
 /// constructor of type `U`.
 internal struct ConstructorConversionConstraint: Constraint {

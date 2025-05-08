@@ -65,11 +65,13 @@ final class LexerTests: XCTestCase {
 
   func testKeywords() throws {
     let input: SourceFile = """
-      auto extension false fun given  import infix init inout internal let postfix prefix private
-      public return set sink static struct subscript trait true type typealias var where
+      auto case enum extension false fun given import infix init inout internal let postfix prefix
+      private public return set sink static struct subscript trait true type typealias var where
       """
     var scanner = Lexer(tokenizing: input)
     try assertNext(from: &scanner, is: .auto)
+    try assertNext(from: &scanner, is: .case)
+    try assertNext(from: &scanner, is: .enum)
     try assertNext(from: &scanner, is: .extension)
     try assertNext(from: &scanner, is: .false)
     try assertNext(from: &scanner, is: .fun)

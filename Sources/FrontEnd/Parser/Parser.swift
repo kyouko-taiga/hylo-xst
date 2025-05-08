@@ -12,6 +12,12 @@ public struct Parser {
     /// The parsing of the subpattern of binding pattern.
     case bindingSubpattern
 
+    /// The body of an enum declaration.
+    case enumBody
+
+    /// The body of an enum declaration.
+    case structBody
+
   }
 
   /// The tokens in the input.
@@ -78,6 +84,10 @@ public struct Parser {
     switch head.tag {
     case .inout, .let, .set, .sink, .var:
       return try .init(parseBindingDeclaration(after: prologue, in: &file))
+    case .case:
+      return try .init(parseEnumCaseDeclaration(after: prologue, in: &file))
+    case .enum:
+      return try .init(parseEnumDeclaration(after: prologue, in: &file))
     case .fun:
       return try parseFunctionOrBundleDeclaration(after: prologue, in: &file)
     case .given:
@@ -175,6 +185,72 @@ public struct Parser {
         site: span(from: file[b].site.start)))
   }
 
+  /// Parses the declaration of an enum case.
+  ///
+  ///     enum-case-declaration ::=
+  ///       'case' identifier parameter-list? ('=' expression)?
+  ///
+  private mutating func parseEnumCaseDeclaration(
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
+  ) throws -> EnumCaseDeclaration.ID {
+    let introducer = try take(.case) ?? expected("'case'")
+
+    if context != .enumBody {
+      report(.init("enum case declaration is not allowed here", at: introducer.site))
+    }
+    let ctx = enter(.default)
+    defer { context = ctx }
+
+    let identifier = parseSimpleIdentifier()
+    let parameters = try parseOptionalParenthesizedParameterList(in: &file)
+    let body: ExpressionIdentity?
+    if let assign = take(.assign) {
+      body = try parseExpression(in: &file)
+      if !parameters.isEmpty {
+        let m = "enum case with parameters cannot have an explicit definition"
+        report(.init(m, at: assign.site))
+      }
+    } else {
+      body = nil
+    }
+
+    // No modifiers allowed on enum cases.
+    _ = sanitize(prologue, accepting: { _ in false })
+
+    return file.insert(
+      EnumCaseDeclaration(
+        introducer: introducer,
+        identifier: identifier,
+        parameters: parameters,
+        body: body,
+        site: span(from: introducer)))
+  }
+
+  /// Parses an enum declaration.
+  private mutating func parseEnumDeclaration(
+    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
+  ) throws -> EnumDeclaration.ID {
+    let introducer = try take(.enum) ?? expected("'enum'")
+    let identifier = parseSimpleIdentifier()
+    let parameters = try parseOptionalCompileTimeParameters(in: &file)
+    let representation = try next(is: .leftParenthesis) ? parseExpression(in: &file) : nil
+    let bounds = try parseOptionalContextBoundList(until: .leftBrace, in: &file)
+    let members = try entering(.enumBody) { (me) in
+      try me.parseTypeBody(in: &file)
+    }
+
+    return file.insert(
+      EnumDeclaration(
+        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
+        introducer: introducer,
+        identifier: identifier,
+        staticParameters: parameters,
+        representation: representation,
+        contextBounds: bounds,
+        members: members,
+        site: span(from: introducer)))
+  }
+
   /// Parses an extension declaration.
   ///
   ///     extension-declaration ::=
@@ -184,7 +260,7 @@ public struct Parser {
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> ExtensionDeclaration.ID {
     let introducer = try take(.extension) ?? expected("'extension'")
-    let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
+    let parameters = try parseOptionalCompileTimeParameters(in: &file)
     let extendee = try parseExpression(in: &file)
     let members = try parseTypeBody(in: &file)
 
@@ -194,7 +270,7 @@ public struct Parser {
     return file.insert(
       ExtensionDeclaration(
         introducer: introducer,
-        staticParameters: staticParameters,
+        staticParameters: parameters,
         extendee: extendee,
         members: members,
         site: span(from: introducer)))
@@ -219,7 +295,7 @@ public struct Parser {
 
     // Expect a conformance declaration.
     else {
-      let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
+      let parameters = try parseOptionalCompileTimeParameters(in: &file)
       let conformer = try parseExpression(in: &file)
       _ = try take(.colon) ?? expected("':'")
       let concept = try parseExpression(in: &file)
@@ -230,7 +306,7 @@ public struct Parser {
       let d = file.insert(
         ConformanceDeclaration(
           introducer: head,
-          staticParameters: staticParameters,
+          staticParameters: parameters,
           witness: witness,
           members: members,
           site: span(from: head)))
@@ -516,7 +592,19 @@ public struct Parser {
     return .init(d)
   }
 
-  /// Parses a parenthesized list of parameter declarations.
+  /// Parses a comma-separated list of parameter declarations in parentheses iff the next token is
+  /// a opening parenthesis
+  private mutating func parseOptionalParenthesizedParameterList(
+    in file: inout Module.SourceContainer
+  ) throws -> [ParameterDeclaration.ID] {
+    if next(is: .leftParenthesis) {
+      return try parseParenthesizedParameterList(in: &file)
+    } else {
+      return []
+    }
+  }
+
+  /// Parses a comma-separated listof parameter declarations.
   private mutating func parseParenthesizedParameterList(
     in file: inout Module.SourceContainer
   ) throws -> [ParameterDeclaration.ID] {
@@ -615,24 +703,28 @@ public struct Parser {
   /// Parses a struct declaration.
   ///
   ///     struct-declaration ::=
-  ///       'struct' identifier type-body
+  ///       struct-introducer identifier type-body
+  ///     struct-introducer ::=
+  ///       'struct' | 'enum'
   ///
   private mutating func parseStructDeclaration(
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> StructDeclaration.ID {
     let introducer = try take(.struct) ?? expected("'struct'")
     let identifier = parseSimpleIdentifier()
-    let staticParameters = try parseOptionalCompileTimeParameters(in: &file)
-    let contextBounds = try parseOptionalContextBoundList(until: .leftBrace, in: &file)
-    let members = try parseTypeBody(in: &file)
+    let parameters = try parseOptionalCompileTimeParameters(in: &file)
+    let bounds = try parseOptionalContextBoundList(until: .leftBrace, in: &file)
+    let members = try entering(.structBody) { (me) in
+      try me.parseTypeBody(in: &file)
+    }
 
     return file.insert(
       StructDeclaration(
         modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
-        staticParameters: staticParameters,
-        contextBounds: contextBounds,
+        staticParameters: parameters,
+        contextBounds: bounds,
         members: members,
         site: span(from: introducer)))
   }
@@ -1654,11 +1746,17 @@ public struct Parser {
 
   /// Parses an instance of `T` in the given context.
   private mutating func entering<T>(
-    _ context: consuming Context, _ parse: (inout Self) throws -> T
+    _ ctx: consuming Context, _ parse: (inout Self) throws -> T
   ) rethrows -> T {
-    swap(&context, &self.context)
-    defer { swap(&context, &self.context) }
+    swap(&ctx, &self.context)
+    defer { swap(&ctx, &self.context) }
     return try parse(&self)
+  }
+
+  /// Enters the given context and returns the current one.
+  private mutating func enter(_ ctx: Context) -> Context {
+    defer { self.context = ctx }
+    return self.context
   }
 
   /// Parses an instance of `T` or restores `self` to its current state if that fails.

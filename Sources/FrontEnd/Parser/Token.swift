@@ -13,6 +13,8 @@ public struct Token: Hashable, Sendable {
 
     // Reserved keywords
     case auto
+    case `case`
+    case `enum`
     case `extension`
     case `false`
     case fun
@@ -110,11 +112,7 @@ public struct Token: Hashable, Sendable {
   /// `true` iff `self` may be at the beginning of a declaration.
   public var isDeclarationHead: Bool {
     switch tag {
-    case .given:
-      return true
-    case .import, .struct, .trait, .type, .typealias:
-      return true
-    case .fun, .subscript:
+    case .case, .fun, .given, .import, .struct, .subscript, .trait, .type, .typealias:
       return true
     default:
       return isBindingIntroducer || isDeclarationModifier

@@ -182,6 +182,10 @@ public struct Typer {
       check(castUnchecked(d, to: BindingDeclaration.self))
     case ConformanceDeclaration.self:
       check(castUnchecked(d, to: ConformanceDeclaration.self))
+    case EnumCaseDeclaration.self:
+      check(castUnchecked(d, to: EnumCaseDeclaration.self))
+    case EnumDeclaration.self:
+      check(castUnchecked(d, to: EnumDeclaration.self))
     case ExtensionDeclaration.self:
       check(castUnchecked(d, to: ExtensionDeclaration.self))
     case FunctionBundleDeclaration.self:
@@ -345,6 +349,26 @@ public struct Typer {
       let t = declaredType(of: requirement)
       return program.types.substitute(substitutions, in: t)
     }
+  }
+
+  /// Type checks `d`.
+  private mutating func check(_ d: EnumCaseDeclaration.ID) {
+    _ = declaredType(of: d)
+    checkUniqueDeclaration(d, of: program[d].identifier.value)
+  }
+
+  /// Type checks `d`.
+  private mutating func check(_ d: EnumDeclaration.ID) {
+    _ = declaredType(of: d)
+
+    if let e = program[d].representation {
+      let s = program.spanForDiagnostic(about: e)
+      report(.init(.error, "raw representations are not supported yet", at: s))
+    }
+
+    for m in program[d].members { check(m) }
+    for b in program[d].contextBounds { check(b) }
+    checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
   /// Type checks `d`.
@@ -729,6 +753,10 @@ public struct Typer {
       return declaredType(of: castUnchecked(d, to: BindingDeclaration.self))
     case ConformanceDeclaration.self:
       return declaredType(of: castUnchecked(d, to: ConformanceDeclaration.self))
+    case EnumCaseDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: EnumCaseDeclaration.self))
+    case EnumDeclaration.self:
+      return declaredType(of: castUnchecked(d, to: EnumDeclaration.self))
     case FunctionBundleDeclaration.self:
       return declaredType(of: castUnchecked(d, to: FunctionBundleDeclaration.self))
     case FunctionDeclaration.self:
@@ -816,6 +844,54 @@ public struct Typer {
       report(.init(.error, "declaration refers to itself", at: s))
       return .error
     }
+  }
+
+  /// Returns the declared type of `d` without checking.
+  private mutating func declaredType(of d: EnumCaseDeclaration.ID) -> AnyTypeIdentity {
+    if let memoized = program[d.module].type(assignedTo: d) { return memoized }
+    assert(d.module == module, "dependency is not typed")
+
+    // The enclosing scope is an enum declaration.
+    let p = program.parent(containing: d, as: EnumDeclaration.self)!
+    let m = declaredType(of: p)
+    let o = program.types.select(m, \Metatype.inhabitant) ?? .error
+    let i = declaredTypes(of: program[d].parameters)
+
+    // If there aren't any parameters, the case defines a constant.
+    if i.isEmpty {
+      program[module].setType(o, for: d)
+      return o
+    }
+
+    // If there are parameters, the case defines a function.
+    else {
+      let t = demand(Arrow(effect: .let, environment: .void, inputs: i, output: o)).erased
+      program[module].setType(t, for: d)
+      return t
+    }
+  }
+
+  /// Returns the declared type of `d` without checking.
+  private mutating func declaredType(of d: EnumDeclaration.ID) -> AnyTypeIdentity {
+    if let memoized = program[d.module].type(assignedTo: d) { return memoized }
+    assert(d.module == module, "dependency is not typed")
+
+    let ps = declaredTypes(of: program[d].staticParameters.explicit)
+    if let i = program[d].staticParameters.implicit.first {
+      let s = program.spanForDiagnostic(about: i)
+      report(.init(.error, "context parameters in type definitions are not supported yet", at: s))
+    }
+
+    var s = demand(Enum(declaration: d)).erased
+    if !ps.isEmpty {
+      let a = TypeArguments(parametersWithValues: ps.map({ (p) in (p, p.erased) }))
+      let t = demand(TypeApplication(abstraction: s, arguments: a)).erased
+      s = demand(UniversalType(parameters: ps, body: t)).erased
+    }
+
+    let t = demand(Metatype(inhabitant: s)).erased
+    program[module].setType(t, for: d)
+    return t
   }
 
   /// Returns the declared type of `d` without checking.
@@ -3084,6 +3160,8 @@ public struct Typer {
   /// Returns the declarations lexically contained in the declaration of `t`.
   private mutating func declarations(nativeMembersOf t: AnyTypeIdentity) -> Memos.LookupTable {
     switch program.types[program.types.head(t)] {
+    case let u as Enum:
+      return declarations(lexicallyIn: .init(node: u.declaration))
     case let u as Struct:
       return declarations(lexicallyIn: .init(node: u.declaration))
     case let u as TypeAlias:

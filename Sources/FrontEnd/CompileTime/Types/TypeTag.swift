@@ -31,6 +31,7 @@ public struct TypeTag: Sendable {
     AssociatedType.self,
     Bundle.self,
     EqualityWitness.self,
+    Enum.self,
     ErrorType.self,
     GenericParameter.self,
     Implication.self,

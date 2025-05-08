@@ -51,6 +51,10 @@ extension Program {
       traverse(castUnchecked(n, to: BindingDeclaration.self), calling: &v)
     case ConformanceDeclaration.self:
       traverse(castUnchecked(n, to: ConformanceDeclaration.self), calling: &v)
+    case EnumCaseDeclaration.self:
+      traverse(castUnchecked(n, to: EnumCaseDeclaration.self), calling: &v)
+    case EnumDeclaration.self:
+      traverse(castUnchecked(n, to: EnumDeclaration.self), calling: &v)
     case ExtensionDeclaration.self:
       traverse(castUnchecked(n, to: ExtensionDeclaration.self), calling: &v)
     case FunctionBundleDeclaration.self:
@@ -162,6 +166,20 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: ConformanceDeclaration.ID, calling v: inout T) {
     visit(self[n].staticParameters, calling: &v)
     visit(self[n].witness, calling: &v)
+    visit(self[n].members, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: EnumCaseDeclaration.ID, calling v: inout T) {
+    visit(self[n].parameters, calling: &v)
+    visit(self[n].body, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: EnumDeclaration.ID, calling v: inout T) {
+    visit(self[n].staticParameters, calling: &v)
+    visit(self[n].representation, calling: &v)
+    visit(self[n].contextBounds, calling: &v)
     visit(self[n].members, calling: &v)
   }
 
