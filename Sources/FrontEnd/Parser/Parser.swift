@@ -285,7 +285,7 @@ public struct Parser {
   private mutating func parseGivenDeclaration(
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
-    let head = try take(.given) ?? expected("'given'")
+    let introducer = try take(.given) ?? expected("'given'")
 
     // Is the next token a binding introducer?
     let next = try peek() ?? expected("'declaration'")
@@ -305,11 +305,11 @@ public struct Parser {
 
       let d = file.insert(
         ConformanceDeclaration(
-          introducer: head,
+          introducer: introducer,
           staticParameters: parameters,
           witness: witness,
           members: members,
-          site: span(from: head)))
+          site: span(from: introducer)))
       return .init(d)
     }
   }
@@ -356,8 +356,7 @@ public struct Parser {
   private mutating func parseFunctionOrBundleDeclaration(
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
-    let head = try take(.fun) ?? expected("'fun'")
-    let introducer = Parsed(FunctionDeclaration.Introducer.fun, at: head.site)
+    let introducer = try take(.fun) ?? expected("'fun'")
 
     let identifier = try parseFunctionIdentifier()
     let (ss, ps) = try parseParameterClauses(in: &file)
@@ -370,17 +369,18 @@ public struct Parser {
       let n = file.insert(
         FunctionBundleDeclaration(
           modifiers: prologue,
-          introducer: .init(head, at: head.site), identifier: i,
+          introducer: .init(introducer, at: introducer.site), identifier: i,
           staticParameters: ss, parameters: ps, effect: effect,
           output: output, variants: b,
           site: introducer.site.extended(upTo: position.index)))
       return .init(n)
     } else {
+      let f = Parsed(FunctionDeclaration.Introducer.fun, at: introducer.site)
       let b = try parseOptionalCallableBody(in: &file)
       let n = file.insert(
         FunctionDeclaration(
           modifiers: prologue,
-          introducer: introducer, identifier: identifier,
+          introducer: f, identifier: identifier,
           staticParameters: ss, parameters: ps, effect: effect,
           output: output, body: b,
           site: introducer.site.extended(upTo: position.index)))
@@ -468,9 +468,8 @@ public struct Parser {
   private mutating func parseOptionalCompileTimeParameters(
     in file: inout Module.SourceContainer
   ) throws -> StaticParameters {
-    guard let start = peek(), start.tag == .leftAngle else {
-      return .empty(at: .empty(at: position))
-    }
+    if !next(is: .leftAngle) { return .empty(at: .empty(at: position)) }
+    let start = nextTokenStart()
 
     return try inAngles { (me) in
       let xs = try me.parseCommaSeparatedGenericParameters(in: &file)
@@ -529,8 +528,7 @@ public struct Parser {
   /// whose first argument is a name expression referring to the conforming type. For example, if
   /// the bound is spelled out as `P<A>` in source, it is desugared as `P<Self, A>`.
   private mutating func parseContextBound(
-    introducedBy introducer: Token,
-    in file: inout Module.SourceContainer
+    introducedBy introducer: Token, in file: inout Module.SourceContainer
   ) throws -> ConformanceDeclaration.ID {
     let b = try parseCompoundExpression(in: &file)
     let w = try desugared(bound: b)
@@ -615,7 +613,7 @@ public struct Parser {
   private mutating func parseParameterDeclaration(
     in file: inout Module.SourceContainer
   ) throws -> ParameterDeclaration.ID {
-    let start = position
+    let start = nextTokenStart()
     let label: Parsed<String>?
     let identifier: Parsed<String>
 
@@ -666,7 +664,8 @@ public struct Parser {
   private mutating func parseBundleBody(
     in file: inout Module.SourceContainer
   ) throws -> [VariantDeclaration.ID] {
-    let start = position
+    let start = nextTokenStart()
+
     let vs = try inBraces { (m0) in
       try m0.semicolonSeparated(until: .rightBrace) { (m1) in
         try m1.parseVariant(in: &file)
@@ -1007,8 +1006,7 @@ public struct Parser {
   ///       (expression-label ':')? expression
   ///
   private mutating func parseLabeledExpressionList(
-    until rightDelimiter: Token.Tag,
-    in file: inout Module.SourceContainer
+    until rightDelimiter: Token.Tag, in file: inout Module.SourceContainer
   ) throws -> ([LabeledExpression], lastComma: Token?) {
     try labeledSyntaxList(until: rightDelimiter) { (me) in
       try me.parseExpression(in: &file)
@@ -1100,7 +1098,7 @@ public struct Parser {
   ///
   private mutating func parseRemoteTypeExpression(
     in file: inout Module.SourceContainer
-) throws -> RemoteTypeExpression.ID {
+  ) throws -> RemoteTypeExpression.ID {
     let k = parseAccessEffect()
     let e = try parseExpression(in: &file)
     return file.insert(
@@ -1187,13 +1185,11 @@ public struct Parser {
   private mutating func parseTupleTypeExpression(
     in file: inout Module.SourceContainer
   ) throws -> TupleTypeExpression.ID {
-    let start = try peek() ?? expected("'{'")
+    let start = nextTokenStart()
     let (elements, _) = try inBraces { (me) in
       try me.parseLabeledExpressionList(until: .rightBrace, in: &file)
     }
-
-    return file.insert(
-      TupleTypeExpression(elements: elements, site: start.site.extended(upTo: position.index)))
+    return file.insert(TupleTypeExpression(elements: elements, site: span(from: start)))
   }
 
   /// Parses a tuple literal or a parenthesized expression.
@@ -1206,7 +1202,7 @@ public struct Parser {
   private mutating func parseTupleLiteralOrParenthesizedExpression(
     in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity {
-    let start = try peek() ?? expected("'('")
+    let start = nextTokenStart()
     let (elements, lastComma) = try inParentheses { (me) in
       try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
     }
@@ -1214,9 +1210,7 @@ public struct Parser {
     if (elements.count == 1) && (elements[0].label == nil) && (lastComma == nil) {
       return elements[0].value
     } else {
-      let t = file.insert(
-        TupleLiteral(elements: elements, site: start.site.extended(upTo: position.index)))
-      return .init(t)
+      return .init(file.insert(TupleLiteral(elements: elements, site: span(from: start))))
     }
   }
 
@@ -1873,9 +1867,9 @@ public struct Parser {
   }
 
   /// Parses an instance of `T` or restores `self` to its current state if that fails.
-  private mutating func attemptOptional<T>(_ parse: (inout Self) -> T?) -> T? {
+  private mutating func attemptOptional<T>(_ parse: (inout Self) throws -> T?) rethrows -> T? {
     var backup = self
-    if let result = parse(&self) {
+    if let result = try parse(&self) {
       return result
     } else {
       swap(&self, &backup)

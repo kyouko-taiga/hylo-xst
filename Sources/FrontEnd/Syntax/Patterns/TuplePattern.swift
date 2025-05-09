@@ -15,11 +15,10 @@ extension TuplePattern: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    let es = elements.map({ (e) in printer.show(e) })
-    if es.count == 1 {
-      return "(\(es[0]),)"
+    if elements.count == 1 {
+      return "(\(printer.show(elements)),)"
     } else {
-      return "(\(list: es))"
+      return "(\(printer.show(elements)))"
     }
   }
 

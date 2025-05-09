@@ -136,6 +136,11 @@ public struct Program: Sendable {
     modules.values[n.module][n]
   }
 
+  /// Returns a lambda accessing `path` on an instance of `T`.
+  public func read<T: Syntax, U>(_ path: KeyPath<T, U>) -> (_ n: T.ID) -> U {
+    { (n) in self[n][keyPath: path] }
+  }
+
   /// Returns the elements in `ns` that identify nodes of type `T`.
   public func collect<S: Sequence, T: Syntax>(
     _ t: T.Type, in ns: S
@@ -728,11 +733,6 @@ public struct Program: Sendable {
     } else {
       return nil
     }
-  }
-
-  /// Returns a lambda accessing `path` on an instance of `T`.
-  public func read<T: Syntax, U>(_ path: KeyPath<T, U>) -> (_ n: T.ID) -> U {
-    { (n) in self[n][keyPath: path] }
   }
 
   /// Reports that `n` was not expected in the current executation path and exits the program.

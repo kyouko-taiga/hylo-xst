@@ -1,5 +1,4 @@
 import Archivist
-import Utilities
 
 /// The expression of a tuple type.
 public struct TupleTypeExpression: Expression {
@@ -16,8 +15,7 @@ extension TupleTypeExpression: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    let es = elements.map({ (e) in printer.show(e) })
-    return "{\(list: es)}"
+    "{\(printer.show(elements))}"
   }
 
 }

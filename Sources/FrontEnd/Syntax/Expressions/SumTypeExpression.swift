@@ -1,5 +1,4 @@
 import Archivist
-import Utilities
 
 /// The expression of a sum type.
 @Archivable
@@ -23,8 +22,7 @@ extension SumTypeExpression: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    let es = elements.map({ (e) in printer.show(e) })
-    return "(\(list: es, joinedBy: " (+) "))"
+    "(\(printer.show(elements, separatedBy: " (+) ")))"
   }
 
 }

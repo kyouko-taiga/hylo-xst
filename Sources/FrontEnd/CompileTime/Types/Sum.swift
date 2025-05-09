@@ -1,5 +1,4 @@
 import Archivist
-import Utilities
 
 /// A tagged union of types.
 @Archivable
@@ -32,8 +31,7 @@ extension Sum: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    let es = elements.map({ (e) in printer.show(e) })
-    return es.isEmpty ? "Never" : "(\(list: es, joinedBy: " (+) "))"
+    elements.isEmpty ? "Never" : "(\(printer.show(elements, separatedBy: " (+) ")))"
   }
 
 }
