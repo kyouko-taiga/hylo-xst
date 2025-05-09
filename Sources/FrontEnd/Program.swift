@@ -438,6 +438,8 @@ public struct Program: Sendable {
       return parent(containing: n, as: TraitDeclaration.self)
     case FunctionDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)
+    case VariantDeclaration.self:
+      return parent(containing: parent(containing: n).node!, as: TraitDeclaration.self)
     default:
       return nil
     }

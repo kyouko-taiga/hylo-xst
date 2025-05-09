@@ -291,6 +291,11 @@ public struct Typer {
         _ = anonymousImplementation(of: r)
       case FunctionDeclaration.self:
         _ = namedImplementation(of: r)
+      case FunctionBundleDeclaration.self:
+        let b = program.castUnchecked(r, to: FunctionBundleDeclaration.self)
+        for v in program[b].variants {
+          _ = namedImplementation(of: .init(v))
+        }
       default:
         program.unexpected(r)
       }
@@ -511,12 +516,14 @@ public struct Typer {
   /// Returns `true` iff `d` has a definition.
   private func hasDefinition(_ d: DeclarationIdentity) -> Bool {
     switch program.tag(of: d) {
-    case FunctionDeclaration.self:
-      return program[program.castUnchecked(d, to: FunctionDeclaration.self)].body != nil
     case BindingDeclaration.self:
       return program[program.castUnchecked(d, to: BindingDeclaration.self)].initializer != nil
+    case FunctionDeclaration.self:
+      return program[program.castUnchecked(d, to: FunctionDeclaration.self)].body != nil
+    case VariantDeclaration.self:
+      return program[program.castUnchecked(d, to: VariantDeclaration.self)].body != nil
     default:
-      return true
+      return false
     }
   }
 

@@ -1,0 +1,15 @@
+//! no-std
+
+trait P {
+  fun f() auto {
+    let
+    inout { () }
+  }
+}
+
+struct A: P {
+  public memberwise init
+  public fun f() auto {
+    let { (A(), ()) }
+  }
+}

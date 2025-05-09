@@ -1,6 +1,5 @@
 //! no-std
 
-
 trait P {
   fun f()
 }
