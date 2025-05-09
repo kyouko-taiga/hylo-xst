@@ -56,6 +56,8 @@ public struct SyntaxTag: Sendable {
     KindExpression.self,
     NameExpression.self,
     New.self,
+    PatternMatch.self,
+    PatternMatchCase.self,
     RemoteTypeExpression.self,
     StaticCall.self,
     SumTypeExpression.self,
@@ -66,6 +68,7 @@ public struct SyntaxTag: Sendable {
 
     // Patterns
     BindingPattern.self,
+    ExtractorPattern.self,
     TuplePattern.self,
 
     // Statements

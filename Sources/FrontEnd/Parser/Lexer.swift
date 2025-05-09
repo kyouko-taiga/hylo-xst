@@ -67,6 +67,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "inout": tag = .inout
     case "internal": tag = .internal
     case "let": tag = .let
+    case "match": tag = .match
     case "postfix": tag = .postfix
     case "prefix": tag = .prefix
     case "private": tag = .private

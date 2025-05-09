@@ -188,7 +188,7 @@ public struct Parser {
   /// Parses the declaration of an enum case.
   ///
   ///     enum-case-declaration ::=
-  ///       'case' identifier parameter-list? ('=' expression)?
+  ///       'case' identifier '(' parameter-list? ')' ('=' expression)?
   ///
   private mutating func parseEnumCaseDeclaration(
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
@@ -202,7 +202,7 @@ public struct Parser {
     defer { context = ctx }
 
     let identifier = parseSimpleIdentifier()
-    let parameters = try parseOptionalParenthesizedParameterList(in: &file)
+    let parameters = try parseParenthesizedParameterList(in: &file)
     let body: ExpressionIdentity?
     if let assign = take(.assign) {
       body = try parseExpression(in: &file)
@@ -592,18 +592,6 @@ public struct Parser {
     return .init(d)
   }
 
-  /// Parses a comma-separated list of parameter declarations in parentheses iff the next token is
-  /// a opening parenthesis
-  private mutating func parseOptionalParenthesizedParameterList(
-    in file: inout Module.SourceContainer
-  ) throws -> [ParameterDeclaration.ID] {
-    if next(is: .leftParenthesis) {
-      return try parseParenthesizedParameterList(in: &file)
-    } else {
-      return []
-    }
-  }
-
   /// Parses a comma-separated listof parameter declarations.
   private mutating func parseParenthesizedParameterList(
     in file: inout Module.SourceContainer
@@ -933,75 +921,82 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity {
     // Is there a mutation marker?
-    var marker = take(.ampersand)
+    let marker = take(.ampersand)
     if let m = marker, whitespaceBeforeNextToken() {
       report(separatedUnaryOperator(m.site))
     }
 
-    var head = try parsePrimaryExpression(in: &file)
+    let head = try parsePrimaryExpression(in: &file)
+    return try appendCompounds(to: head, markedForMutationWith: marker, in: &file)
+  }
 
+  /// Parses the arguments and nominal components that can be affixed to `head`.
+  private mutating func appendCompounds(
+    to head: ExpressionIdentity, markedForMutationWith marker: consuming Token?,
+    in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity {
+    var h = head
     while true {
       // The period separating nominal components binds more tightly than mutation markers.
-      if try appendNominalComponent(to: &head, in: &file) {
-        continue
-      } else if let m = marker.take() {
-        head = .init(file.insert(InoutExpression(marker: m, lvalue: head, site: span(from: m))))
+      if let n = try appendNominalComponent(to: h, in: &file) {
+        h = n; continue
       }
 
-      // Exit if there's a whitespace before the next token.
-      if whitespaceBeforeNextToken() { break }
+      if let m = marker.take() {
+        h = .init(file.insert(InoutExpression(marker: m, lvalue: h, site: span(from: m))))
+      }
 
-      if try appendParenthesizedArguments(to: &head, in: &file) { continue }
-      if try appendAngledArguments(to: &head, in: &file) { continue }
-      break
+      if let n = try appendParenthesizedArguments(to: h, in: &file) {
+        h = n
+      } else if let n = try appendAngledArguments(to: h, in: &file) {
+        h = n
+      } else {
+        break
+      }
     }
-
-    return head
+    return h
   }
 
-  /// If the next token is a dot, parses a nominal component, assigns `h` to a name expression
-  /// qualified by its current value and returns `true`. Otherwise, returns `false`.
+  /// If the next token is a dot, parses a nominal component and returns a name expression
+  /// qualified by `head`. Otherwise, returns `nil`.
   private mutating func appendNominalComponent(
-    to h: inout ExpressionIdentity, in file: inout Module.SourceContainer
-  ) throws -> Bool {
-    if take(.dot) == nil { return false }
+    to head: ExpressionIdentity, in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity? {
+    if take(.dot) == nil { return nil }
     let n = try parseName()
-    let s = span(from: file[h].site.start)
-    let m = file.insert(NameExpression(qualification: h, name: n, site: s))
-    h = .init(m)
-    return true
+    let s = span(from: file[head].site.start)
+    let m = file.insert(NameExpression(qualification: head, name: n, site: s))
+    return .init(m)
   }
 
-  /// If the next token is a left parenthesis, parses an argument list, assigns `h` to a call
-  /// expression applying its current value, and returns `true`. Otherwise, returns `false`.
+  /// If the next token is a left parenthesis, parses an argument list and returns a call
+  /// expression applying `head`. Otherwise, returns `nil`.
   private mutating func appendParenthesizedArguments(
-    to h: inout ExpressionIdentity, in file: inout Module.SourceContainer
-  ) throws -> Bool {
-    if peek()?.tag != .leftParenthesis { return false }
+    to head: ExpressionIdentity, in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity? {
+    if whitespaceBeforeNextToken() || !next(is: .leftParenthesis) { return nil }
     let (a, _) = try inParentheses { (me) in
       try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
     }
-    let s = file[h].site.extended(upTo: position.index)
-    let m = file.insert(Call(callee: h, arguments: a, style: .parenthesized, site: s))
-    h = .init(m)
-    return true
+    let s = file[head].site.extended(upTo: position.index)
+    let m = file.insert(Call(callee: head, arguments: a, style: .parenthesized, site: s))
+    return .init(m)
   }
 
-  /// If the next token is a left angle, parses an argument list, assigns `h` to a static call
-  /// expression applying its current value, and returns `true`. Otherwise, returns `false`.
+  /// If the next token is a left angle, parses an argument list and returns a static call
+  /// expression applying `h`. Otherwise, returns `nil`.
   private mutating func appendAngledArguments(
-    to h: inout ExpressionIdentity, in file: inout Module.SourceContainer
-  ) throws -> Bool {
-    if peek()?.tag != .leftAngle { return false }
+    to head: ExpressionIdentity, in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity? {
+    if whitespaceBeforeNextToken() || !next(is: .leftAngle) { return nil }
     let (a, _) = try inAngles { (m0) in
       try m0.commaSeparated(until: .rightAngle) { (m1) in
         try m1.parseExpression(in: &file)
       }
     }
-    let s = file[h].site.extended(upTo: position.index)
-    let m = file.insert(StaticCall(callee: h, arguments: a, site: s))
-    h = .init(m)
-    return true
+    let s = file[head].site.extended(upTo: position.index)
+    let m = file.insert(StaticCall(callee: head, arguments: a, site: s))
+    return .init(m)
   }
 
   /// Parses a list of labeled expressions.
@@ -1043,6 +1038,8 @@ public struct Parser {
       return try .init(parseWildcardLiteral(in: &file))
     case .dot:
       return try .init(parseImplicitlyQualifiedNameExpression(in: &file))
+    case .match:
+      return try .init(parsePatternMatch(in: &file))
     case .name:
       return try .init(parseUnqualifiedNameExpression(in: &file))
     case .auto, .inout, .let, .set, .sink:
@@ -1054,6 +1051,46 @@ public struct Parser {
     default:
       throw expected("expression")
     }
+  }
+
+  /// Parses a pattern matching expression.
+  ///
+  ///     pattern-match ::=
+  ///       match expression '{' pattern-match-case* '}'
+  ///
+  private mutating func parsePatternMatch(
+    in file: inout Module.SourceContainer
+  ) throws -> PatternMatch.ID {
+    let i = try take(.match) ?? expected("'match'")
+    let s = try parseExpression(in: &file)
+    let b = try inBraces { (m0) in
+      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
+        try m1.parsePatternMatchCase(in: &file)
+      }
+    }
+
+    return file.insert(
+      PatternMatch(introducer: i, scrutinee: s, branches: b, site: span(from: i)))
+  }
+
+  /// Parses a case of a pattern matching expression.
+  ///
+  ///     pattern-match-case ::=
+  ///       'case' pattern '{' statetement* '}'
+  ///
+  private mutating func parsePatternMatchCase(
+    in file: inout Module.SourceContainer
+  ) throws -> PatternMatchCase.ID {
+    let i = try take(.case) ?? expected("'case'")
+    let p = try parsePattern(in: &file)
+    let b = try inBraces { (m0) in
+      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
+        try m1.parseStatement(in: &file)
+      }
+    }
+
+    return file.insert(
+      PatternMatchCase(introducer: i, pattern: p, body: b, site: span(from: i)))
   }
 
   /// Parses a remote type expression.
@@ -1299,10 +1336,12 @@ public struct Parser {
     switch peek()?.tag {
     case .inout, .let, .set, .sink:
       return try .init(parseBindingPattern(in: &file))
-    case .name where context == .bindingSubpattern:
-      return try .init(parseVariableDeclaration(in: &file))
+    case .name:
+      return try parseNameOrDeconstructingPattern(in: &file)
+    case .dot:
+      return try parseImplicitlyQualifiedDeconstructingPattern(in: &file)
     case .leftParenthesis:
-      return try parseTuplePatternOrParenthesizedPattern(in: &file)
+      return try parseTuplePatternOrParenthesizedExpression(in: &file)
     case .underscore:
       return try .init(parseWildcardLiteral(in: &file))
     default:
@@ -1343,10 +1382,69 @@ public struct Parser {
     case .inout:
       return Parsed(.inout, at: take()!.site)
     case .sink:
-      if take(.let) == nil { report(expected("'let'")) }
-      return Parsed(.sinklet, at: take()!.site)
+      let a = take()!
+      let b = take(.let) ?? fix(expected("'let'"), with: a)
+      return Parsed(.sinklet, at: a.site.extended(toCover: b.site))
     default:
       throw expected("binding introducer")
+    }
+  }
+
+  /// Parses a deconstructing pattern with an implicit qualification.
+  ///
+  ///     implicitly-qualified-pattern ::=
+  ///       '.' extraction-pattern
+  ///
+  private mutating func parseImplicitlyQualifiedDeconstructingPattern(
+    in file: inout Module.SourceContainer
+  ) throws -> PatternIdentity {
+    if let dot = peek(), dot.tag == .dot {
+      let q = ExpressionIdentity(file.insert(ImplicitQualification(site: dot.site)))
+      return try parseNameOrExtractingPattern(qualifiedBy: q, in: &file)
+    } else {
+      throw expected("'.'")
+    }
+  }
+
+  /// Parses a compound name expression or a deconstructing pattern.
+  private mutating func parseNameOrDeconstructingPattern(
+    in file: inout Module.SourceContainer
+  ) throws -> PatternIdentity {
+    // If we're parsing the sub-pattern of a binding pattern, parse unparenthesized names as
+    // variable declarations.
+    if context == .bindingSubpattern {
+      return try .init(parseVariableDeclaration(in: &file))
+    }
+
+    // Otherwise, starts with a name expression and look if it qualifies a deconstructing pattern.
+    else {
+      let q = try ExpressionIdentity(parseUnqualifiedNameExpression(in: &file))
+      return try parseNameOrExtractingPattern(qualifiedBy: q, in: &file)
+    }
+  }
+
+  /// Parses a compound expression or an extracting pattern qualified by `q`.
+  private mutating func parseNameOrExtractingPattern(
+    qualifiedBy q: ExpressionIdentity, in file: inout Module.SourceContainer
+  ) throws -> PatternIdentity {
+    let start = file[q].site.start
+    var head = q
+
+    while true {
+      if let n = try appendNominalComponent(to: head, in: &file) {
+        head = n
+      } else if let n = try appendAngledArguments(to: head, in: &file) {
+        head = n
+      } else if next(is: .leftParenthesis) && !whitespaceBeforeNextToken() {
+        // Parse the last component as an unqualified deconstructing pattern.
+        let (e, _) = try inParentheses({ (me) in try me.parseLabeledPatternList(in: &file) })
+        let s = span(from: start)
+        let n = file.insert(ExtractorPattern(extractor: head, elements: e, site: s))
+        return .init(n)
+      } else {
+        // Give up on parsing a pattern and assume we just parsed some qualification.
+        return try .init(appendCompounds(to: head, markedForMutationWith: nil, in: &file))
+      }
     }
   }
 
@@ -1357,20 +1455,25 @@ public struct Parser {
   ///     tuple-pattern-body ::=
   ///       labeled-pattern (',' labeled-pattern)*
   ///
-  private mutating func parseTuplePatternOrParenthesizedPattern(
+  private mutating func parseTuplePatternOrParenthesizedExpression(
     in file: inout Module.SourceContainer
   ) throws -> PatternIdentity {
-    let start = try peek() ?? expected("'('")
-    let (es, lastComma) = try inParentheses { (me) in
-      try me.parseLabeledPatternList(in: &file)
+    let start = peek()?.site.start ?? position
+    let tuple = try attemptOptional { (m0) -> PatternIdentity? in
+      let (elements, lastComma) = try m0.inParentheses { (m1) in
+        try m1.parseLabeledPatternList(in: &file)
+      }
+      if (elements.count == 1) && (elements[0].label == nil) && (lastComma == nil) {
+        return nil
+      } else {
+        return .init(file.insert(TuplePattern(elements: elements, site: m0.span(from: start))))
+      }
     }
 
-    if (es.count == 1) && (es[0].label == nil) && (lastComma == nil) {
-      return es[0].value
+    if let p = tuple {
+      return p
     } else {
-      let t = file.insert(
-        TuplePattern(elements: es, site: start.site.extended(upTo: position.index)))
-      return .init(t)
+      return try .init(parseExpression(in: &file))
     }
   }
 
@@ -1617,6 +1720,11 @@ public struct Parser {
   }
 
   // MARK: Helpers
+
+  /// Returns the start position of the next token or the current position if the stream is empty.
+  private mutating func nextTokenStart() -> SourcePosition {
+    peek()?.site.start ?? position
+  }
 
   /// Returns a source span from the first position of `t` to the current position.
   private func span(from t: Token) -> SourceSpan {

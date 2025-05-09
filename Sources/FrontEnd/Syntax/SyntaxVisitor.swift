@@ -100,6 +100,10 @@ extension Program {
       traverse(castUnchecked(n, to: NameExpression.self), calling: &v)
     case New.self:
       traverse(castUnchecked(n, to: New.self), calling: &v)
+    case PatternMatch.self:
+      traverse(castUnchecked(n, to: PatternMatch.self), calling: &v)
+    case PatternMatchCase.self:
+      traverse(castUnchecked(n, to: PatternMatchCase.self), calling: &v)
     case RemoteTypeExpression.self:
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
     case StaticCall.self:
@@ -117,6 +121,8 @@ extension Program {
 
     case BindingPattern.self:
       traverse(castUnchecked(n, to: BindingPattern.self), calling: &v)
+    case ExtractorPattern.self:
+      traverse(castUnchecked(n, to: ExtractorPattern.self), calling: &v)
     case TuplePattern.self:
       traverse(castUnchecked(n, to: TuplePattern.self), calling: &v)
 
@@ -288,6 +294,18 @@ extension Program {
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: PatternMatch.ID, calling v: inout T) {
+    visit(self[n].scrutinee, calling: &v)
+    visit(self[n].branches, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: PatternMatchCase.ID, calling v: inout T) {
+    visit(self[n].pattern, calling: &v)
+    visit(self[n].body, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: RemoteTypeExpression.ID, calling v: inout T) {
     visit(self[n].projectee, calling: &v)
   }
@@ -317,6 +335,12 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: BindingPattern.ID, calling v: inout T) {
     visit(self[n].pattern, calling: &v)
     visit(self[n].ascription, calling: &v)
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: ExtractorPattern.ID, calling v: inout T) {
+    visit(self[n].extractor, calling: &v)
+    for a in self[n].elements { visit(a.value, calling: &v) }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.

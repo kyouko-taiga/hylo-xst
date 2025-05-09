@@ -1,0 +1,22 @@
+//! no-std
+
+enum A<T> {
+  case one()
+  case two(x: sink T)
+}
+
+struct B<U> {
+  public var u: U
+  public memberwise init
+}
+
+fun check<T>(_ x: T) {}
+
+public fun main() {
+  let x = A<Void>.one()
+  let y = match x {
+    case .one() { B(u: ()) }
+    case .two(x: sink let a) { B(u: a) }
+  }
+  check<B<Void>>(y)
+}

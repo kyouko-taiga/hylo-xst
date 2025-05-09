@@ -65,8 +65,9 @@ final class LexerTests: XCTestCase {
 
   func testKeywords() throws {
     let input: SourceFile = """
-      auto case enum extension false fun given import infix init inout internal let postfix prefix
-      private public return set sink static struct subscript trait true type typealias var where
+      auto case enum extension false fun given import infix init inout internal let match postfix
+      prefix private public return set sink static struct subscript trait true type typealias var
+      where
       """
     var scanner = Lexer(tokenizing: input)
     try assertNext(from: &scanner, is: .auto)
@@ -82,6 +83,7 @@ final class LexerTests: XCTestCase {
     try assertNext(from: &scanner, is: .inout)
     try assertNext(from: &scanner, is: .internal)
     try assertNext(from: &scanner, is: .let)
+    try assertNext(from: &scanner, is: .match)
     try assertNext(from: &scanner, is: .postfix)
     try assertNext(from: &scanner, is: .prefix)
     try assertNext(from: &scanner, is: .private)

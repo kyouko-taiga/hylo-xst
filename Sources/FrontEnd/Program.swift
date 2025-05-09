@@ -271,6 +271,8 @@ public struct Program: Sendable {
     switch tag(of: n) {
     case BindingDeclaration.self:
       return self[castUnchecked(n, to: BindingDeclaration.self)].is(.static)
+    case EnumCaseDeclaration.self:
+      return true
     case FunctionBundleDeclaration.self:
       return self[castUnchecked(n, to: FunctionBundleDeclaration.self)].is(.static)
     case FunctionDeclaration.self:
@@ -770,6 +772,11 @@ public struct Program: Sendable {
       return self[castUnchecked(n, to: TraitDeclaration.self)].identifier.site
     case TypeAliasDeclaration.self:
       return self[castUnchecked(n, to: TypeAliasDeclaration.self)].identifier.site
+
+    case PatternMatch.self:
+      return self[castUnchecked(n, to: PatternMatch.self)].introducer.site
+    case PatternMatchCase.self:
+      return self[castUnchecked(n, to: PatternMatchCase.self)].introducer.site
 
     case Return.self:
       return .empty(at: self[castUnchecked(n, to: Return.self)].introducer.site.start)

@@ -415,7 +415,7 @@ public struct Typer {
     expectingOutputType r: AnyTypeIdentity
   ) {
     if let b = body {
-      // Is the function expression-bodied?
+      // Is the function single-expression bodied?
       if let e = b.uniqueElement.flatMap(program.castToExpression(_:)) {
         check(e, requiring: r)
       } else {
@@ -852,23 +852,11 @@ public struct Typer {
     assert(d.module == module, "dependency is not typed")
 
     // The enclosing scope is an enum declaration.
-    let p = program.parent(containing: d, as: EnumDeclaration.self)!
-    let m = declaredType(of: p)
-    let o = program.types.select(m, \Metatype.inhabitant) ?? .error
+    let o = typeOfSelf(in: program.parent(containing: d, as: EnumDeclaration.self)!)
     let i = declaredTypes(of: program[d].parameters, defaultConvention: .sink)
-
-    // If there aren't any parameters, the case defines a constant.
-    if i.isEmpty {
-      program[module].setType(o, for: d)
-      return o
-    }
-
-    // If there are parameters, the case defines a function.
-    else {
-      let t = demand(Arrow(effect: .let, environment: .void, inputs: i, output: o)).erased
-      program[module].setType(t, for: d)
-      return t
-    }
+    let a = demand(Arrow(effect: .let, environment: .void, inputs: i, output: o)).erased
+    program[module].setType(a, for: d)
+    return a
   }
 
   /// Returns the declared type of `d` without checking.
@@ -1314,6 +1302,8 @@ public struct Typer {
     switch program.tag(of: p) {
     case BindingPattern.self:
       ascribe(k, t, to: program.castUnchecked(p, to: BindingPattern.self))
+    case ExtractorPattern.self:
+      ascribe(k, t, to: program.castUnchecked(p, to: ExtractorPattern.self))
     case TuplePattern.self:
       ascribe(k, t, to: program.castUnchecked(p, to: TuplePattern.self))
     case VariableDeclaration.self:
@@ -1325,8 +1315,7 @@ public struct Typer {
     }
   }
 
-  /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
-  /// reports an error if `t` doesn't match `p`'s shape.
+  /// Implements `ascribe(_:_:to:)` for binding patterns.
   private mutating func ascribe(
     _ k: AccessEffect, _ t: AnyTypeIdentity, to p: BindingPattern.ID
   ) {
@@ -1336,6 +1325,33 @@ public struct Typer {
 
   /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
   /// reports an error if `t` doesn't match `p`'s shape.
+  private mutating func ascribe(
+    _ k: AccessEffect, _ t: AnyTypeIdentity, to p: ExtractorPattern.ID
+  ) {
+    let m = demand(Metatype(inhabitant: t)).erased
+    guard let (_, ps) = extractor(referredToBy: p, matching: m) else {
+      program[module].setType(.error, for: p)
+      return
+    }
+
+    // Are the labels of the pattern compatible with those of the extractor?
+    guard labelsCompatible(p, ps) else {
+      let lhs = program[p].elements.map(\.label?.value)
+      let rhs = ps.map(\.label)
+      report(
+        program.incompatibleLabels(
+          found: lhs, expected: rhs, at: program.spanForDiagnostic(about: p)))
+      return
+    }
+
+    for (lhs, rhs) in zip(program[p].elements, ps) {
+      ascribe(k, rhs.type, to: lhs.value)
+    }
+
+    program[module].setType(t, for: p)
+  }
+
+  /// Implements `ascribe(_:_:to:)` for tuple patterns.
   private mutating func ascribe(
     _ k: AccessEffect, _ t: AnyTypeIdentity, to p: TuplePattern.ID
   ) {
@@ -1361,8 +1377,7 @@ public struct Typer {
     }
   }
 
-  /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
-  /// reports an error if `t` doesn't match `p`'s shape.
+  /// Implements `ascribe(_:_:to:)` for variable declarations patterns.
   private mutating func ascribe(
     _ k: AccessEffect, _ t: AnyTypeIdentity, to p: VariableDeclaration.ID
   ) {
@@ -1370,12 +1385,18 @@ public struct Typer {
     program[module].setType(u, for: p)
   }
 
-  /// Configures `p` as a pattern of type `t` introducing open variables with capability `k` or
-  /// reports an error if `t` doesn't match `p`'s shape.
+  /// Implements `ascribe(_:_:to:)` for wildcard literals.
   private mutating func ascribe(
     _ k: AccessEffect, _ t: AnyTypeIdentity, to p: WildcardLiteral.ID
   ) {
     program[module].setType(t, for: p)
+  }
+
+  /// Returns `true` iff the argument labels occuring in `p` are compatible with those of `d`.
+  private func labelsCompatible(_ lhs: ExtractorPattern.ID, _ rhs: [Parameter]) -> Bool {
+    program[lhs].elements.elementsEqual(rhs) { (l, r) in
+      (l.label == nil) || (l.label?.value == r.label)
+    }
   }
 
   // MARK: Type inference
@@ -1434,6 +1455,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case New.self:
       return inferredType(of: castUnchecked(e, to: New.self), in: &context)
+    case PatternMatch.self:
+      return inferredType(of: castUnchecked(e, to: PatternMatch.self), in: &context)
     case RemoteTypeExpression.self:
       return inferredType(of: castUnchecked(e, to: RemoteTypeExpression.self), in: &context)
     case StaticCall.self:
@@ -1667,6 +1690,62 @@ public struct Typer {
     let v = fresh().erased
     context.obligations.assume(ConstructorConversionConstraint(lhs: u, rhs: v, site: site))
     return context.obligations.assume(e, hasType: v, at: site)
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: PatternMatch.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    let scrutinee = check(program[e].scrutinee)
+    let site = program.spanForDiagnostic(about: e)
+
+    if program[e].branches.isEmpty {
+      report(.init(.error, "pattern matching expression must have at least one case", at: site))
+      return context.obligations.assume(e, hasType: .error, at: program.spanForDiagnostic(about: e))
+    }
+
+    // The type of the expression is `Void` if any of the cases isn't single-expression bodied.
+    let isExpression = isSingleExpressionBodied(e)
+    let expectedType = isExpression ? context.expectedType : .void
+
+    var first: AnyTypeIdentity? = nil
+    for b in program[e].branches {
+      ascribe(.auto, scrutinee, to: program[b].pattern)
+      context.withSubcontext(expectedType: expectedType) { (ctx) in
+        let branch = inferredType(of: b, requiring: first, in: &ctx)
+        if isExpression && (first == nil) {
+          first = branch
+        }
+      }
+    }
+
+    let all = first ?? .void
+    return context.obligations.assume(e, hasType: all, at: program.spanForDiagnostic(about: e))
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: PatternMatchCase.ID, requiring r: AnyTypeIdentity?,
+    in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    assert(program[e.module].type(assignedTo: program[e].pattern) != nil, "pattern is not typed")
+    let site = program.spanForDiagnostic(about: e)
+
+    // Is the case single-expression bodied?
+    if let b = program[e].body.uniqueElement.flatMap(program.castToExpression(_:)) {
+      let t = inferredType(of: b, in: &context)
+      if let u = r {
+        context.obligations.assume(CoercionConstraint(on: b, from: t, to: u, at: program[b].site))
+      }
+      return context.obligations.assume(e, hasType: t, at: site)
+    }
+
+    // Otherwise, type check each statement.
+    else {
+      assert(r == nil)
+      for s in program[e].body { check(s) }
+      return context.obligations.assume(e, hasType: .void, at: site)
+    }
   }
 
   /// Returns the inferred type of `e`.
@@ -2039,6 +2118,8 @@ public struct Typer {
     switch program.tag(of: n) {
     case ConformanceDeclaration.self:
       result = typeOfSelf(in: program.castUnchecked(n, to: ConformanceDeclaration.self))
+    case EnumDeclaration.self:
+      result = typeOfSelf(in: program.castUnchecked(n, to: EnumDeclaration.self))
     case ExtensionDeclaration.self:
       result = typeOfSelf(in: program.castUnchecked(n, to: ExtensionDeclaration.self))
     case StructDeclaration.self:
@@ -2063,6 +2144,12 @@ public struct Typer {
       let w = program.types.seenAsTraitApplication(program.types.head(t))
       return w?.arguments.values[0] ?? .error
     }
+  }
+
+  /// Returns the type of an instance of `Self` in `s`.
+  private mutating func typeOfSelf(in d: EnumDeclaration.ID) -> AnyTypeIdentity {
+    let t = declaredType(of: d)
+    return program.types.head(program.types.select(t, \Metatype.inhabitant) ?? .error)
   }
 
   /// Returns the type of an instance of `Self` in `s`.
@@ -2766,7 +2853,7 @@ public struct Typer {
 
       // Is the qualification a unification variable?
       if q.isVariable || program.types.isMetatype(q, of: \.isVariable) {
-        let t = context.expectedType ?? fresh().erased
+        let t = fresh().erased
         let k = MemberConstraint(
           member: e, role: context.role, qualification: q, type: t, site: site)
         context.obligations.assume(k)
@@ -3327,6 +3414,32 @@ public struct Typer {
     }
   }
 
+  /// If `p` refers to an extractor used to on a scrutinee of type `s`, returns a pair `(d, ps)`
+  /// where `d` is the declaration of that extractor and `ps` contain its parameters. Otherwise,
+  /// reports a diagnostic and returns `nil`.
+  private mutating func extractor(
+    referredToBy p: ExtractorPattern.ID, matching s: AnyTypeIdentity
+  ) -> (DeclarationIdentity, [Parameter])? {
+    let t = check(program[p].extractor, inContextExpecting: s)
+
+    // Is `p` referring to a valid extractor?
+    guard
+      let n = program.cast(program[p].extractor, to: NameExpression.self),
+      let d = program[p.module].declaration(referredToBy: n)?.target
+    else {
+      return nil
+    }
+
+    switch program.tag(of: d) {
+    case EnumCaseDeclaration.self:
+      return (d, (program.types[t] as? Arrow)?.inputs ?? [])
+
+    default:
+      report(.error, "'\(program.nameOrTag(of: d))' is not a valid extractor", about: p)
+      return nil
+    }
+  }
+
   // MARK: Standard library types
 
   /// The value identifying an entity from the standard library.
@@ -3419,9 +3532,19 @@ public struct Typer {
     }
   }
 
+  /// Returns `true` iff `e` has at least one case and all its cases are single-expression bodied.
+  private func isSingleExpressionBodied(_ e: PatternMatch.ID) -> Bool {
+    program[e].branches.allSatisfy({ (b) in program[b].body.count == 1 })
+  }
+
   /// Reports the diagnostic `d`.
   private mutating func report(_ d: Diagnostic) {
     program[module].addDiagnostic(d)
+  }
+
+  /// Reports a diagnostic related to `n` with the given level and message.
+  private mutating func report<T: SyntaxIdentity>(_ l: Diagnostic.Level, _ m: String, about n: T) {
+    report(.init(l, m, at: program.spanForDiagnostic(about: n)))
   }
 
   /// Returns the identity of a fresh type variable.

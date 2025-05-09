@@ -25,6 +25,7 @@ public struct Token: Hashable, Sendable {
     case `inout`
     case `internal`
     case `let`
+    case match
     case postfix
     case prefix
     case `private`
