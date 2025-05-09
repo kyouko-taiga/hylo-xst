@@ -56,6 +56,21 @@ public struct TreePrinter {
     items.map({ (n) in show(n) }).joined(separator: separator)
   }
 
+  /// Returns a textual representation of the given context bounds.
+  public mutating func showAsContextBounds(_ bounds: [ConformanceDeclaration.ID]) -> String {
+    var result = " "
+    var first = true
+    for b in bounds {
+      if first { first = false } else { result.append(" & ") }
+      let s = program.seenAsConformanceTypeExpression(program[b].witness)!
+      result.append("\(show(s.conformer)): \(show(s.concept))")
+      if !s.arguments.isEmpty {
+        result.append("<\(show(s.arguments))>")
+      }
+    }
+    return result
+  }
+
   /// Returns `s` optionally suffixed by a discriminator in case this method has been already been
   /// called with `s` and a different `key`.
   public mutating func uniquized(_ s: String, for key: AnyHashable) -> String {

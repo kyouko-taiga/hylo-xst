@@ -57,9 +57,9 @@ extension StructDeclaration: Showable {
     if !staticParameters.isEmpty {
       result.append(printer.show(staticParameters))
     }
+
     if !contextBounds.isEmpty {
-      result.append(": ")
-      result.append(printer.show(contextBounds, separatedBy: " & "))
+      result.append(": \(printer.showAsContextBounds(contextBounds))")
     }
 
     result.append(" {\n")

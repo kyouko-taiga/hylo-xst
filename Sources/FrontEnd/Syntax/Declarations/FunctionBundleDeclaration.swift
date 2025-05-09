@@ -75,7 +75,7 @@ extension FunctionBundleDeclaration: Showable {
     result.append(") \(effect.value) -> ")
     result.append(output.map({ (o) in printer.show(o) }) ?? "Void")
 
-    result.append("{\n")
+    result.append(" {\n")
     for v in variants {
       result.append(printer.show(v).indented + "\n")
     }
