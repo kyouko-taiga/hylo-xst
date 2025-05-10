@@ -64,7 +64,7 @@ extension ArgumentLabels: ExpressibleByArrayLiteral {
 extension ArgumentLabels: CustomStringConvertible {
 
   public var description: String {
-    values.map({ "\($0 ?? "_"):" }).joined()
+    values.map({ (label) in "\(label ?? "_"):" }).joined()
   }
 
 }
@@ -130,10 +130,10 @@ extension Name: CustomStringConvertible {
     if notation != .none {
       return "\(notation)\(identifier)"
     } else if labels.isEmpty {
-      let introducer = introducer.map({ "@\($0)" }) ?? ""
+      let introducer = introducer.map({ (i) in "@\(i)" }) ?? ""
       return identifier + introducer
     } else {
-      let introducer = introducer.map({ "@\($0)" }) ?? ""
+      let introducer = introducer.map({ (i) in "@\(i)" }) ?? ""
       return "\(identifier)(\(labels))" + introducer
     }
   }

@@ -1555,7 +1555,7 @@ private func + <A, B>(
   _ a: @escaping BuiltinFunctionParser<A>, _ b: @escaping BuiltinFunctionParser<B>
 ) -> BuiltinFunctionParser<(A, B)> {
   { (stream: inout ArraySlice<Substring>) -> (A, B)? in
-    a(&stream).flatMap({ (x) in b(&stream).map({ (x, $0) }) })
+    a(&stream).flatMap({ (x) in b(&stream).map({ (y) in (x, y) }) })
   }
 }
 
@@ -1565,7 +1565,7 @@ private func take<T: RawRepresentable>(
   _: T.Type
 ) -> BuiltinFunctionParser<T> where T.RawValue == String {
   { (stream: inout ArraySlice<Substring>) -> T? in
-    stream.popFirst().flatMap({ T(rawValue: .init($0)) })
+    stream.popFirst().flatMap({ (x) in T(rawValue: .init(x)) })
   }
 }
 

@@ -186,7 +186,7 @@ import Utilities
   /// `u` without any path extension and stripping all leading dots. Otherwise, returns "Main".
   private func productName(_ inputs: [URL]) -> Module.Name {
     if let u = inputs.uniqueElement {
-      let n = u.deletingPathExtension().lastPathComponent.drop(while: { $0 == "." })
+      let n = u.deletingPathExtension().lastPathComponent.drop(while: { (c) in c == "." })
       if !n.isEmpty {
         return .init(String(n))
       }

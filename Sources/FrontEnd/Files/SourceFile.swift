@@ -89,7 +89,7 @@ public struct SourceFile: Hashable, Sendable {
   /// - Requires: `i` is a valid index in `contents`.
   /// - Complexity: O(log N) where N is the number of lines in `self`.
   public func line(containing i: Index) -> SourceLine {
-    SourceLine(lineStarts.partitioningIndex(where: { $0 > i }), in: self)
+    SourceLine(lineStarts.partitioningIndex(where: { (l) in l > i }), in: self)
   }
 
   /// Returns the line at 1-based index `lineNumber`.

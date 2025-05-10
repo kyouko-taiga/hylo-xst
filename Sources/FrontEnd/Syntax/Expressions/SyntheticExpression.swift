@@ -38,7 +38,7 @@ extension SynthethicExpression: Showable {
     case .witness(let w):
       return printer.show(w)
     case .defaultArgument(let e):
-      return "$default \(printer.show(e))"
+      return printer.show(e)
     }
   }
 

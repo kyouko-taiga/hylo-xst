@@ -35,7 +35,7 @@ public struct Diagnostic: Hashable, Sendable {
   public init(
     _ level: Level, _ message: String, at site: SourceSpan, notes: [Diagnostic] = []
   ) {
-    precondition(notes.allSatisfy({ $0.level == .note }))
+    precondition(notes.allSatisfy({ (n) in n.level == .note }))
     self.level = level
     self.message = message
     self.site = site

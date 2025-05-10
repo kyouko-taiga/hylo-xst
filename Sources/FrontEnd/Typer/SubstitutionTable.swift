@@ -58,7 +58,7 @@ public struct SubstitutionTable {
   /// `%1 -> V`, then `self.optimized()` maps the two variables to `V` directly.
   internal func optimized() -> Self {
     var result = Self()
-    result.types = self.types.mapValues({ self[$0] })
+    result.types = self.types.mapValues({ (v) in self[v] })
     return result
   }
 

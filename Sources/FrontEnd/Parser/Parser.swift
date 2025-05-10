@@ -46,7 +46,7 @@ public struct Parser {
         try roots.append(parseDeclaration(in: &file))
       } catch let e as ParseError {
         report(e)
-        recover(at: { ($0.tag == .semicolon) || $0.isDeclarationHead })
+        recover(at: { (t) in (t.tag == .semicolon) || t.isDeclarationHead })
       } catch {
         unreachable()
       }
@@ -1898,7 +1898,7 @@ public struct Parser {
 
   /// Discards tokens until the next token may be at the beginning of a top-level declaration.
   private mutating func discardUntilNextTopLevelDeclaration() {
-    recover(at: { $0.isDeclarationHead })
+    recover(at: \.isDeclarationHead)
   }
 
   /// Discards token until `predicate` is satisfied or the next token is a unbalanced delimiter.
@@ -2044,7 +2044,7 @@ public struct Parser {
   ) throws -> [T] {
     var xs: [T] = []
     while let head = peek() {
-      discard(while: { $0.tag == .semicolon })
+      discard(while: { (t) in t.tag == .semicolon })
       if head.tag == rightDelimiter { break }
       do {
         try xs.append(parse(&self))

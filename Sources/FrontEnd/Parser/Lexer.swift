@@ -173,7 +173,7 @@ public struct Lexer: IteratorProtocol, Sequence {
       if source[position].isWhitespace {
         discard()
       } else if take("//") != nil {
-        discard(while: { !$0.isNewline })
+        discard(while: { (c) in !c.isNewline })
       } else if take("/*") != nil {
         var openedBlocks = 1
         let start = position
