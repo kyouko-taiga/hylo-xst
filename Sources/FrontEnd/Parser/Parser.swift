@@ -12,25 +12,19 @@ public struct Parser {
     /// The parsing of the subpattern of binding pattern.
     case bindingSubpattern
 
-    /// The body of an enum declaration.
-    case enumBody
-
-    /// The body of an enum declaration.
-    case structBody
-
   }
 
   /// The tokens in the input.
   private var tokens: Lexer
+
+  /// The position immediately after the last consumed token.
+  private var position: SourcePosition
 
   /// The next token to consume, if already extracted from the source.
   private var lookahead: Token? = nil
 
   /// The errors that have been collected so far.
   private var errors: [ParseError] = []
-
-  /// The position immediately after the last consumed token.
-  private var position: SourcePosition
 
   /// The context in which the parser is being used.
   private var context: Context = .default
@@ -194,13 +188,6 @@ public struct Parser {
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> EnumCaseDeclaration.ID {
     let introducer = try take(.case) ?? expected("'case'")
-
-    if context != .enumBody {
-      report(.init("enum case declaration is not allowed here", at: introducer.site))
-    }
-    let ctx = enter(.default)
-    defer { context = ctx }
-
     let identifier = parseSimpleIdentifier()
     let parameters = try parseParenthesizedParameterList(in: &file)
     let body: ExpressionIdentity?
@@ -235,9 +222,7 @@ public struct Parser {
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
     let representation = try next(is: .leftParenthesis) ? parseExpression(in: &file) : nil
     let bounds = try parseOptionalContextBoundList(until: .leftBrace, in: &file)
-    let members = try entering(.enumBody) { (me) in
-      try me.parseTypeBody(in: &file)
-    }
+    let members = try parseTypeBody(in: &file, accepting: \.isValidEnumMember)
 
     return file.insert(
       EnumDeclaration(
@@ -262,7 +247,7 @@ public struct Parser {
     let introducer = try take(.extension) ?? expected("'extension'")
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
     let extendee = try parseExpression(in: &file)
-    let members = try parseTypeBody(in: &file)
+    let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
     // No modifiers allowed on extensions.
     _ = sanitize(prologue, accepting: { _ in false })
@@ -300,8 +285,7 @@ public struct Parser {
       _ = try take(.colon) ?? expected("':'")
       let concept = try parseExpression(in: &file)
       let witness = desugaredConformance(of: conformer, to: concept, in: &file)
-
-      let members = try parseTypeBody(in: &file)
+      let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
       let d = file.insert(
         ConformanceDeclaration(
@@ -702,9 +686,7 @@ public struct Parser {
     let identifier = parseSimpleIdentifier()
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
     let bounds = try parseOptionalContextBoundList(until: .leftBrace, in: &file)
-    let members = try entering(.structBody) { (me) in
-      try me.parseTypeBody(in: &file)
-    }
+    let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
     return file.insert(
       StructDeclaration(
@@ -728,7 +710,7 @@ public struct Parser {
     let introducer = try take(.trait) ?? expected("'trait'")
     let identifier = parseSimpleIdentifier()
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
-    let members = try parseTypeBody(in: &file)
+    let members = try parseTypeBody(in: &file, accepting: \.isValidTraitMember)
 
     if let p = parameters.implicit.first {
       report(.init("constraints on trait parameters are not supported yet", at: file[p].site))
@@ -752,11 +734,15 @@ public struct Parser {
   ///       type-members? ';'* declaration ';'*
   ///
   private mutating func parseTypeBody(
-    in file: inout Module.SourceContainer
+    in file: inout Module.SourceContainer, accepting isValid: (SyntaxTag) -> Bool
   ) throws -> [DeclarationIdentity] {
     try inBraces { (m0) in
       try m0.semicolonSeparated(until: .rightBrace) { (m1) in
-        try m1.parseDeclaration(in: &file)
+        let d = try m1.parseDeclaration(in: &file)
+        if !isValid(file.tag(of: d)) {
+          m1.report(.init("declaration is not allowed here", at: .empty(at: file[d].site.start)))
+        }
+        return d
       }
     }
   }
@@ -1942,12 +1928,6 @@ public struct Parser {
     return try parse(&self)
   }
 
-  /// Enters the given context and returns the current one.
-  private mutating func enter(_ ctx: Context) -> Context {
-    defer { self.context = ctx }
-    return self.context
-  }
-
   /// Parses an instance of `T` or restores `self` to its current state if that fails.
   private mutating func attempt<T>(_ parse: (inout Self) throws -> T) -> T? {
     attemptOptional({ (me) in try? parse(&me) })
@@ -2208,6 +2188,36 @@ extension Token.Tag {
     case .rightParenthesis: "')'"
     default: "\(self)"
     }
+  }
+
+}
+
+extension SyntaxTag {
+
+  /// Returns `true` if a tree with this tag can occur as an enum member.
+  fileprivate var isValidEnumMember: Bool {
+    (self == EnumCaseDeclaration.self) || isValidStructMember
+  }
+
+  /// Returns `true` if a tree with this tag can occur as a struct member.
+  fileprivate var isValidStructMember: Bool {
+    switch self {
+    case BindingDeclaration.self:
+      return true
+    case FunctionBundleDeclaration.self:
+      return true
+    case FunctionDeclaration.self:
+      return true
+    case AssociatedTypeDeclaration.self:
+      return false
+    default:
+      return self.value is any TypeDeclaration.Type
+    }
+  }
+
+  /// Returns `true` if a tree with this tag can occur as a trait member.
+  fileprivate var isValidTraitMember: Bool {
+    (self == AssociatedTypeDeclaration.self) || isValidStructMember
   }
 
 }

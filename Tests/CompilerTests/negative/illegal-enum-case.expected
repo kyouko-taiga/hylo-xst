@@ -1,6 +1,6 @@
-negative/illegal-enum-case.hylo:4.3-7: error: enum case declaration is not allowed here
+negative/illegal-enum-case.hylo:4.3: error: declaration is not allowed here
   case one()
-  ~~~~
+  ^
 negative/illegal-enum-case.hylo:8.21-22: error: enum case with parameters cannot have an explicit definition
   case one(x: Void) = ()
                     ^
