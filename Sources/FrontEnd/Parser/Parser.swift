@@ -1045,11 +1045,85 @@ public struct Parser {
       return try .init(parseRemoteTypeExpression(in: &file))
     case .leftBrace:
       return try .init(parseTupleTypeExpression(in: &file))
+    case .leftBracket:
+      return try .init(parseArrowExpression(in: &file))
     case .leftParenthesis:
       return try parseTupleLiteralOrParenthesizedExpression(in: &file)
     default:
       throw expected("expression")
     }
+  }
+
+  /// Parses the expression of an arrow type.
+  ///
+  ///     arrow-expression ::=
+  ///       '[' expression? ']' '(' arrow-parameter-list? ')' access-effect? '->' expression
+  ///
+  private mutating func parseArrowExpression(
+    in file: inout Module.SourceContainer
+  ) throws -> ArrowExpression.ID {
+    let start = nextTokenStart()
+
+    // Environment.
+    let environment = try inBrackets { (me) -> ExpressionIdentity? in
+      if me.next(is: .rightBracket) {
+        return nil
+      } else {
+        return try me.parseExpression(in: &file)
+      }
+    }
+
+    // Parameters.
+    let (parameters, _) = try inParentheses { (m0) in
+      try m0.commaSeparated(until: .rightParenthesis) { (m1) in
+        try m1.parseArrowParameter(in: &file)
+      }
+    }
+
+    // Effect and return type.
+    let effect = parseOptionalAccessEffect() ?? .init(.let, at: .empty(at: position))
+    _ = try take(.arrow) ?? expected("'->'")
+    let output = try parseExpression(in: &file)
+
+    return file.insert(
+      ArrowExpression(
+        environment: environment,
+        parameters: parameters,
+        effect: effect,
+        output: output,
+        site: span(from: start)))
+  }
+
+  /// Parses an arrow parameter.
+  private mutating func parseArrowParameter(
+    in file: inout Module.SourceContainer
+  ) throws -> ArrowExpression.Parameter {
+    let label: Parsed<String>?
+    let ascription: ExpressionIdentity
+
+    // If the next token is a name or a keyword, attempt to parse a label, reinterpreting it as an
+    // expression if it isn't followed by `:`. Otherwise, parse an expression.
+    if let n = take(if: { (t) in (t.tag == .name) || t.isKeyword }) {
+      if take(.colon) != nil {
+        label = Parsed(n)
+        ascription = try parseExpression(in: &file)
+      } else {
+        if n.isKeyword { report(.init("'\(n.text)' is not a valid identifier", at: n.site)) }
+        label = nil
+        ascription = .init(
+          file.insert(
+            NameExpression(
+              qualification: nil,
+              name: Parsed(Name(identifier: String(n.text)), at: n.site),
+              site: n.site)))
+      }
+    } else {
+      label = nil
+      ascription = try parseExpression(in: &file)
+    }
+
+    let a = desugaredParameterAscription(ascription, in: &file)
+    return .init(label: label, ascription: a)
   }
 
   /// Parses a pattern matching expression.
@@ -1276,19 +1350,13 @@ public struct Parser {
   private mutating func parseOptionalParameterAscription(
     in file: inout Module.SourceContainer
   ) throws -> (lazyModifier: Token?, type: RemoteTypeExpression.ID)? {
-    guard let head = take(.colon) else { return nil }
-
-    let modifier = take(contextual: "lazy")
-    let ascription = try parseExpression(in: &file)
-
-    if file.tag(of: ascription) == RemoteTypeExpression.self {
-      let a = RemoteTypeExpression.ID(uncheckedFrom: ascription.erased)
-      return (modifier, a)
+    if take(.colon) != nil {
+      let m = take(contextual: "lazy")
+      let e = try parseExpression(in: &file)
+      let a = desugaredParameterAscription(e, in: &file)
+      return (m, a)
     } else {
-      let s = file[ascription].site
-      let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))
-      let a = file.insert(RemoteTypeExpression(access: k, projectee: ascription, site: s))
-      return (modifier, a)
+      return nil
     }
   }
 
@@ -1718,6 +1786,20 @@ public struct Parser {
     }
   }
 
+  /// Returns `ascription` if it is a remote type expression. Otherwise, returns a remote type
+  /// expression with a synthesized `let` effect.
+  private func desugaredParameterAscription(
+    _ ascription: ExpressionIdentity, in file: inout Module.SourceContainer
+  ) -> RemoteTypeExpression.ID {
+    if file.tag(of: ascription) == RemoteTypeExpression.self {
+      return RemoteTypeExpression.ID(uncheckedFrom: ascription.erased)
+    } else {
+      let s = file[ascription].site
+      let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))
+      return file.insert(RemoteTypeExpression(access: k, projectee: ascription, site: s))
+    }
+  }
+
   // MARK: Helpers
 
   /// Returns the start position of the next token or the current position if the stream is empty.
@@ -1938,6 +2020,11 @@ public struct Parser {
   /// Parses an instance of `T` enclosed in braces.
   private mutating func inBraces<T>(_ parse: (inout Self) throws -> T) throws -> T {
     try between((.leftBrace, .rightBrace), parse)
+  }
+
+  /// Parses an instance of `T` enclosed in brackets.
+  private mutating func inBrackets<T>(_ parse: (inout Self) throws -> T) throws -> T {
+    try between((.leftBracket, .rightBracket), parse)
   }
 
   /// Parses an instance of `T` enclosed in parentheses.

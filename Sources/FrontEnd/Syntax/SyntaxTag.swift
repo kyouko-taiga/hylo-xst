@@ -47,6 +47,7 @@ public struct SyntaxTag: Sendable {
     VariantDeclaration.self,
 
     // Expressions
+    ArrowExpression.self,
     BooleanLiteral.self,
     Call.self,
     Conversion.self,

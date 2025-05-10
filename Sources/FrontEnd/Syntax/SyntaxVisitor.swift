@@ -82,6 +82,8 @@ extension Program {
     case UsingDeclaration.self:
       traverse(castUnchecked(n, to: UsingDeclaration.self), calling: &v)
 
+    case ArrowExpression.self:
+      traverse(castUnchecked(n, to: ArrowExpression.self), calling: &v)
     case BooleanLiteral.self:
       break
     case Call.self:
@@ -249,6 +251,13 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: VariantDeclaration.ID, calling v: inout T) {
     if let b = self[n].body { visit(b, calling: &v) }
+  }
+
+  /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
+  public func traverse<T: SyntaxVisitor>(_ n: ArrowExpression.ID, calling v: inout T) {
+    visit(self[n].environment, calling: &v)
+    for p in self[n].parameters { visit(p.ascription, calling: &v) }
+    visit(self[n].output, calling: &v)
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
