@@ -2,6 +2,7 @@ import Archivist
 import Utilities
 
 /// An operator notation.
+@Archivable
 public enum OperatorNotation: UInt8, Sendable {
 
   /// No notation.
@@ -19,6 +20,7 @@ public enum OperatorNotation: UInt8, Sendable {
 }
 
 /// The argument labels of a name.
+@Archivable
 public struct ArgumentLabels: Sendable {
 
   /// The value of each label.
@@ -68,6 +70,7 @@ extension ArgumentLabels: CustomStringConvertible {
 }
 
 /// An unqualified name denoting an entity.
+@Archivable
 public struct Name: Hashable, Sendable {
 
   /// The identifier of the referred entity.
@@ -133,36 +136,6 @@ extension Name: CustomStringConvertible {
       let introducer = introducer.map({ "@\($0)" }) ?? ""
       return "\(identifier)(\(labels))" + introducer
     }
-  }
-
-}
-
-extension OperatorNotation: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self = try archive.read(rawValueOf: Self.self).unwrapOrThrow(ArchiveError.invalidInput)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(rawValueOf: self)
-  }
-
-}
-
-extension Name: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.identifier = try archive.read(String.self)
-    self.labels = try ArgumentLabels(archive.read([String].self))
-    self.notation = try archive.read(OperatorNotation.self)
-    self.introducer = try archive.read(AccessEffect?.self)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(identifier)
-    try archive.write(labels.values)
-    try archive.write(notation)
-    try archive.write(introducer)
   }
 
 }

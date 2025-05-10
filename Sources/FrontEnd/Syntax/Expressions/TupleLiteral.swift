@@ -1,6 +1,7 @@
 import Archivist
 
 /// The expression of a tuple literal.
+@Archivable
 public struct TupleLiteral: Expression {
 
   /// The elements of the tuple.
@@ -8,6 +9,12 @@ public struct TupleLiteral: Expression {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  public init(elements: [LabeledExpression], site: SourceSpan) {
+    self.elements = elements
+    self.site = site
+  }
 
 }
 
@@ -20,20 +27,6 @@ extension TupleLiteral: Showable {
     } else {
       return "(\(printer.show(elements)))"
     }
-  }
-
-}
-
-extension TupleLiteral: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.elements = try archive.read([LabeledExpression].self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(elements, in: &context)
-    try archive.write(site, in: &context)
   }
 
 }

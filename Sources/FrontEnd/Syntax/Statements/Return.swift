@@ -1,6 +1,7 @@
 import Archivist
 
 /// A return statement.
+@Archivable
 public struct Return: Statement {
 
   /// The introducer of this statement.
@@ -11,6 +12,13 @@ public struct Return: Statement {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  public init(introducer: Token, value: ExpressionIdentity?, site: SourceSpan) {
+    self.introducer = introducer
+    self.value = value
+    self.site = site
+  }
 
 }
 
@@ -26,20 +34,3 @@ extension Return: Showable {
   }
 
 }
-
-extension Return: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.introducer = try archive.read(Token.self, in: &context)
-    self.value = try archive.read(ExpressionIdentity?.self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(introducer)
-    try archive.write(value, in: &context)
-    try archive.write(site, in: &context)
-  }
-
-}
-
