@@ -1,6 +1,7 @@
 import Archivist
 
 /// The declaration of a function or subscript parameter.
+@Archivable
 public struct ParameterDeclaration: Declaration, Sendable {
 
   /// The label of the parameter.
@@ -15,8 +16,29 @@ public struct ParameterDeclaration: Declaration, Sendable {
   /// The default value of the parameter, if any.
   public let defaultValue: ExpressionIdentity?
 
+  /// The modifier specifying that the parameter is lazy, if any.
+  public let lazyModifier: Token?
+
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  public init(
+    label: Parsed<String>?,
+    identifier: Parsed<String>,
+    ascription: RemoteTypeExpression.ID?,
+    defaultValue: ExpressionIdentity?,
+    lazyModifier: Token?,
+    site: SourceSpan
+  ) {
+    assert((lazyModifier == nil) || (ascription != nil))
+    self.label = label
+    self.identifier = identifier
+    self.ascription = ascription
+    self.defaultValue = defaultValue
+    self.lazyModifier = lazyModifier
+    self.site = site
+  }
 
 }
 
@@ -38,7 +60,11 @@ extension ParameterDeclaration: Showable {
 
     // Ascription.
     if let a = ascription {
-      result.append(": \(printer.show(a))")
+      if lazyModifier == nil {
+        result.append(": \(printer.show(a))")
+      } else {
+        result.append(": lazy \(printer.show(a))")
+      }
     }
 
     // Default value.
@@ -47,26 +73,6 @@ extension ParameterDeclaration: Showable {
     }
 
     return result
-  }
-
-}
-
-extension ParameterDeclaration: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.label = try archive.read(Parsed<String>?.self, in: &context)
-    self.identifier = try archive.read(Parsed<String>.self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-    self.ascription = try archive.read(RemoteTypeExpression.ID?.self, in: &context)
-    self.defaultValue = try archive.read(ExpressionIdentity?.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(label, in: &context)
-    try archive.write(identifier, in: &context)
-    try archive.write(site, in: &context)
-    try archive.write(ascription, in: &context)
-    try archive.write(defaultValue, in: &context)
   }
 
 }

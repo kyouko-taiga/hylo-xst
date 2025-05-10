@@ -638,8 +638,9 @@ public struct Parser {
       ParameterDeclaration(
         label: label,
         identifier: identifier,
-        ascription: ascription,
+        ascription: ascription?.type,
         defaultValue: defaultValue,
+        lazyModifier: ascription?.lazyModifier,
         site: span(from: start)))
   }
 
@@ -1274,16 +1275,20 @@ public struct Parser {
   /// Parses the type ascription of a parameter iff the next token is a colon.
   private mutating func parseOptionalParameterAscription(
     in file: inout Module.SourceContainer
-  ) throws -> RemoteTypeExpression.ID? {
-    switch try parseOptionalTypeAscription(in: &file) {
-    case nil:
-      return nil
-    case .some(let b) where file.tag(of: b) == RemoteTypeExpression.self:
-      return RemoteTypeExpression.ID(uncheckedFrom: b.erased)
-    case .some(let b):
-      let s = file[b].site
+  ) throws -> (lazyModifier: Token?, type: RemoteTypeExpression.ID)? {
+    guard let head = take(.colon) else { return nil }
+
+    let modifier = take(contextual: "lazy")
+    let ascription = try parseExpression(in: &file)
+
+    if file.tag(of: ascription) == RemoteTypeExpression.self {
+      let a = RemoteTypeExpression.ID(uncheckedFrom: ascription.erased)
+      return (modifier, a)
+    } else {
+      let s = file[ascription].site
       let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))
-      return file.insert(RemoteTypeExpression(access: k, projectee: b, site: s))
+      let a = file.insert(RemoteTypeExpression(access: k, projectee: ascription, site: s))
+      return (modifier, a)
     }
   }
 
