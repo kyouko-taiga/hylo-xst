@@ -1,0 +1,15 @@
+//! no-std
+
+trait P { fun f() }
+
+struct A<T> {
+  var x: T
+}
+
+given <T: P> A<T>: P {
+  fun f() { self.x.f() }
+}
+
+fun g<T: P>(_ x: T) {
+  x.f()
+}

@@ -14,7 +14,7 @@ public struct NameExpression: Expression {
   public let site: SourceSpan
 
   /// Creates an instance with the given properties.
-  public init(qualification: ExpressionIdentity?, name: Parsed<Name>, site: SourceSpan) {
+  public init(qualification: ExpressionIdentity? = nil, name: Parsed<Name>, site: SourceSpan) {
     self.qualification = qualification
     self.name = name
     self.site = site

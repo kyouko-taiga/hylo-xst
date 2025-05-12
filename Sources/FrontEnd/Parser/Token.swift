@@ -167,6 +167,11 @@ public struct Token: Hashable, Sendable {
     }
   }
 
+  /// Returns a lambda accepting a token and returning `true` iff that token has tag `tag`.
+  public static func hasTag(_ tag: Tag) -> (Token) -> Bool {
+    { (t) in t.tag == tag }
+  }
+
 }
 
 extension Token: Archivable {
