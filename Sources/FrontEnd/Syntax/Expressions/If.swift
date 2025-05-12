@@ -1,10 +1,10 @@
 import Archivist
 
-/// A conditional expression.
+/// A conditional expression with two branches.
 @Archivable
 public struct If: Expression, Scope {
 
-  /// The identity of the else-branch of a conditional expression.
+  /// The identity of the else-branch of an if-expression.
   public struct ElseIdentity : SyntaxIdentity{
 
     /// The type-erased value of this identity.
@@ -31,8 +31,8 @@ public struct If: Expression, Scope {
   /// The introducer of this expression.
   public let introducer: Token
 
-  /// The condition of this expression, which is not empty.
-  public let condition: [ConditionItemIdentity]
+  /// The list of conditions of this expression, which is not empty.
+  public let conditions: [ConditionIdentity]
 
   /// The code executed if the condition holds.
   public let success: Block.ID
@@ -46,13 +46,13 @@ public struct If: Expression, Scope {
   /// Creates an instance with the given properties.
   public init(
     introducer: Token,
-    condition: [ConditionItemIdentity],
+    conditions: [ConditionIdentity],
     success: Block.ID,
     failure: ElseIdentity,
     site: SourceSpan
   ) {
     self.introducer = introducer
-    self.condition = condition
+    self.conditions = conditions
     self.success = success
     self.failure = failure
     self.site = site
@@ -64,7 +64,7 @@ extension If: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    var result = "if \(printer.show(condition)) "
+    var result = "if \(printer.show(conditions)) "
     result.append(printer.show(success))
     result.append(" else ")
     result.append(printer.show(failure))

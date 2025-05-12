@@ -167,7 +167,7 @@ public struct Parser {
   ///       binding-pattern ('=' expression)?
   ///
   private mutating func parseBindingDeclaration(
-    asGiven: Bool = false,
+    as role: BindingDeclaration.Role = .unconditional,
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> BindingDeclaration.ID {
     let b = try parseBindingPattern(in: &file)
@@ -175,7 +175,7 @@ public struct Parser {
 
     return file.insert(
       BindingDeclaration(
-        modifiers: prologue, isGiven: asGiven, pattern: b, initializer: i,
+        modifiers: prologue, role: role, pattern: b, initializer: i,
         site: span(from: file[b].site.start)))
   }
 
@@ -275,7 +275,7 @@ public struct Parser {
     // Is the next token a binding introducer?
     let next = try peek() ?? expected("'declaration'")
     if next.isBindingIntroducer {
-      return try .init(parseBindingDeclaration(asGiven: true, after: prologue, in: &file))
+      return try .init(parseBindingDeclaration(as: .given, after: prologue, in: &file))
     }
 
     // Expect a conformance declaration.
@@ -1103,7 +1103,7 @@ public struct Parser {
     return .init(label: label, ascription: a)
   }
 
-  /// Parses a conditional expression.
+  /// Parses an if-expression.
   ///
   ///     conditional-expression ::=
   ///       'if' condition-item (',' condition-item)* '{' statement-list '}' else?
@@ -1113,32 +1113,32 @@ public struct Parser {
   ///
   private mutating func parseIf(in file: inout Module.SourceContainer) throws -> If.ID {
     let i = try take(.if) ?? expected("'if'")
-    let c = try parseCondition(in: &file)
+    let c = try parseConditionList(in: &file)
     let s = try parseConditionalBody(in: &file)
     let f = try parseElseBranch(in: &file)
     return file.insert(
-      If(introducer: i, condition: c, success: s, failure: f, site: span(from: i)))
+      If(introducer: i, conditions: c, success: s, failure: f, site: span(from: i)))
   }
 
   /// Parses a condition.
-  private mutating func parseCondition(
+  private mutating func parseConditionList(
     in file: inout Module.SourceContainer
-  ) throws -> [ConditionItemIdentity] {
-    var result = [try parseConditionItem(in: &file)]
+  ) throws -> [ConditionIdentity] {
+    var result = [try parseCondition(in: &file)]
     while take(.comma) != nil {
-      result.append(try parseConditionItem(in: &file))
+      result.append(try parseCondition(in: &file))
     }
     return result
   }
 
   /// Parses a single item in a condition.
-  private mutating func parseConditionItem(
+  private mutating func parseCondition(
     in file: inout Module.SourceContainer
-  ) throws -> ConditionItemIdentity {
+  ) throws -> ConditionIdentity {
     let head = try peek() ?? expected("expression")
     switch head.tag {
     case .inout, .let, .set, .sink, .var:
-      return try .init(parseBindingDeclaration(after: .init(), in: &file))
+      return try .init(parseBindingDeclaration(as: .condition, after: .init(), in: &file))
     default:
       return try .init(parseExpression(in: &file))
     }
@@ -1176,7 +1176,7 @@ public struct Parser {
   /// Parses a pattern matching expression.
   ///
   ///     pattern-match ::=
-  ///       match expression '{' pattern-match-case* '}'
+  ///       'match' expression '{' pattern-match-case* '}'
   ///
   private mutating func parsePatternMatch(
     in file: inout Module.SourceContainer

@@ -278,7 +278,7 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: If.ID, calling v: inout T) {
-    visit(self[n].condition, calling: &v)
+    visit(self[n].conditions, calling: &v)
     visit(self[n].success, calling: &v)
     visit(self[n].failure, calling: &v)
   }

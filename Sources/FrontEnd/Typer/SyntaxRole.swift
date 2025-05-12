@@ -1,16 +1,16 @@
-/// The grammatical role of a syntax tree plays in an expression.
+/// The grammatical role a syntax tree plays.
 internal enum SyntaxRole {
 
-  /// The expression is used in an unspecified way.
+  /// The tree is used in an unspecified way.
   case unspecified
 
-  /// The expression denotes a type ascription.
+  /// The tree denotes a type ascription.
   case ascription
 
-  /// The expression denotes as the callee of a function call.
+  /// The tree denotes as the callee of a function call.
   case function(labels: [String?])
 
-  /// The expression denotes as the callee of a subscript call.
+  /// The tree denotes as the callee of a subscript call.
   case `subscript`(labels: [String?])
 
   /// Creates the role of a callee applied with given `style` and `labels`.

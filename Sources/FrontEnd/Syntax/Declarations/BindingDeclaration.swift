@@ -1,13 +1,30 @@
 import Archivist
 
 /// The declaration of a (possibly empty) set of bindings.
+@Archivable
 public struct BindingDeclaration: ModifiableDeclaration {
+
+  /// The grammatical role a binding declaration plays.
+  @Archivable
+  public enum Role: Hashable, Sendable {
+
+    /// The declaration is used to introduce new bindings unconditionally.
+    case unconditional
+
+    /// The declaration is used to introduce new values in the implicit scope.
+    case given
+
+    /// The declaration is used to introduce new bindings iff its pattern matches the value of its
+    /// initializer, which is not `nil`.
+    case condition
+
+  }
 
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]
 
-  /// `true` iff `self` introduces values into the implicit scope.
-  public let isGiven: Bool
+  /// The grammatical role of this declaration.
+  public let role: Role
 
   /// A pattern introducing the declared bindings.
   public let pattern: BindingPattern.ID
@@ -18,6 +35,21 @@ public struct BindingDeclaration: ModifiableDeclaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
+  /// Creates an instance with the given properties.
+  public init(
+    modifiers: [Parsed<DeclarationModifier>],
+    role: Role,
+    pattern: BindingPattern.ID,
+    initializer: ExpressionIdentity?,
+    site: SourceSpan
+  ) {
+    self.modifiers = modifiers
+    self.role = role
+    self.pattern = pattern
+    self.initializer = initializer
+    self.site = site
+  }
+
 }
 
 extension BindingDeclaration: Showable {
@@ -26,9 +58,10 @@ extension BindingDeclaration: Showable {
   public func show(using printer: inout TreePrinter) -> String {
     var result = ""
     for m in modifiers { result.append("\(m) ") }
-    if isGiven {
+    if role == .given {
       result.append("given ")
     }
+
     result.append(printer.show(pattern))
 
     if let i = initializer {
@@ -36,26 +69,6 @@ extension BindingDeclaration: Showable {
     }
 
     return result
-  }
-
-}
-
-extension BindingDeclaration: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.modifiers = try archive.read([Parsed<DeclarationModifier>].self, in: &context)
-    self.isGiven = try archive.read(Bool.self, in: &context)
-    self.pattern = try archive.read(BindingPattern.ID.self, in: &context)
-    self.initializer = try archive.read(ExpressionIdentity?.self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(modifiers, in: &context)
-    try archive.write(isGiven, in: &context)
-    try archive.write(pattern, in: &context)
-    try archive.write(initializer, in: &context)
-    try archive.write(site, in: &context)
   }
 
 }

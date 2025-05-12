@@ -267,9 +267,9 @@ public struct StatementIdentity: SyntaxIdentity {
 
 }
 
-/// The identity of an expression or binding declaration in the condition of a conditional
-/// expression, match expression, or while loop.
-public struct ConditionItemIdentity : SyntaxIdentity{
+/// The identity of an expression or binding declaration in the conditions of an if-expression,
+/// match-expression, or while loop.
+public struct ConditionIdentity: SyntaxIdentity{
 
   /// The type-erased value of this identity.
   public let erased: AnySyntaxIdentity

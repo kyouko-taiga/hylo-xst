@@ -218,24 +218,36 @@ public struct Typer {
     checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
-  /// Type checks `d`.
+  /// Type checks `d`, which occurs as a condition item iff `conditional` is true.
+  ///
+  /// If `conditional` is `true`, then `d` occurs in the condition of a 
   private mutating func check(_ d: BindingDeclaration.ID) {
     let t = declaredType(of: d)
-    if let i = program[d].initializer {
-      check(i, requiring: t)
+
+    switch program[d].role {
+    case .condition:
+      if let i = program[d].initializer {
+        check(i)
+      } else {
+        report(.error, "binding declaration requires an initializer", about: d)
+      }
+
+    case .given, .unconditional:
+      if let i = program[d].initializer {
+        check(i, requiring: t)
+      }
     }
 
     program.forEachVariable(introducedBy: d) { (v, _) in
       checkUniqueDeclaration(v, of: program[v].identifier.value)
     }
 
-    if program[d].isGiven,  let p = program.parent(containing: d).node {
+    if program[d].role == .given, let p = program.parent(containing: d).node {
       switch program.tag(of: p) {
       case ConformanceDeclaration.self, TraitDeclaration.self:
         break
       default:
-        let s = program.spanForDiagnostic(about: d)
-        report(.init(.error, "givens type definitions are not supported yet", at: s))
+        report(.error, "givens type definitions are not supported yet", about: d)
       }
     }
   }
@@ -514,9 +526,9 @@ public struct Typer {
   }
 
   /// Type checks `n`.
-  private mutating func check(_ n: ConditionItemIdentity) {
+  private mutating func check(_ n: ConditionIdentity) {
     if let d = program.cast(n, to: BindingDeclaration.self) {
-      report(.error, "conditional binding is not supported yet", about: d)
+      check(d)
     } else if let e = program.castToExpression(n) {
       let t = standardLibraryType(.bool)
       check(e, requiring: t)
@@ -974,7 +986,7 @@ public struct Typer {
     assert(d.module == module, "dependency is not typed")
 
     let t = program[d].ascription.map({ (a) in evaluateTypeAscription(.init(a)) }) ?? {
-      report(.init(.error, "parameter requires ascription", at: program[d].site))
+      report(.error, "parameter declaration requires an ascription", about: d)
       return .error
     }()
 
@@ -1651,7 +1663,7 @@ public struct Typer {
   private mutating func inferredType(
     of e: If.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
-    for n in program[e].condition { check(n) }
+    for n in program[e].conditions { check(n) }
 
     // Are both branches single-bodied expressions?
     if
@@ -1958,9 +1970,13 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     // Fast path: if the pattern has no ascription, the type type is inferred from the initializer.
     guard let a = program[program[d].pattern].ascription else {
-      let i = program[d].initializer ?? unreachable("ill-formed binding declaration")
-      let t = inferredType(of: i, in: &context)
-      return context.obligations.assume(d, hasType: t, at: program[d].site)
+      if let i = program[d].initializer {
+        let t = inferredType(of: i, in: &context)
+        return context.obligations.assume(d, hasType: t, at: program[d].site)
+      } else {
+        report(.error, "binding declaration requires an ascription", about: d)
+        return context.obligations.assume(d, hasType: .error, at: program[d].site)
+      }
     }
 
     // Slow path: infer a type from the ascription and (if necessary) the initializer.
@@ -3635,7 +3651,7 @@ public struct Typer {
     program[b].statements.uniqueElement.flatMap(program.castToExpression(_:))
   }
 
-  /// Returns `b` if it is a conditional expression or `singleExpression(of: b)` if it is a block.
+  /// Returns `b` if it is an if-expression or `singleExpression(of: b)` if it is a block.
   private func singleExpression(of b: If.ElseIdentity) -> ExpressionIdentity? {
     if let e = program.cast(b, to: If.self) {
       return .init(e)

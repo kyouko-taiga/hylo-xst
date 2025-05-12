@@ -217,7 +217,7 @@ public struct Program: Sendable {
   public func isGiven<T: SyntaxIdentity>(_ n: T) -> Bool {
     switch tag(of: n) {
     case BindingDeclaration.self:
-      return self[castUnchecked(n, to: BindingDeclaration.self)].isGiven
+      return self[castUnchecked(n, to: BindingDeclaration.self)].role == .given
     case ConformanceDeclaration.self:
       return true
     case UsingDeclaration.self:
