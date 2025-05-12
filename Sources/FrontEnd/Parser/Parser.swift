@@ -632,18 +632,7 @@ public struct Parser {
   private mutating func parseOptionalCallableBody(
     in file: inout Module.SourceContainer
   ) throws -> [StatementIdentity]? {
-    try peek()?.tag == .leftBrace ? parseCallableBody(in: &file) : nil
-  }
-
-  /// Parses the body of a function, lambda, or subscript.
-  private mutating func parseCallableBody(
-    in file: inout Module.SourceContainer
-  ) throws -> [StatementIdentity] {
-    try inBraces { (m0) in
-      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
-        try m1.parseStatement(in: &file)
-      }
-    }
+    try peek()?.tag == .leftBrace ? parseBracedStatementList(in: &file) : nil
   }
 
   private mutating func parseBundleBody(
@@ -1023,6 +1012,8 @@ public struct Parser {
       return try .init(parseWildcardLiteral(in: &file))
     case .dot:
       return try .init(parseImplicitlyQualifiedNameExpression(in: &file))
+    case .if:
+      return try .init(parseIf(in: &file))
     case .match:
       return try .init(parsePatternMatch(in: &file))
     case .name:
@@ -1110,6 +1101,76 @@ public struct Parser {
 
     let a = desugaredParameterAscription(ascription, in: &file)
     return .init(label: label, ascription: a)
+  }
+
+  /// Parses a conditional expression.
+  ///
+  ///     conditional-expression ::=
+  ///       'if' condition-item (',' condition-item)* '{' statement-list '}' else?
+  ///     else ::=
+  ///       'else' conditional-expression
+  ///       'else' '{' statement-list '}'
+  ///
+  private mutating func parseIf(in file: inout Module.SourceContainer) throws -> If.ID {
+    let i = try take(.if) ?? expected("'if'")
+    let c = try parseCondition(in: &file)
+    let s = try parseConditionalBody(in: &file)
+    let f = try parseElseBranch(in: &file)
+    return file.insert(
+      If(introducer: i, condition: c, success: s, failure: f, site: span(from: i)))
+  }
+
+  /// Parses a condition.
+  private mutating func parseCondition(
+    in file: inout Module.SourceContainer
+  ) throws -> [ConditionItemIdentity] {
+    var result = [try parseConditionItem(in: &file)]
+    while take(.comma) != nil {
+      result.append(try parseConditionItem(in: &file))
+    }
+    return result
+  }
+
+  /// Parses a single item in a condition.
+  private mutating func parseConditionItem(
+    in file: inout Module.SourceContainer
+  ) throws -> ConditionItemIdentity {
+    let head = try peek() ?? expected("expression")
+    switch head.tag {
+    case .inout, .let, .set, .sink, .var:
+      return try .init(parseBindingDeclaration(after: .init(), in: &file))
+    default:
+      return try .init(parseExpression(in: &file))
+    }
+  }
+
+  /// Parses the else-branch of a conditional expression iff the next token if `else` or returns
+  /// an empty block otherwise.
+  private mutating func parseElseBranch(
+    in file: inout Module.SourceContainer
+  ) throws -> If.ElseIdentity {
+    // Can we consume `else`?
+    if take(.else) != nil {
+      if next(is: .if) {
+        return try .init(parseIf(in: &file))
+      } else {
+        return try .init(parseConditionalBody(in: &file))
+      }
+    }
+
+    // Create an empty block at the currentposition.
+    else {
+      return .init(file.insert(Block(introducer: nil, statements: [], site: .empty(at: position))))
+    }
+  }
+
+  /// Parses the body of a conditional expression or loop.
+  private mutating func parseConditionalBody(
+    in file: inout Module.SourceContainer
+  ) throws -> Block.ID {
+    let start = nextTokenStart()
+    let ss = try parseBracedStatementList(in: &file)
+    return file.insert(Block(introducer: nil, statements: ss, site: span(from: start)))
   }
 
   /// Parses a pattern matching expression.
@@ -1631,6 +1692,17 @@ public struct Parser {
       return .init(n)
     } else {
       return .init(l)
+    }
+  }
+
+  /// Parses a list of statements in braces.
+  private mutating func parseBracedStatementList(
+    in file: inout Module.SourceContainer
+  ) throws -> [StatementIdentity] {
+    try inBraces { (m0) in
+      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
+        try m1.parseStatement(in: &file)
+      }
     }
   }
 

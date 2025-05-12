@@ -513,6 +513,18 @@ public struct Typer {
     for p in ps.implicit { check(p) }
   }
 
+  /// Type checks `n`.
+  private mutating func check(_ n: ConditionItemIdentity) {
+    if let d = program.cast(n, to: BindingDeclaration.self) {
+      report(.error, "conditional binding is not supported yet", about: d)
+    } else if let e = program.castToExpression(n) {
+      let t = standardLibraryType(.bool)
+      check(e, requiring: t)
+    } else {
+      program.unexpected(n)
+    }
+  }
+
   /// Returns `true` iff `d` has a definition.
   private func hasDefinition(_ d: DeclarationIdentity) -> Bool {
     switch program.tag(of: d) {
@@ -677,19 +689,23 @@ public struct Typer {
     }
   }
 
-  /// Type checks `e` expecting it to have type `r` and reporting an error if it doesn't.
-  private mutating func check(_ e: ExpressionIdentity, requiring r: AnyTypeIdentity) {
+  /// Type checks `e` and returns its type, reporting an error if it isn't coercible to `r`.
+  @discardableResult
+  private mutating func check(
+    _ e: ExpressionIdentity, requiring r: AnyTypeIdentity
+  ) -> AnyTypeIdentity {
     let u = check(e, inContextExpecting: r)
 
     // Fast path: `e` has the expected type or never returns.
-    if equal(u, r) || equal(u, .never) { return }
+    if equal(u, r) || equal(u, .never) { return u }
 
     // Bail out if `e` has errors; those must have been reported already.
-    if u[.hasError] { return }
+    if u[.hasError] { return u }
 
     // Slow path: can we coerce `e`?
     let k = CoercionConstraint(on: e, from: u, to: r, reason: .return, at: program[e].site)
     discharge(Obligations([k]), relatedTo: e)
+    return u
   }
 
   /// Type checks `e`, which occurs as a statement.
@@ -1454,6 +1470,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: Conversion.self), in: &context)
     case EqualityWitnessExpression.self:
       return inferredType(of: castUnchecked(e, to: EqualityWitnessExpression.self), in: &context)
+    case If.self:
+      return inferredType(of: castUnchecked(e, to: If.self), in: &context)
     case ImplicitQualification.self:
       return inferredType(of: castUnchecked(e, to: ImplicitQualification.self), in: &context)
     case InoutExpression.self:
@@ -1631,6 +1649,42 @@ public struct Typer {
 
   /// Returns the inferred type of `e`.
   private mutating func inferredType(
+    of e: If.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    for n in program[e].condition { check(n) }
+
+    // Are both branches single-bodied expressions?
+    if
+      let e0 = singleExpression(of: program[e].success),
+      let e1 = singleExpression(of: program[e].failure)
+    {
+      let t0 = inferredType(of: program[e].success, in: &context)
+      let t1 = inferredType(of: program[e].failure, in: &context)
+
+      // Fast path: we infer the same type for both branches.
+      if t0 == t1 {
+        return context.obligations.assume(e, hasType: t0, at: program[e].site)
+      }
+
+      // Slow path: we may need coercions.
+      let t = fresh().erased
+      context.obligations.assume(CoercionConstraint(on: e0, from: t0, to: t, at: program[e0].site))
+      context.obligations.assume(CoercionConstraint(on: e1, from: t1, to: t, at: program[e1].site))
+      return context.obligations.assume(e, hasType: t, at: program[e].site)
+    }
+
+    // The branches are not single-bodied expressions; assume `e` produces `Void`.
+    else {
+      context.withSubcontext(expectedType: .void) { (ctx) in
+        _ = inferredType(of: program[e].success, in: &ctx)
+        _ = inferredType(of: program[e].failure, in: &ctx)
+      }
+      return context.obligations.assume(e, hasType: .void, at: program[e].site)
+    }
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
     of e: ImplicitQualification.ID, in context: inout InferenceContext
   ) -> AnyTypeIdentity {
     if let t = context.expectedType {
@@ -1686,12 +1740,22 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let site = program.spanForDiagnostic(about: e)
 
+    // If the expression is used as a callee, account for the label of the elided `self` parameter
+    // of the underlying initializer.
+    let role: SyntaxRole
+    if case .function(let ls) = context.role {
+      role = .function(labels: ["self" as Optional] + ls)
+    } else {
+      role = .unspecified
+    }
+
     let s = resolveQualification(of: e, in: &context)
     let t = demand(Metatype(inhabitant: s)).erased
     let u = fresh().erased
+
     context.obligations.assume(
       MemberConstraint(
-        member: program[e].target, role: context.role, qualification: t, type: u, site: site))
+        member: program[e].target, role: role, qualification: t, type: u, site: site))
     context.obligations.assume(program[e].target, hasType: u, at: site)
 
     let v = fresh().erased
@@ -1919,6 +1983,32 @@ public struct Typer {
     return context.obligations.assume(d, hasType: t, at: program[d].site)
   }
 
+  /// Returns the inferred type of `b`, which occurs in `context`.
+  private mutating func inferredType(
+    of b: Block.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    if let e = program[b].statements.uniqueElement.flatMap(program.castToExpression(_:)) {
+      let t = inferredType(of: e, in: &context)
+      return context.obligations.assume(b, hasType: t, at: program[b].site)
+    } else {
+      for s in program[b].statements { check(s) }
+      return context.obligations.assume(b, hasType: .void, at: program[b].site)
+    }
+  }
+
+  /// Returns the inferred type of `b`, which occurs in `context`.
+  private mutating func inferredType(
+    of b: If.ElseIdentity, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    if let e = program.cast(b, to: If.self) {
+      return inferredType(of: e, in: &context)
+    } else if let s = program.cast(b, to: Block.self) {
+      return inferredType(of: s, in: &context)
+    } else {
+      program.unexpected(b)
+    }
+  }
+
   /// Either binds `n` to declarations in `candidates` suitable for the given `role` and returns
   /// the inferred type of `n`, or returns a diagnostic reported at `site` if there isn't any
   /// viable candidate.
@@ -1935,8 +2025,8 @@ public struct Typer {
     assert(!candidates.isEmpty)
 
     // No candidate survived filtering?
-    if let d = filter(&candidates, for: role, at: site) {
-      return .right(d)
+    if let diagnostic = filterInPlace(&candidates, for: role, at: site) {
+      return .right(diagnostic)
     }
 
     // There is only one candidate left?
@@ -1957,7 +2047,7 @@ public struct Typer {
   /// returning a diagnostic iff no candidate survived.
   ///
   /// - Note: No filtering is applied if `cs` contains less than two elements.
-  private func filter(
+  private func filterInPlace(
     _ cs: inout [NameResolutionCandidate], for role: SyntaxRole, at site: SourceSpan
   ) -> Diagnostic? {
     switch role {
@@ -1966,9 +2056,9 @@ public struct Typer {
     case .ascription, .unspecified:
       return nil
     case .function(let labels):
-      return filter(&cs, callable: .parenthesized, withLabels: labels, at: site)
+      return filterInPlace(&cs, callable: .parenthesized, withLabels: labels, at: site)
     case .subscript(let labels):
-      return filter(&cs, callable: .bracketed, withLabels: labels, at: site)
+      return filterInPlace(&cs, callable: .bracketed, withLabels: labels, at: site)
     }
   }
 
@@ -1976,7 +2066,7 @@ public struct Typer {
   /// style and argument labels, returning a diagnostic iff no candidate survived.
   ///
   /// - Requires: `cs` is not empty.
-  private func filter(
+  private func filterInPlace(
     _ cs: inout [NameResolutionCandidate],
     callable style: Call.Style, withLabels labels: [String?], at site: SourceSpan
   ) -> Diagnostic? {
@@ -3536,6 +3626,23 @@ public struct Typer {
       return (a, b)
     } else {
       return nil
+    }
+  }
+
+  /// If `b` contains exactly one statement that is an expression, returns that expression.
+  /// Otherwise, returns `nil`.
+  private func singleExpression(of b: Block.ID) -> ExpressionIdentity? {
+    program[b].statements.uniqueElement.flatMap(program.castToExpression(_:))
+  }
+
+  /// Returns `b` if it is a conditional expression or `singleExpression(of: b)` if it is a block.
+  private func singleExpression(of b: If.ElseIdentity) -> ExpressionIdentity? {
+    if let e = program.cast(b, to: If.self) {
+      return .init(e)
+    } else if let s = program.cast(b, to: Block.self) {
+      return singleExpression(of: s)
+    } else {
+      program.unexpected(b)
     }
   }
 

@@ -44,6 +44,11 @@ public struct TreePrinter {
     self.identifiers = [:]
   }
 
+  /// Returns `message` with placeholders replaced by their corresponding values in `arguments`.
+  public mutating func format(_ message: String, _ arguments: [Any]) -> String {
+    program.format(message, arguments)
+  }
+
   /// Returns a textual representation of `item` using the given configuration.
   public mutating func show<T: Showable>(_ item: T) -> String {
     item.show(using: &self)

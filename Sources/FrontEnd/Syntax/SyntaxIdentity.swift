@@ -239,7 +239,7 @@ public struct PatternIdentity: SyntaxIdentity {
 
 }
 
-/// The type-erased identitiy of an abstract syntax tree denoting a statement.
+/// The type-erased identity of an abstract syntax tree denoting a statement.
 public struct StatementIdentity: SyntaxIdentity {
 
   /// The type-erased value of this identity.
@@ -262,6 +262,30 @@ public struct StatementIdentity: SyntaxIdentity {
 
   /// Creates an instance equal to `other`.
   public init(_ other: ExpressionIdentity) {
+    self.erased = other.erased
+  }
+
+}
+
+/// The identity of an expression or binding declaration in the condition of a conditional
+/// expression, match expression, or while loop.
+public struct ConditionItemIdentity : SyntaxIdentity{
+
+  /// The type-erased value of this identity.
+  public let erased: AnySyntaxIdentity
+
+  /// Creates an identifying the same node as `erased`.
+  public init(uncheckedFrom erased: AnySyntaxIdentity) {
+    self.erased = erased
+  }
+
+  /// Creates an instance equal to `other`.
+  public init(_ other: ExpressionIdentity) {
+    self.erased = other.erased
+  }
+
+  /// Creates an instance equal to `other`.
+  public init(_ other: BindingDeclaration.ID) {
     self.erased = other.erased
   }
 

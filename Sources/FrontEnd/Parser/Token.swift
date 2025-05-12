@@ -14,11 +14,13 @@ public struct Token: Hashable, Sendable {
     // Reserved keywords
     case auto
     case `case`
+    case `else`
     case `enum`
     case `extension`
     case `false`
     case fun
     case given
+    case `if`
     case `import`
     case infix
     case `init`
