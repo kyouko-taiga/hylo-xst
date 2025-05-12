@@ -1,12 +1,31 @@
 /// A value that can be either `true` or `false`.
-public struct Bool {
+public struct Bool: Deinitializable {
 
   /// The raw value of this instance.
   internal var value: Builtin.i1
 
+  /// Creates an instance with its raw value.
+  internal memberwise init
+
   /// Creates an instance equal to `false`.
   public init() {
     &self.value = Builtin.zeroinitializer_i1()
+  }
+
+  /// Returns the logical conjunction of `self` and `other`.
+  public fun infix&& (_ other: lazy Bool) -> Bool {
+    Bool(value: Builtin.and_i1(self.value, other.value))
+  }
+
+  /// Returns the logical disjunction of `self` and `other`.
+  public fun infix|| (_ rhs: lazy Bool) -> Bool {
+    Bool(value: Builtin.or_i1(self.value, rhs.value))
+  }
+
+  /// Returns negation of `self`.
+  public fun prefix! () -> Bool {
+    // Implement negation by comparing to 0.
+    Bool(value: Builtin.icmp_eq_i1(value, Builtin.zeroinitializer_i1()))
   }
 
 }

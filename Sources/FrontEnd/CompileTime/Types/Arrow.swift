@@ -30,6 +30,14 @@ public struct Arrow: TypeTree {
     self.output = output
   }
 
+  /// Creates an instance from `inputs`, which denote unlabeled `let` parameters, to `output`,
+  /// having no environment and the `let` effect.
+  public init(_ inputs: MachineType.ID..., to output: MachineType.ID) {
+    self.init(
+      inputs: inputs.map({ (i) in .init(access: .let, type: i.erased) }),
+      output: output.erased)
+  }
+
   /// Properties about `self`.
   public var properties: ValueProperties {
     inputs.reduce(output.properties, { (a, i) in a.union(i.type.properties) })
