@@ -72,7 +72,7 @@ public struct TypeStore: Sendable {
   /// Returns `true` iff `n` identifies a non-nominal type (e.g., a tuple).
   public func isStructural<T: TypeIdentity>(_ n: T) -> Bool {
     switch tag(of: n) {
-    case Tuple.self:
+    case Sum.self, Tuple.self:
       return true
     default:
       return false

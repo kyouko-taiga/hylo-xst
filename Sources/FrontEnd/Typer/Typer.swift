@@ -143,6 +143,8 @@ public struct Typer {
   private mutating func storage(of t: AnyTypeIdentity) -> [AnyTypeIdentity]? {
     let u = program.types.reduced(t)
     switch program.types.tag(of: u) {
+    case Enum.self:
+      return storage(of: program.types.castUnchecked(t, to: Enum.self))
     case Struct.self:
       return storage(of: program.types.castUnchecked(t, to: Struct.self))
     case TypeApplication.self:
@@ -152,6 +154,11 @@ public struct Typer {
     default:
       return nil
     }
+  }
+
+  /// Returns the types of stored parts of `t`.
+  private mutating func storage(of t: Enum.ID) -> [AnyTypeIdentity] {
+    [underlyingType(of: program.types[t].declaration)]
   }
 
   /// Returns the types of stored parts of `t`.
@@ -582,10 +589,65 @@ public struct Typer {
     for conformer: AnyTypeIdentity
   ) -> DeclarationReference? {
     let concept = program.traitRequiring(requirement)!
-    if isDerivable(structuralConformanceOf: conformer, to: concept, in: .init(node: d)) {
+    if
+      isSynthesizable(conformanceTo: concept),
+      structurallyConforms(storageOf: conformer, to: concept, in: .init(node: d))
+    {
       return .synthetic(requirement)
     } else {
       return nil
+    }
+  }
+
+  /// Returns `true` iff conformances to `concept` may be synthesized.
+  private mutating func isSynthesizable(conformanceTo concept: TraitDeclaration.ID) -> Bool {
+    guard program.containsStandardLibrarySources else { return false }
+    switch concept {
+    case standardLibraryDeclaration(.deinitializable):
+      return true
+    default:
+      return false
+    }
+  }
+
+  /// Returns `true` iff conformances of each stored part of `conformer` to `concept` can be
+  /// derived (i.e., resolved or synthesized) in `scopeOfUse`.
+  ///
+  /// - Requires: conformances to `concept` may be synthesized.
+  private mutating func structurallyConforms(
+    storageOf conformer: AnyTypeIdentity, to concept: TraitDeclaration.ID,
+    in scopeOfUse: ScopeIdentity
+  ) -> Bool {
+    if let s = storage(of: conformer) {
+      return s.allSatisfy({ (t) in isDerivable(conformanceOf: t, to: concept, in: scopeOfUse) })
+    } else {
+      return false
+    }
+  }
+
+  /// Returns `true` iff conformances of each stored part of `conformer` to `concept` can be
+  /// derived (i.e., resolved or synthesized) in `scopeOfUse`.
+  ///
+  /// - Requires: conformances to `concept` may be synthesized.
+  private mutating func structurallyConforms(
+    _ conformer: Sum.ID, to concept: TraitDeclaration.ID,
+    in scopeOfUse: ScopeIdentity
+  ) -> Bool {
+    program.types[conformer].elements.allSatisfy { (e) in
+      isDerivable(conformanceOf: e, to: concept, in: scopeOfUse)
+    }
+  }
+
+  /// Returns `true` iff conformances of each stored part of `conformer` to `concept` can be
+  /// derived (i.e., resolved or synthesized) in `scopeOfUse`.
+  ///
+  /// - Requires: conformances to `concept` may be synthesized.
+  private mutating func structurallyConforms(
+    _ conformer: Tuple.ID, to concept: TraitDeclaration.ID,
+    in scopeOfUse: ScopeIdentity
+  ) -> Bool {
+    program.types[conformer].elements.allSatisfy { (e) in
+      isDerivable(conformanceOf: e.type, to: concept, in: scopeOfUse)
     }
   }
 
@@ -595,7 +657,7 @@ public struct Typer {
     conformanceOf conformer: AnyTypeIdentity, to concept: TraitDeclaration.ID,
     in scopeOfUse: ScopeIdentity
   ) -> Bool {
-    if !isDerivable(conformanceTo: concept) { return false }
+    assert(isSynthesizable(conformanceTo: concept))
     if program.types[conformer] is MachineType {
       return true
     }
@@ -603,33 +665,11 @@ public struct Typer {
     let a = typeOfModel(of: conformer, conformingTo: concept, with: []).erased
     if summon(a, in: scopeOfUse).count == 1 {
       return true
-    } else if program.types.isStructural(conformer) {
-      return isDerivable(structuralConformanceOf: conformer, to: concept, in: scopeOfUse)
+    } else if let s = program.types.cast(conformer, to: Sum.self) {
+      return structurallyConforms(s, to: concept, in: scopeOfUse)
+    } else if let s = program.types.cast(conformer, to: Tuple.self) {
+      return structurallyConforms(s, to: concept, in: scopeOfUse)
     } else {
-      return false
-    }
-  }
-
-  /// Returns `true` iff a conformance to `concept` can be resolved or synthesized in `scopeOfUse`
-  /// for each individual stored property of `conformer`.
-  private mutating func isDerivable(
-    structuralConformanceOf conformer: AnyTypeIdentity, to concept: TraitDeclaration.ID,
-    in scopeOfUse: ScopeIdentity
-  ) -> Bool {
-    if isDerivable(conformanceTo: concept), let ts = storage(of: conformer) {
-      return ts.allSatisfy({ (t) in isDerivable(conformanceOf: t, to: concept, in: scopeOfUse) })
-    } else {
-      return false
-    }
-  }
-
-  /// Returns `true` iff conformances to `concept` can be synthesized.
-  private mutating func isDerivable(conformanceTo concept: TraitDeclaration.ID) -> Bool {
-    guard program.containsStandardLibrarySources else { return false }
-    switch concept {
-    case standardLibraryDeclaration(.deinitializable):
-      return true
-    default:
       return false
     }
   }
