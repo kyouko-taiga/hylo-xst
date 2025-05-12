@@ -13,18 +13,22 @@ public struct Bool: Deinitializable {
   }
 
   /// Returns the logical conjunction of `self` and `other`.
+  ///
+  /// This operation has short-circuit behavior: `other` is evaluated iff `self` is `true`.
   public fun infix&& (_ other: lazy Bool) -> Bool {
-    Bool(value: Builtin.and_i1(self.value, other.value))
+    if self { Bool(value: other.value) } else { Bool() }
   }
 
   /// Returns the logical disjunction of `self` and `other`.
-  public fun infix|| (_ rhs: lazy Bool) -> Bool {
-    Bool(value: Builtin.or_i1(self.value, rhs.value))
+  ///
+  /// This operation has short-circuit behavior: `other` is evaluated iff `self` is `false`.
+  public fun infix|| (_ other: lazy Bool) -> Bool {
+    if self { Bool(value: self.value) } else { Bool(value: other.value) }
   }
 
   /// Returns negation of `self`.
   public fun prefix! () -> Bool {
-    // Implement negation by comparing to 0.
+    // `Bool(value: self.value != 0)`
     Bool(value: Builtin.icmp_eq_i1(value, Builtin.zeroinitializer_i1()))
   }
 
