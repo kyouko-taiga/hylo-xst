@@ -624,6 +624,8 @@ public struct Typer {
     switch concept {
     case standardLibraryDeclaration(.deinitializable):
       return true
+    case standardLibraryDeclaration(.equatable):
+      return true
     default:
       return false
     }
@@ -3625,6 +3627,9 @@ public struct Typer {
 
     /// `Hylo.Deinitializable`.
     case deinitializable = "Deinitializable"
+
+    /// `Hylo.Equatable`.
+    case equatable = "Equatable"
 
     /// Returns a selector for the declaration corresponding to `self`.
     var filter: SyntaxFilter {
