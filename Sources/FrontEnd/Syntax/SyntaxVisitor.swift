@@ -191,7 +191,7 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: EnumDeclaration.ID, calling v: inout T) {
     visit(self[n].staticParameters, calling: &v)
     visit(self[n].representation, calling: &v)
-    visit(self[n].contextBounds, calling: &v)
+    visit(self[n].conformances, calling: &v)
     visit(self[n].members, calling: &v)
   }
 
@@ -232,7 +232,7 @@ extension Program {
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: StructDeclaration.ID, calling v: inout T) {
     visit(self[n].staticParameters, calling: &v)
-    visit(self[n].contextBounds, calling: &v)
+    visit(self[n].conformances, calling: &v)
     visit(self[n].members, calling: &v)
   }
 

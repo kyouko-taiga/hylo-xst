@@ -5,21 +5,21 @@ struct Indestructible {}
 struct Box<T> { var x: T }
 
 // Conformance is structurally synthesizable.
-struct A: Deinitializable {}
+struct A is Deinitializable {}
 
 // Conformance is structurally synthesizable.
-struct B: Deinitializable {
+struct B is Deinitializable {
   var x: {x: Void}  // structural conformance
   var y: A          // user-defined conformance
 }
 
 // Conformance is synthesizable using the where clause.
-given <X where X: Deinitializable> Box<X>: Deinitializable {}
+given <X where X is Deinitializable> Box<X> is Deinitializable {}
 
 // Conformance is not synthesizable.
-given <X> Box<X>: Deinitializable {}
+given <X> Box<X> is Deinitializable {}
 
 // A struct whose contents isn't structurally deinitializable.
-struct NotStructurallyDeinitializable: Deinitializable {
+struct NotStructurallyDeinitializable is Deinitializable {
   var x: Indestructible
 }

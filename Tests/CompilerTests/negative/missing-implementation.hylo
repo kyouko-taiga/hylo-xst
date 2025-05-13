@@ -11,6 +11,6 @@ extension Void {
   fun f1() {}
 }
 
-given Void: P {
+given Void is P {
   fun f2() {}
 }

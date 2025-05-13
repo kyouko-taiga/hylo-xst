@@ -6,7 +6,7 @@ struct A<T> {
   var x: T
 }
 
-given <T: P> A<T>: P {
+given <T: P> A<T> is P {
   fun f() { self.x.f() }
 }
 

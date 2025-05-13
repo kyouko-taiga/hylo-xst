@@ -7,7 +7,7 @@ trait P {
   }
 }
 
-struct A: P {
+struct A is P {
   public memberwise init
   public fun f() auto {
     let { (A(), ()) }

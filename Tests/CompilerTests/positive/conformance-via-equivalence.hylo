@@ -2,9 +2,9 @@
 
 trait P {}
 
-fun g<V where V: P>() {}
+fun g<V where V is P>() {}
 
-fun f<T, U where T == U, T: P>() {
+fun f<T, U where T == U, T is P>() {
   // `P<U>` must be deduced from `T ~ U` and `P<T>`
   g<U>()
 }

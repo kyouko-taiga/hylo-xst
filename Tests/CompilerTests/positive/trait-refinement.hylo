@@ -11,13 +11,13 @@ trait Derived {
 
 struct S<T> {}
 
-given <T> S<T>: Base {
+given <T> S<T> is Base {
   fun f() {}
 }
 
-given <T> S<T>: Derived {}
+given <T> S<T> is Derived {}
 
-fun ghi<T where T: Derived>(_ x: T) {
+fun ghi<T where T is Derived>(_ x: T) {
   x.g()
   x.f()
 }

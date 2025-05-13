@@ -21,6 +21,7 @@ public struct Token: Hashable, Sendable {
     case fun
     case given
     case `if`
+    case `is`
     case `import`
     case infix
     case `init`

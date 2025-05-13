@@ -221,7 +221,7 @@ public struct Parser {
     let identifier = parseSimpleIdentifier()
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
     let representation = try next(is: .leftParenthesis) ? parseExpression(in: &file) : nil
-    let bounds = try parseOptionalInlineConformanceList(until: .leftBrace, in: &file)
+    let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidEnumMember)
 
     return file.insert(
@@ -231,7 +231,7 @@ public struct Parser {
         identifier: identifier,
         staticParameters: parameters,
         representation: representation,
-        contextBounds: bounds,
+        conformances: conformances,
         members: members,
         site: span(from: introducer)))
   }
@@ -282,7 +282,7 @@ public struct Parser {
     else {
       let parameters = try parseOptionalCompileTimeParameters(in: &file)
       let conformer = try parseExpression(in: &file)
-      _ = try take(.colon) ?? expected("':'")
+      _ = try take(.is) ?? expected("'is'")
       let concept = try parseExpression(in: &file)
       let witness = desugaredConformance(of: conformer, to: concept, in: &file)
       let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
@@ -515,38 +515,37 @@ public struct Parser {
   private mutating func parseContextBound(
     on conformer: Token, in file: inout Module.SourceContainer
   ) throws -> UsingDeclaration.ID {
-    let name = Parsed<Name>(conformer)
     let rhs = try parseCompoundExpression(in: &file)
-    let lhs = ExpressionIdentity(file.insert(NameExpression(name: name, site: name.site)))
+    let lhs = ExpressionIdentity(file.insert(NameExpression(.init(conformer))))
     let witness = ExpressionIdentity(desugaredConformance(of: lhs, to: rhs, in: &file))
     return file.insert(UsingDeclaration(witness: witness, site: file[rhs].site))
   }
 
-  /// Parses a list of inline conformance declarations iff the next token is a colon.
+  /// Parses a list of adjunct conformance declarations iff the next token is `.is`.
   ///
-  ///     inline-conformance-list ::=
-  ///       ':' compound-expression ('&' compound-expression)*
+  ///     adjunct-conformance-list ::=
+  ///       'is' compound-expression ('&' compound-expression)*
   ///
-  private mutating func parseOptionalInlineConformanceList(
+  private mutating func parseOptionalAdjunctConformanceList(
     until rightDelimiter: Token.Tag, in file: inout Module.SourceContainer
   ) throws -> [ConformanceDeclaration.ID] {
-    if let introducer = take(.colon) {
+    if let introducer = take(.is) {
       return try ampersandSeparated(until: Token.hasTag(rightDelimiter)) { me in
-        try me.parseInlineConformance(introducedBy: introducer, in: &file)
+        try me.parseAdjunctConformance(introducedBy: introducer, in: &file)
       }
     } else {
       return []
     }
   }
 
-  /// Parses an inline conformance declaration.
+  /// Parses an adjunct conformance declaration.
   ///
-  /// An inline conformance declaration is parsed as a compound expression affixed to the head of a
+  /// An adjunct conformance declaration is parsed as a compound expression after to the head of a
   /// type declaration. It is immediately desugared as a static call whose first argument is a name
   /// expression referring to the conforming type, which forms the type of the witness produced by
   /// the conformance. For example, if the conformance is spelled out as `P<A>` in source, the
   /// expression of the witness is desugared as `P<Self, A>`.
-  private mutating func parseInlineConformance(
+  private mutating func parseAdjunctConformance(
     introducedBy introducer: Token, in file: inout Module.SourceContainer
   ) throws -> ConformanceDeclaration.ID {
     let b = try parseCompoundExpression(in: &file)
@@ -572,7 +571,7 @@ public struct Parser {
     /// Returns a name expression referring to the conforming type.
     func conformer() -> [ExpressionIdentity] {
       let s = SourceSpan.empty(at: position)
-      let e = file.insert(NameExpression(qualification: nil, name: .init("Self", at: s), site: s))
+      let e = file.insert(NameExpression(.init("Self", at: s)))
       return [.init(e)]
     }
   }
@@ -593,11 +592,11 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
     let l = try parseCompoundExpression(in: &file)
-    let s = try take(.colon) ?? take(.equal) ?? expected("':' or '=='")
+    let s = try take(.is) ?? take(.equal) ?? expected("'is' or '=='")
     let r = try parseCompoundExpression(in: &file)
 
     let witness: ExpressionIdentity
-    if s.tag == .colon {
+    if s.tag == .is {
       witness = .init(desugaredConformance(of: l, to: r, in: &file))
     } else {
       let w = EqualityWitnessExpression(
@@ -709,7 +708,7 @@ public struct Parser {
     let introducer = try take(.struct) ?? expected("'struct'")
     let identifier = parseSimpleIdentifier()
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
-    let bounds = try parseOptionalInlineConformanceList(until: .leftBrace, in: &file)
+    let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
     return file.insert(
@@ -718,7 +717,7 @@ public struct Parser {
         introducer: introducer,
         identifier: identifier,
         staticParameters: parameters,
-        contextBounds: bounds,
+        conformances: conformances,
         members: members,
         site: span(from: introducer)))
   }
@@ -1123,10 +1122,7 @@ public struct Parser {
         if n.isKeyword { report(.init("'\(n.text)' is not a valid identifier", at: n.site)) }
         label = nil
         ascription = .init(
-          file.insert(
-            NameExpression(
-              name: Parsed(Name(identifier: String(n.text)), at: n.site),
-              site: n.site)))
+          file.insert(NameExpression(Parsed(Name(identifier: String(n.text)), at: n.site))))
       }
     } else {
       label = nil
@@ -1302,7 +1298,7 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> NameExpression.ID {
     let n = try parseName()
-    return file.insert(NameExpression(name: n, site: n.site))
+    return file.insert(NameExpression(n))
   }
 
   /// Parses a name.
@@ -2159,15 +2155,14 @@ public struct Parser {
     until isRightDelimiter: (Token) -> Bool, _ parse: (inout Self) throws -> T
   ) throws -> [T] {
     var xs: [T] = []
-    while let head = peek() {
-      if isRightDelimiter(head) { break }
+    while let head = peek(), !isRightDelimiter(head) {
       do {
         try xs.append(parse(&self))
       } catch let e as ParseError {
         report(e)
         recover(at: { (t) in isRightDelimiter(t) || t.tag == .ampersand })
       }
-      _ = take(.ampersand)
+      if take(.ampersand) == nil { break }
     }
     return xs
   }

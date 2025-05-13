@@ -2,7 +2,7 @@
 
 trait P { fun f() }
 
-given Void: P {
+given Void is P {
   fun f() {}
   fun f() {}
 }

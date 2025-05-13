@@ -9,7 +9,7 @@ extension <T> {a: T} {
   fun f() { () }
 }
 
-given {a: Void}: P {
+given {a: Void} is P {
   typealias X = {a: Void}
   fun f() -> X { (a: ()) }
 }

@@ -20,7 +20,7 @@ public struct EnumDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
   public let representation: ExpressionIdentity?
 
   /// The conformances declared along with the struct.
-  public let contextBounds: [ConformanceDeclaration.ID]
+  public let conformances: [ConformanceDeclaration.ID]
 
   /// The members of the declared struct.
   public let members: [DeclarationIdentity]
@@ -35,7 +35,7 @@ public struct EnumDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
     identifier: Parsed<String>,
     staticParameters: StaticParameters,
     representation: ExpressionIdentity?,
-    contextBounds: [ConformanceDeclaration.ID],
+    conformances: [ConformanceDeclaration.ID],
     members: [DeclarationIdentity],
     site: SourceSpan
   ) {
@@ -44,7 +44,7 @@ public struct EnumDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
     self.identifier = identifier
     self.staticParameters = staticParameters
     self.representation = representation
-    self.contextBounds = contextBounds
+    self.conformances = conformances
     self.members = members
     self.site = site
   }
@@ -67,9 +67,9 @@ extension EnumDeclaration: Showable {
       result.append("(\(printer.show(r)))")
     }
 
-    if !contextBounds.isEmpty {
-      result.append(": ")
-      result.append(printer.show(contextBounds, separatedBy: " & "))
+    if !conformances.isEmpty {
+      result.append(" is ")
+      result.append(printer.showAdjunct(conformances))
     }
 
     result.append(" {\n")

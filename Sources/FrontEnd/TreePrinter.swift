@@ -61,14 +61,14 @@ public struct TreePrinter {
     items.map({ (n) in show(n) }).joined(separator: separator)
   }
 
-  /// Returns a textual representation of the given context bounds.
-  public mutating func showAsContextBounds(_ bounds: [ConformanceDeclaration.ID]) -> String {
-    var result = " "
+  /// Returns a textual representation of the adjunct conformance.
+  public mutating func showAdjunct(_ conformances: [ConformanceDeclaration.ID]) -> String {
+    var result = ""
     var first = true
-    for b in bounds {
+    for c in conformances {
       if first { first = false } else { result.append(" & ") }
-      let s = program.seenAsConformanceTypeExpression(program[b].witness)!
-      result.append("\(show(s.conformer)): \(show(s.concept))")
+      let s = program.seenAsConformanceTypeExpression(program[c].witness)!
+      result.append("\(show(s.concept))")
       if !s.arguments.isEmpty {
         result.append("<\(show(s.arguments))>")
       }

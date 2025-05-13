@@ -14,7 +14,7 @@ trait P {
   type X
 }
 
-given A: P {
+given A is P {
   typealias X = A
 }
 

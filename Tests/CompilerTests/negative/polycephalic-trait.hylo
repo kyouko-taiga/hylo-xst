@@ -10,11 +10,11 @@ struct A {
 
 fun check<T>(_ x: T) {}
 
-fun g<X, Y where X: P<Y>>(_ x: X) {
+fun g<X, Y where X is P<Y>>(_ x: X) {
   check<Y>(x.f())
 }
 
-given A: P<Void> {
+given A is P<Void> {
   public fun f() -> Void { () }
 }
 

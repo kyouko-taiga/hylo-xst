@@ -22,9 +22,9 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
-  /// Returns `true` iff `self` is a context bound in a struct declaration.
+  /// Returns `true` iff `self` is adjunct to a type declaration.
   public var isAdjunct: Bool {
-    introducer.tag == .colon
+    introducer.tag == .is
   }
 
 }
@@ -40,7 +40,7 @@ extension ConformanceDeclaration: Showable {
       result.append(" " + printer.show(staticParameters))
     }
 
-    result.append(" \(printer.show(sugared.conformer)): \(printer.show(sugared.concept))")
+    result.append(" \(printer.show(sugared.conformer)) is \(printer.show(sugared.concept))")
     if !sugared.arguments.isEmpty {
       result.append("<\(printer.show(sugared.arguments))>")
     }

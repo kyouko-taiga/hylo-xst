@@ -391,7 +391,7 @@ public struct Typer {
     }
 
     for m in program[d].members { check(m) }
-    for b in program[d].contextBounds { check(b) }
+    for c in program[d].conformances { check(c) }
     checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 
@@ -471,7 +471,7 @@ public struct Typer {
   private mutating func check(_ d: StructDeclaration.ID) {
     _ = declaredType(of: d)
     for m in program[d].members { check(m) }
-    for b in program[d].contextBounds { check(b) }
+    for c in program[d].conformances { check(c) }
     checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 

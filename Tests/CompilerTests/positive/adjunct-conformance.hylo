@@ -7,12 +7,12 @@ trait Q<T> {
   fun g() -> T
 }
 
-struct S : P & Q<Void> {
+struct S is P & Q<Void> {
   public fun f() {}
   public fun g() {}
 }
 
-fun f<T where T: P>() {}
+fun f<T where T is P>() {}
 
 public fun main() {
   f<S>()

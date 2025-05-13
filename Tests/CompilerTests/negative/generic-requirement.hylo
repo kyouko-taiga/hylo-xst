@@ -4,13 +4,13 @@ trait P {
   fun f<T>(_ x: T)
 }
 
-given Void: P {
+given Void is P {
   // This one is OK.
   public fun f<U>(_ x: U) {}
 }
 
 struct S<T> {}
-given<T> S<T>: P {
+given<T> S<T> is P {
   // This one isn't.
   public fun f(_ x: T) {}
 }

@@ -6,17 +6,17 @@ trait Q {}
 struct A {}
 struct B {}
 
-fun f<where B: P>() {
+fun f<where B is P>() {
 }
 
 fun g() {
-  given A: P {}
-  given <where A: P> B: P {}
+  given A is P {}
+  given <where A is P> B is P {}
   f()
 }
 
 fun h() {
-  given B: Q {}
-  given <T where T: Q> T: P {}
+  given B is Q {}
+  given <T where T is Q> T is P {}
   f()
 }

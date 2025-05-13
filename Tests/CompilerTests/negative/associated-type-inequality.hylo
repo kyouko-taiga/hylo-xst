@@ -4,7 +4,7 @@ trait P { type X }
 
 fun check<T>(_ x: T) {}
 
-fun f0<T, U where T == U, T: P, U: P>(x: U.X) {
+fun f0<T, U where T == U, T is P, U is P>(x: U.X) {
   // We cannot conclude that `T.X` is equal to `U.X` here because the function takes different
   // conformances. Hence, even if `T` is equal to `U`, it is possible for their conformances to
   // have different associated types.
