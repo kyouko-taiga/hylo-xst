@@ -1,0 +1,28 @@
+//! no-std
+
+trait Base {
+  fun f()
+}
+
+trait Derived {
+  static given let _: Base<Self>
+  fun g() { self.f() }
+}
+
+fun ghi<T where T is Derived>(_ x: T) {
+  x.g()
+  x.f()
+}
+
+struct A<T> {}
+struct B<T> {}
+
+given <T> A<T> is Base {
+  fun f() {}
+}
+
+// This one is OK.
+given <T> A<T> is Derived {}
+
+// This one is missing an instance of `Base<B<T>>`.
+given <T> B<T> is Derived {}

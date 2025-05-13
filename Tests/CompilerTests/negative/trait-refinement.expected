@@ -1,0 +1,3 @@
+negative/trait-refinement.hylo:28.1-6: error: no given instance of 'Base<B<T>>' in this scope
+given <T> B<T> is Derived {}
+~~~~~

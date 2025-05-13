@@ -307,14 +307,19 @@ public struct Typer {
     for r in requirements {
       switch program.tag(of: r) {
       case BindingDeclaration.self:
+        let b = program.castUnchecked(r, to: BindingDeclaration.self)
+        assert(program.tag(of: program[program[b].pattern].pattern) == WildcardLiteral.self)
         _ = anonymousImplementation(of: r)
+
       case FunctionDeclaration.self:
         _ = namedImplementation(of: r)
+
       case FunctionBundleDeclaration.self:
         let b = program.castUnchecked(r, to: FunctionBundleDeclaration.self)
         for v in program[b].variants {
           _ = namedImplementation(of: .init(v))
         }
+
       default:
         program.unexpected(r)
       }
@@ -362,10 +367,24 @@ public struct Typer {
     }
 
     /// Returns the declarations implementing `requirement`.
-    func anonymousImplementation(of requirement: DeclarationIdentity) -> [SummonResult] {
+    func anonymousImplementation(of requirement: DeclarationIdentity) -> SummonResult? {
       let requiredType = expectedImplementationType(of: requirement)
-      let summonings = summon(requiredType, in: .init(node: d))
-      return summonings
+
+      var summonings = summon(requiredType, in: .init(node: d))
+      let i = summonings.stablePartition { (c) in
+        c.witness.declaration == requirement
+      }
+
+      let s = program.spanForDiagnostic(about: d)
+      if i == 1 {
+        return summonings[0]
+      } else if i == 0 {
+        report(program.noGivenInstance(of: requiredType, at: s))
+        return nil
+      } else {
+        report(program.multipleGivenInstances(of: requiredType, at: s))
+        return nil
+      }
     }
 
     /// Returns the expected type of an implementation of `requirement`.
@@ -2931,18 +2950,21 @@ public struct Typer {
     in ds: S, to gs: inout [Given]
   ) {
     for d in ds {
-      if program.isGiven(d) { gs.append(.user(d)) }
+      if program.isGiven(d) {
+        gs.append(.user(d))
+      }
 
-      // Implications introduced by given definitions nested in traits.
-      if let t = program.cast(d, to: TraitDeclaration.self) {
+      // Collect given definitions nested in traits and adjunct conformances.
+      else if let t = program.cast(d, to: TraitDeclaration.self) {
         for n in givens(lexicallyIn: .init(node: t)) where !n.isAbstract {
           gs.append(.nested(t, n))
         }
-      }
-
-      // Conformances introduced along with a struct declaration.
-      if let t = program.cast(d, to: StructDeclaration.self) {
-        for d in program[t].contextBounds {
+      } else if let t = program.cast(d, to: StructDeclaration.self) {
+        for d in program[t].conformances {
+          gs.append(.user(.init(d)))
+        }
+      } else if let t = program.cast(d, to: EnumDeclaration.self) {
+        for d in program[t].conformances {
           gs.append(.user(.init(d)))
         }
       }

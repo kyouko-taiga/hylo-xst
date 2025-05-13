@@ -790,7 +790,11 @@ public struct Program: Sendable {
 
   /// Returns a source span suitable to emit a disgnostic related to `n` as a whole.
   public func spanForDiagnostic(about n: ConformanceDeclaration.ID) -> SourceSpan {
-    self[n].introducer.site
+    if self[n].isAdjunct {
+      return spanForDiagnostic(about: self[n].witness)
+    } else {
+      return self[n].introducer.site
+    }
   }
 
   /// Returns `message` with placeholders replaced by their corresponding values in `arguments`.
