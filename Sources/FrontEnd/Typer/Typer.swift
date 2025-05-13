@@ -497,7 +497,12 @@ public struct Typer {
   /// Type checks `d`.
   private mutating func check(_ d: TraitDeclaration.ID) {
     _ = declaredType(of: d)
-    for m in program[d].members { check(m) }
+    for m in program[d].members {
+      check(m)
+      if let a = program.modifiers(m).first(where: { (x) in x.value.isAccessModifier }) {
+        report(.init(.error, "cannot apply access modifiers on trait requirements", at: a.site))
+      }
+    }
     checkUniqueDeclaration(d, of: program[d].identifier.value)
   }
 

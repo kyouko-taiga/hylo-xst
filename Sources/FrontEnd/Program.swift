@@ -737,6 +737,15 @@ public struct Program: Sendable {
     }
   }
 
+  /// Returns the modifiers applied to `d`.
+  public func modifiers(_ d: DeclarationIdentity) -> [Parsed<DeclarationModifier>] {
+    if let m = self[d] as? any ModifiableDeclaration {
+      return m.modifiers
+    } else {
+      return []
+    }
+  }
+
   /// Reports that `n` was not expected in the current executation path and exits the program.
   public func unexpected<T: SyntaxIdentity>(
     _ n: T, file: StaticString = #file, line: UInt = #line

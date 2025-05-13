@@ -1,0 +1,3 @@
+negative/invalid-modifier-2.hylo:4.3-9: error: cannot apply access modifiers on trait requirements
+  public fun f()
+  ~~~~~~

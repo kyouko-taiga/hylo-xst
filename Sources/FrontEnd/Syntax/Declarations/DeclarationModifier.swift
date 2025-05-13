@@ -34,6 +34,16 @@ public enum DeclarationModifier: UInt8, Sendable {
     }
   }
 
+  /// Returns `true` iff `self` is an access modifier.
+  public var isAccessModifier: Bool {
+    switch self {
+    case .private, .internal, .public:
+      return true
+    default:
+      return false
+    }
+  }
+
   /// Returns `true` iff `self` can be applied on an initializer declaration.
   public var isApplicableToInitializer: Bool {
     self != .static
