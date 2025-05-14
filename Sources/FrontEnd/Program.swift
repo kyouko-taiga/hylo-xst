@@ -148,6 +148,13 @@ public struct Program: Sendable {
     ns.lazy.compactMap({ (n) in cast(n, to: t) })
   }
 
+  /// Returns the top level declarations of `m` that are of type `T`.
+  public func collectTopLevel<T: Syntax>(
+    _ t: T.Type, of m: ModuleIdentity
+  ) -> (some Sequence<ConcreteSyntaxIdentity<T>>) {
+    collect(t, in: self[m].topLevelDeclarations)
+  }
+
   /// Returns a textual representation of `item` using the given configuration.
   public func show<T: Showable>(
     _ item: T, configuration: TreePrinter.Configuration = .default

@@ -62,7 +62,10 @@ public struct Typer {
     /// The cache of `Typer.imports(of:in:)`.
     var sourceToImports: [[Program.ModuleIdentity]?]
 
-    /// The cache of `Typer.extensions(lexicallyIn:)`
+    /// The cache of `Typer.extensions(visibleAtTopLevelOf:)`.
+    var sourceToExtensions: [[ExtensionDeclaration.ID]?]
+
+    /// The cache of `Typer.extensions(lexicallyIn:)`.
     var scopeToExtensions: [ScopeIdentity: [ExtensionDeclaration.ID]]
 
     /// The cache of `Typer.declarations(lexicallyIn:)`.
@@ -94,6 +97,7 @@ public struct Typer {
       self.moduleToIdentifierToDeclaration = .init(repeating: nil, count: p.modules.count)
       self.moduleToGivens = .init(repeating: nil, count: p.modules.count)
       self.sourceToImports = .init(repeating: nil, count: p[m].sources.count)
+      self.sourceToExtensions = .init(repeating: nil, count: p[m].sources.count)
       self.scopeToExtensions = [:]
       self.scopeToLookupTable = [:]
       self.scopeToTraits = [:]
@@ -3275,47 +3279,47 @@ public struct Typer {
   ) -> [NameResolutionCandidate] {
     // Are we in the scope of a syntax tree?
     if let p = program.parent(containing: scopeOfUse) {
-      var candidates = resolve(
-        n, memberInExtensionOf: q, visibleFrom: p, statically: selectionIsStatic)
-      appendMatchingMembers(in: extensions(lexicallyIn: scopeOfUse), to: &candidates)
-      return candidates
+      let es = extensions(lexicallyIn: scopeOfUse)
+      let xs = resolve(n, memberInExtensionOf: q, visibleFrom: p, statically: selectionIsStatic)
+      let ys = resolve(
+        n, declaredIn: es, applyingTo: q, in: scopeOfUse, statically: selectionIsStatic)
+      return xs + ys
     }
 
     // We are at the top-level.
     else {
-      var candidates: [NameResolutionCandidate] = []
-      let ms = imports(of: scopeOfUse.file) + [scopeOfUse.file.module]
-      for m in ms {
-        appendMatchingMembers(
-          in: program.collect(ExtensionDeclaration.self, in: program[m].topLevelDeclarations),
-          to: &candidates)
-      }
-      return candidates
+      let es = extensions(visibleAtTopLevelOf: scopeOfUse.file)
+      return resolve(
+        n, declaredIn: es, applyingTo: q, in: scopeOfUse, statically: selectionIsStatic)
     }
+  }
 
-    /// For each declaration in `es` that applies to `q`, adds to `result` the members of that
-    /// declaration that are named `n`.
-    func appendMatchingMembers<S: Sequence<ExtensionDeclaration.ID>>(
-      in es: S, to candidates: inout [NameResolutionCandidate]
-    ) {
-      for e in es where !declarationsOnStack.contains(.init(e)) {
-        if let a = applies(e, to: q, in: scopeOfUse) {
-          let w = program.types.reify(
-            a.witness, applying: a.substitutions, withVariables: .substitutedByError)
+  /// For each declaration in `es` that applies to `q`, adds to `result` the members of that
+  /// declaration that are named `n`.
+  private mutating func resolve<S: Sequence<ExtensionDeclaration.ID>>(
+    _ n: Name,
+    declaredIn extensions: S, applyingTo q: AnyTypeIdentity, in scopeOfUse: ScopeIdentity,
+    statically selectionIsStatic: Bool,
+  ) -> [NameResolutionCandidate] {
+    var candidates: [NameResolutionCandidate] = []
+    for e in extensions where !declarationsOnStack.contains(.init(e)) {
+      if let a = applies(e, to: q, in: scopeOfUse) {
+        let w = program.types.reify(
+          a.witness, applying: a.substitutions, withVariables: .substitutedByError)
 
-          for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
-            var member = typeOfName(referringTo: m, statically: selectionIsStatic)
+        for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
+          var member = typeOfName(referringTo: m, statically: selectionIsStatic)
 
-            // Strip the context defined by the extension, apply type arguments from the matching
-            // witness, and substitute the extendee for the receiver.
-            if case .typeApplication(_, let arguments) = w.value {
-              member = program.types.substitute(arguments, in: member)
-            }
-            candidates.append(.init(reference: .inherited(w, m), type: member))
+          // Strip the context defined by the extension, apply type arguments from the matching
+          // witness, and substitute the extendee for the receiver.
+          if let arguments = w.typeArguments(appliedTo: e) {
+            member = program.types.substitute(arguments, in: member)
           }
+          candidates.append(.init(reference: .inherited(w, m), type: member))
         }
       }
     }
+    return candidates
   }
 
   /// Returns candidates for resolving `name` as a member of `q` via conformance in `scopeOfUse`,
@@ -3491,6 +3495,22 @@ public struct Typer {
     }
   }
 
+  /// Returns the extensions that are at the top level of `f` or its imports.
+  private mutating func extensions(
+    visibleAtTopLevelOf f: Program.SourceFileIdentity
+  ) -> [ExtensionDeclaration.ID] {
+    if let ds = cache.sourceToExtensions[f.offset] {
+      return ds
+    } else {
+      var ds = Array(program.collectTopLevel(ExtensionDeclaration.self, of: f.module))
+      for m in imports(of: f) {
+        ds.append(contentsOf: program.collectTopLevel(ExtensionDeclaration.self, of: m))
+      }
+      cache.sourceToExtensions[f.offset] = ds
+      return ds
+    }
+  }
+
   /// Returns how to match a value of type `t` to apply the members of `d` in `s`.
   ///
   /// - Requires: The context clause of `t`, if present, has no usings.
@@ -3588,8 +3608,7 @@ public struct Typer {
       let ds = program[scopeOfUse.file.module].topLevelDeclarations
       var ts = Array(program.collect(TraitDeclaration.self, in: ds))
       for m in imports(of: scopeOfUse.file) {
-        ts.append(
-          contentsOf: program.collect(TraitDeclaration.self, in: program[m].topLevelDeclarations))
+        ts.append(contentsOf: program.collectTopLevel(TraitDeclaration.self, of: m))
       }
       cache.scopeToTraits[scopeOfUse] = ts
       return ts
