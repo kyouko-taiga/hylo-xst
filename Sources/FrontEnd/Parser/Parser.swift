@@ -239,14 +239,40 @@ public struct Parser {
   /// Parses an extension declaration.
   ///
   ///     extension-declaration ::=
-  ///       'extension' expression type-body
+  ///       'extension' compile-time-parameters? expression type-body
+  ///       'extension' identifier ':' expression type-body
   ///
   private mutating func parseExtensionDeclaration(
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> ExtensionDeclaration.ID {
     let introducer = try take(.extension) ?? expected("'extension'")
-    let parameters = try parseOptionalCompileTimeParameters(in: &file)
+    var parameters = try parseOptionalCompileTimeParameters(in: &file)
     let extendee = try parseExpression(in: &file)
+
+    // Are we parsing a trait extension?
+    if let colon = take(.colon) {
+      if
+        let n = file[extendee] as? NameExpression,
+        n.isUnqualifiedIdentifier && parameters.isEmpty
+      {
+        let r = try parseExpression(in: &file)
+        let l = file.insert(n)
+        let w = ExpressionIdentity(desugaredConformance(of: .init(l), to: r, in: &file))
+        let u = file.insert(UsingDeclaration(witness: w, site: file[r].site))
+        let p = file.insert(
+          GenericParameterDeclaration(
+            identifier: .init(n.name.value.identifier, at: n.site),
+            ascription: nil,
+            site: n.site))
+
+        parameters = .init(
+          explicit: [p], implicit: [.init(u)], site: n.site.extended(upTo: position.index))
+      } else {
+        report(.init("'unexpected context bound'", at: colon.site))
+        recover(at: Token.hasTag(.leftBrace))
+      }
+    }
+
     let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
     // No modifiers allowed on extensions.

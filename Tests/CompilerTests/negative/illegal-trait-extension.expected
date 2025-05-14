@@ -1,0 +1,9 @@
+negative/illegal-trait-extension.hylo:3.17-18: error: 'unexpected context bound'
+extension <T> U : P {}
+                ^
+negative/illegal-trait-extension.hylo:4.15-16: error: 'unexpected context bound'
+extension A.B : P {}
+              ^
+negative/illegal-trait-extension.hylo:5.17-18: error: 'unexpected context bound'
+extension f@let : P {}
+                ^

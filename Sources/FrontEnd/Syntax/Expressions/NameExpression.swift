@@ -27,6 +27,11 @@ public struct NameExpression: Expression {
     self.site = name.site
   }
 
+  /// Returns `true` if `self` is an unqualified simple identifier.
+  public var isUnqualifiedIdentifier: Bool {
+    (qualification == nil) && name.value.isSimple
+  }
+
 }
 
 extension NameExpression: Showable {

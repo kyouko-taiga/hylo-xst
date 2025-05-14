@@ -1,0 +1,5 @@
+//! no-std
+
+extension <T> U : P {}
+extension A.B : P {}
+extension f@let : P {}
