@@ -635,6 +635,8 @@ public struct Typer {
       return true
     case standardLibraryDeclaration(.equatable):
       return true
+    case standardLibraryDeclaration(.movable):
+      return true
     default:
       return false
     }
@@ -3654,6 +3656,9 @@ public struct Typer {
 
     /// `Hylo.Equatable`.
     case equatable = "Equatable"
+
+    /// `Hylo.Movable`.
+    case movable = "Movable"
 
     /// Returns a selector for the declaration corresponding to `self`.
     var filter: SyntaxFilter {

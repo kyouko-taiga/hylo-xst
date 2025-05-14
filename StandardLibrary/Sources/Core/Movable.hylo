@@ -1,0 +1,19 @@
+/// A type whose instances can be reloacted to different storage.
+public trait Movable {
+
+  /// Gives `self` the value of a consumed `source`.
+  fun take_value(from source: sink Self) auto { set inout }
+
+}
+
+extension T : Movable {
+
+  /// Exchanges the value of `self` with that of `other`.
+  public fun swap(_ other: inout Self) inout {
+    var x: Self
+    &x.take_value@set(from: self)
+    &self.take_value@set(from: other)
+    &other.take_value@set(from: x)
+  }
+
+}

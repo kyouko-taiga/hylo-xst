@@ -146,6 +146,21 @@ public struct WitnessExpression: Hashable, Sendable {
     .init(value: value.substituting(assumed: i, for: new), type: type)
   }
 
+  /// If `self` is a type application of `e`, returns the its type arguments.
+  internal func typeArguments(appliedTo e: ExtensionDeclaration.ID) -> TypeArguments? {
+    var w = self
+    while true {
+      switch w.value {
+      case .termApplication(let f, _):
+        w = f
+      case .typeApplication(let r, let a) where r.declaration == .init(e):
+        return a
+      default:
+        return nil
+      }
+    }
+  }
+
 }
 
 extension WitnessExpression: Showable {

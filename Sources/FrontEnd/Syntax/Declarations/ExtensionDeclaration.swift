@@ -1,6 +1,7 @@
 import Archivist
 
 /// The declaration of a type extension.
+@Archivable
 public struct ExtensionDeclaration: TypeExtendingDeclaration {
 
   /// The introducer of this declaration.
@@ -18,6 +19,21 @@ public struct ExtensionDeclaration: TypeExtendingDeclaration {
   /// The site from which `self` was parsed.
   public let site: SourceSpan
 
+  /// Creates an instance with the given properties.
+  public init(
+    introducer: Token,
+    staticParameters: StaticParameters,
+    extendee: ExpressionIdentity,
+    members: [DeclarationIdentity],
+    site: SourceSpan
+  ) {
+    self.introducer = introducer
+    self.staticParameters = staticParameters
+    self.extendee = extendee
+    self.members = members
+    self.site = site
+  }
+
 }
 
 extension ExtensionDeclaration: Showable {
@@ -32,18 +48,6 @@ extension ExtensionDeclaration: Showable {
     \(m)
     }
     """
-  }
-
-}
-
-extension ExtensionDeclaration: Archivable {
-
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    fatalError()
-  }
-
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    fatalError()
   }
 
 }
