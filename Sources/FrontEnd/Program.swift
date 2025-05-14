@@ -248,7 +248,7 @@ public struct Program: Sendable {
 
   /// Returns `true` iff `n` declares a non-static member entity.
   ///
-  /// - Requires: The module containing `s` is scoped.
+  /// - Requires: The module containing `n` is scoped.
   public func isMember<T: SyntaxIdentity>(_ n: T) -> Bool {
     guard let m = parent(containing: n).node else { return false }
 
@@ -450,6 +450,22 @@ public struct Program: Sendable {
     default:
       return nil
     }
+  }
+
+  /// Returns the innermost member declaration containing `s` that does not contain any type scope
+  /// containing `s`, or `nil` if no such declaration exists.
+  public func innermostMemberScope(from s: ScopeIdentity) -> ScopeIdentity? {
+    var next: Optional = s
+    while let n = next, let d = n.node {
+      if isMember(d) {
+        return n
+      } else if isStatic(d) || isTypeDeclaration(d) || isTypeExtendingDeclaration(d) {
+        return nil
+      } else {
+        next = parent(containing: n)
+      }
+    }
+    return nil
   }
 
   /// Returns a sequence containing `s` and its ancestors, from inner to outer.

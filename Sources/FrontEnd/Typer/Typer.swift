@@ -3122,12 +3122,58 @@ public struct Typer {
   private mutating func resolve(
     _ n: Name, unqualifiedIn scopeOfUse: ScopeIdentity
   ) -> [NameResolutionCandidate] {
-    let ds = lookup(n, unqualifiedIn: scopeOfUse)
-
     var candidates: [NameResolutionCandidate] = []
-    for d in ds {
+
+    for d in lookup(n, unqualifiedIn: scopeOfUse) {
       let t = typeOfName(referringTo: d, statically: true)
       candidates.append(.init(reference: .direct(d), type: t))
+    }
+
+    // Predefined names are resolved iff no other candidate has been found.
+    if candidates.isEmpty {
+      return resolve(predefined: n, unqualifiedIn: scopeOfUse)
+    } else {
+      return candidates
+    }
+  }
+
+  /// Returns candidates for resolving `n` without qualification in `scopeOfUse`.
+  ///
+  /// This method implements the same functionality as `resolve(_:unqualifiedIn:)` but it also
+  /// supports unqualified member selection. Because this feature appears to slows down name
+  /// resolution significantly, the former method should be used for the time being.
+  private mutating func _resolveWithUnqualifiedMemberSelection(
+    _ n: Name, unqualifiedIn scopeOfUse: ScopeIdentity
+  ) -> [NameResolutionCandidate] {
+    var candidates: [NameResolutionCandidate] = []
+
+    // Are we in a non-static member declaration?
+    if let member = program.innermostMemberScope(from: scopeOfUse) {
+      var ds = lookup(n, unqualifiedIn: scopeOfUse, containedIn: member)
+
+      if ds.isEmpty {
+        let q = typeOfSelf(in: member)!
+        let implicitlyQualified = resolve(n, memberOf: q, visibleFrom: scopeOfUse)
+
+        if !implicitlyQualified.isEmpty {
+          return implicitlyQualified
+        } else {
+          ds.append(contentsOf: lookup(n, unqualifiedIn: program.parent(containing: member)!))
+        }
+      }
+
+      for d in ds {
+        let t = typeOfName(referringTo: d, statically: true)
+        candidates.append(.init(reference: .direct(d), type: t))
+      }
+    }
+
+    // No implicit member qualification.
+    else {
+      for d in lookup(n, unqualifiedIn: scopeOfUse) {
+        let t = typeOfName(referringTo: d, statically: true)
+        candidates.append(.init(reference: .direct(d), type: t))
+      }
     }
 
     // Predefined names are resolved iff no other candidate has been found.
@@ -3258,6 +3304,7 @@ public struct Typer {
     refineLookupResults(&ds, matching: n)
 
     for m in ds {
+      if !resolvableWithQualification(m) { continue }
       var member = typeOfName(referringTo: m, statically: selectionIsStatic)
       if let a = program.types[receiver] as? TypeApplication {
         member = program.types.substitute(a.arguments, in: member)
@@ -3310,6 +3357,7 @@ public struct Typer {
           a.witness, applying: a.substitutions, withVariables: .substitutedByError)
 
         for m in declarations(lexicallyIn: .init(node: e))[n.identifier] ?? [] {
+          if !resolvableWithQualification(m) { continue }
           var member = typeOfName(referringTo: m, statically: selectionIsStatic)
 
           // Strip the context defined by the extension, apply type arguments from the matching
@@ -3354,9 +3402,12 @@ public struct Typer {
     return candidates
   }
 
-  /// Returns the declarations introducing `name` without qualification in `scopeOfUse`.
+  /// Returns the declarations that introduce `name` without qualification in `scopeOfUse` and that
+  /// are contained in `bound` (unless it is `nil`).
+  ///
+  /// If `bound` is not `nil`, it is a scope equal to or ancestor of `scopeOfUse`.
   private mutating func lookup(
-    _ name: Name, unqualifiedIn scopeOfUse: ScopeIdentity
+    _ name: Name, unqualifiedIn scopeOfUse: ScopeIdentity, containedIn bound: ScopeIdentity? = nil
   ) -> [DeclarationIdentity] {
     var result: [DeclarationIdentity] = []
 
@@ -3376,7 +3427,7 @@ public struct Typer {
 
     // Look for declarations in `scopeOfUse` and its ancestors.
     for s in program.scopes(from: scopeOfUse) {
-      if append(lookup(name, lexicallyIn: s)) {
+      if append(lookup(name, lexicallyIn: s)) || (s == bound) {
         return result
       }
     }
@@ -3430,7 +3481,7 @@ public struct Typer {
   ) -> [(concept: TraitDeclaration.ID, members: [DeclarationIdentity])] {
     var result: [(concept: TraitDeclaration.ID, members: [DeclarationIdentity])] = []
     for d in traits(visibleFrom: scopeOfUse) {
-      let ms = lookup(name, lexicallyIn: .init(node: d))
+      let ms = lookup(name, lexicallyIn: .init(node: d)).filter(resolvableWithQualification(_:))
       if !ms.isEmpty {
         result.append((concept: d, members: ms))
       }
@@ -3455,6 +3506,16 @@ public struct Typer {
       } else {
         return nil
       }
+    }
+  }
+
+  /// Returns `true` if `m` can be resolved with a qualified name expression.
+  private func resolvableWithQualification(_ m: DeclarationIdentity) -> Bool {
+    switch program.tag(of: m) {
+    case GenericParameterDeclaration.self, UsingDeclaration.self:
+      return false
+    default:
+      return true
     }
   }
 
