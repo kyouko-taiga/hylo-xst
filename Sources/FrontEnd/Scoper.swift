@@ -7,7 +7,7 @@ public struct Scoper {
   public init() {}
 
   /// Computes the scoping relationships in `m`, which is in `p`.
-  public func visit(_ m: Program.ModuleIdentity, in p: inout Program) async {
+  public func visit(_ m: Program.ModuleIdentity, of p: inout Program) async {
     let ts = p[m].sources.values.indices.map { (i) in
       Task.detached { [p] in
         let f = Program.SourceFileIdentity(module: m, offset: i)

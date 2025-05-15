@@ -25,7 +25,7 @@ public struct Typer {
 
   /// Creates an instance assigning types to syntax trees in `m`, which is a module in `p`.
   public init(
-    typing m: Program.ModuleIdentity, in p: consuming Program,
+    typing m: Program.ModuleIdentity, of p: consuming Program,
     loggingInferenceWhere isLoggingEnabled: ((AnySyntaxIdentity, Program) -> Bool)? = nil
   ) {
     self.module = m

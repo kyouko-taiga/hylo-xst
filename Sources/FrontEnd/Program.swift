@@ -99,12 +99,12 @@ public struct Program: Sendable {
 
   /// Computes the scoping relationships in `m`.
   public mutating func assignScopes(_ m: ModuleIdentity) async {
-    await Scoper().visit(m, in: &self)
+    await Scoper().visit(m, of: &self)
   }
 
   /// Assigns types to the syntax trees of `m`.
   public mutating func assignTypes(_ m: ModuleIdentity) {
-    var typer = Typer(typing: m, in: consume self)
+    var typer = Typer(typing: m, of: consume self)
     typer.apply()
     self = typer.release()
   }
