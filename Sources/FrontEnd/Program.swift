@@ -655,7 +655,12 @@ public struct Program: Sendable {
       return Name(identifier: "init", labels: .init(labels))
 
     case .simple(let x):
-      return Name(identifier: x, labels: .init(self[d].parameters.map(read(\.label?.value))))
+      let labels = self[d].parameters.map(read(\.label?.value))
+      if let (l, ls) = labels.headAndTail, l == "self" {
+        return Name(identifier: x, labels: .init(ls))
+      } else {
+        return Name(identifier: x, labels: .init(labels))
+      }
 
     case .operator(let n, let x):
       return Name(identifier: x, notation: n)

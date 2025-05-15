@@ -9,6 +9,9 @@ public struct Parser {
     /// The default context.
     case `default`
 
+    /// The parsing of member declarations.
+    case typeBody
+
     /// The parsing of the subpattern of binding pattern.
     case bindingSubpattern
 
@@ -324,34 +327,6 @@ public struct Parser {
     }
   }
 
-  /// Parses a function declaration.
-  ///
-  ///     function-declaration ::=
-  ///       function-declaration-head callable-body?
-  ///     function-declaration-head ::=
-  ///       'fun' function-identifier parameter-clauses return-type-ascription?
-  ///
-  private mutating func parseFunctionDeclaration(
-    after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
-  ) throws -> FunctionDeclaration.ID {
-    let head = try take(.fun) ?? expected("'fun'")
-    let introducer = Parsed(FunctionDeclaration.Introducer.fun, at: head.site)
-
-    let n = try parseFunctionIdentifier()
-    let (s, r) = try parseParameterClauses(in: &file)
-    let e = parseOptionalAccessEffect() ?? .init(.let, at: .empty(at: position))
-    let o = try parseOptionalReturnTypeAscription(in: &file)
-    let b = try parseOptionalCallableBody(in: &file)
-    return file.insert(
-      FunctionDeclaration(
-        modifiers: prologue,
-        introducer: introducer, identifier: n,
-        staticParameters: s, parameters: r,
-        effect: e,
-        output: o, body: b,
-        site: introducer.site.extended(upTo: position.index)))
-  }
-
   /// Parses a function bundle declaration.
   ///
   ///     function-declaration ::=
@@ -367,32 +342,55 @@ public struct Parser {
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
     let introducer = try take(.fun) ?? expected("'fun'")
-
     let identifier = try parseFunctionIdentifier()
-    let (ss, ps) = try parseParameterClauses(in: &file)
+    let parameters = try parseParameterClauses(in: &file)
     let effect = parseOptionalAccessEffect() ?? .init(.let, at: .empty(at: position))
+
+    // Insert the self-parameter of non-static member declarations.
+    let isMember: Bool
+    var p: [ParameterDeclaration.ID] = []
+    if (context == .typeBody) && !prologue.contains(where: { (m) in m.value == .static }) {
+      isMember = true
+      p = [synthesizeSelfParameter(effect: effect, in: &file)] + parameters.1
+    } else {
+      isMember = false
+      p = parameters.1
+    }
+
     let output = try parseOptionalReturnTypeAscription(in: &file)
 
+    // Are we parsing a bundle declaration?
     if effect.value == .auto {
       let b = try parseBundleBody(in: &file)
       let i = asBundleIdentifier(identifier)
       let n = file.insert(
         FunctionBundleDeclaration(
           modifiers: prologue,
-          introducer: .init(introducer, at: introducer.site), identifier: i,
-          staticParameters: ss, parameters: ps, effect: effect,
-          output: output, variants: b,
+          introducer: .init(introducer, at: introducer.site),
+          identifier: i,
+          staticParameters: parameters.0,
+          parameters: p,
+          effect: effect,
+          output: output,
+          variants: b,
           site: introducer.site.extended(upTo: position.index)))
       return .init(n)
-    } else {
+    }
+
+    // We're parsing a regular function declaration.
+    else {
       let f = Parsed(FunctionDeclaration.Introducer.fun, at: introducer.site)
       let b = try parseOptionalCallableBody(in: &file)
       let n = file.insert(
         FunctionDeclaration(
           modifiers: prologue,
-          introducer: f, identifier: identifier,
-          staticParameters: ss, parameters: ps, effect: effect,
-          output: output, body: b,
+          introducer: f,
+          identifier: identifier,
+          staticParameters: parameters.0,
+          parameters: p,
+          effect: isMember ? .init(.let, at: effect.site) : effect,
+          output: output,
+          body: b,
           site: introducer.site.extended(upTo: position.index)))
       return .init(n)
     }
@@ -408,30 +406,38 @@ public struct Parser {
     after prologue: DeclarationPrologue, in file: inout Module.SourceContainer
   ) throws -> FunctionDeclaration.ID {
     let introducer = try parseInitializerIntroducer()
+    let receiver = synthesizeSelfParameter(effect: .init(.set, at: introducer.site), in: &file)
 
-    // Custom initializer?
+    // Are we parsing a custom initializer?
     if introducer.value == .`init` {
-      let (s, r) = try parseParameterClauses(in: &file)
+      let parameters = try parseParameterClauses(in: &file)
       let b = try parseOptionalCallableBody(in: &file)
+
       return file.insert(
         FunctionDeclaration(
           modifiers: sanitize(prologue, accepting: \.isApplicableToInitializer),
-          introducer: introducer, identifier: .init(.simple("init"), at: introducer.site),
-          staticParameters: s, parameters: r,
-          effect: .init(.set, at: .empty(at: position)),
-          output: nil, body: b,
+          introducer: introducer,
+          identifier: .init(.simple("init"), at: introducer.site),
+          staticParameters: parameters.0,
+          parameters: [receiver] + parameters.1,
+          effect: .init(.let, at: introducer.site),
+          output: nil,
+          body: b,
           site: introducer.site.extended(upTo: position.index)))
     }
 
-    // Memberwise initializer?
+    // Are we parsing a memberwise initializer?
     else if introducer.value == .memberwiseinit {
       return file.insert(
         FunctionDeclaration(
           modifiers: sanitize(prologue, accepting: \.isApplicableToInitializer),
-          introducer: introducer, identifier: .init(.simple("init"), at: introducer.site),
-          staticParameters: .empty(at: .empty(at: position)), parameters: [],
-          effect: .init(.set, at: .empty(at: position)),
-          output: nil, body: nil,
+          introducer: introducer,
+          identifier: .init(.simple("init"), at: introducer.site),
+          staticParameters: .empty(at: .empty(at: position)),
+          parameters: [receiver],
+          effect: .init(.let, at: introducer.site),
+          output: nil,
+          body: nil,
           site: introducer.site))
     }
 
@@ -692,7 +698,11 @@ public struct Parser {
   private mutating func parseOptionalCallableBody(
     in file: inout Module.SourceContainer
   ) throws -> [StatementIdentity]? {
-    try peek()?.tag == .leftBrace ? parseBracedStatementList(in: &file) : nil
+    if next(is: .leftBrace) {
+      return try entering(.default, { (me) in try me.parseBracedStatementList(in: &file) })
+    } else {
+      return nil
+    }
   }
 
   private mutating func parseBundleBody(
@@ -785,13 +795,15 @@ public struct Parser {
   private mutating func parseTypeBody(
     in file: inout Module.SourceContainer, accepting isValid: (SyntaxTag) -> Bool
   ) throws -> [DeclarationIdentity] {
-    try inBraces { (m0) in
-      try m0.semicolonSeparated(until: .rightBrace) { (m1) in
-        let d = try m1.parseDeclaration(in: &file)
-        if !isValid(file.tag(of: d)) {
-          m1.report(.init("declaration is not allowed here", at: .empty(at: file[d].site.start)))
+    try entering(.typeBody) { (m0) in
+      try m0.inBraces { (m1) in
+        try m1.semicolonSeparated(until: .rightBrace) { (m2) in
+          let d = try m2.parseDeclaration(in: &file)
+          if !isValid(file.tag(of: d)) {
+            m2.report(.init("declaration is not allowed here", at: .empty(at: file[d].site.start)))
+          }
+          return d
         }
-        return d
       }
     }
   }
@@ -1911,6 +1923,22 @@ public struct Parser {
       let k = Parsed<AccessEffect>(.let, at: .empty(at: s.start))
       return file.insert(RemoteTypeExpression(access: k, projectee: ascription, site: s))
     }
+  }
+
+  /// Returns a tree expressing the declaration of a self-parameter with the given `effect`.
+  private mutating func synthesizeSelfParameter(
+    effect: Parsed<AccessEffect>, in file: inout Module.SourceContainer
+  ) -> ParameterDeclaration.ID {
+    let t0 = Parsed("self", at: effect.site)
+    let t1 = file.insert(
+      NameExpression(.init("Self", at: effect.site)))
+    let t2 = file.insert(
+      RemoteTypeExpression(access: effect, projectee: .init(t1), site: effect.site))
+    let x3 = file.insert(
+      ParameterDeclaration(
+        label: t0, identifier: t0, ascription: t2,
+        defaultValue: nil, lazyModifier: nil, site: effect.site))
+    return x3
   }
 
   // MARK: Helpers

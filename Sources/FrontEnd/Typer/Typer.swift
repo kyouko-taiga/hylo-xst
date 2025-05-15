@@ -1016,9 +1016,11 @@ public struct Typer {
     var inputs: [Parameter] = []
 
     // Do we have to synthesize the parameter list of a memberwise initializer?
-    if program[d].introducer.value == .memberwiseinit {
+    if program[d].isMemberwiseInitializer {
       // Memberwise initializers can only appear nested in a struct declaration.
       let s = program.parent(containing: d, as: StructDeclaration.self)!
+      let r = typeOfSelf(in: s)
+      inputs.append(.init(label: "self", access: .set, type: r))
 
       // We don't use `program.storedProperties(of:)` because we have to ensure that all stored
       // properties are typed before we can form a corresponding parameter.
@@ -1216,30 +1218,13 @@ public struct Typer {
   }
 
   /// Returns the declared type of `d`, which introduces a function that accepts `inputs`.
-  ///
-  /// If `d` is a non-static member declaration, an additional "self" parameter is prepended to
-  /// `inputs`, having the type of `Self` resolved in the scope of `d` and the effect of `d`'s
-  /// call operator. The effect of the resulting arrow is `let` unless `d` declares a bundle.
   private mutating func declaredArrowType<T: RoutineDeclaration>(
     of d: T.ID, taking inputs: [Parameter],
   ) -> AnyTypeIdentity {
-    let e: AccessEffect
-    var i: [Parameter]
-
-    if program.isMember(d) {
-      let p = program.parent(containing: d)
-      let s = typeOfSelf(in: p)!
-      i = [.init(label: "self", access: program[d].effect.value, type: s)]
-      e = (program[d].effect.value != .auto) ? .let : .auto
-    } else {
-      i = []
-      e = program[d].effect.value
-    }
-    i.append(contentsOf: inputs)
-
     let o = program[d].output.map({ (a) in evaluateTypeAscription(a) }) ?? .void
-    let a = demand(Arrow(effect: e, environment: .void, inputs: i, output: o)).erased
-    return introduce(program[d].staticParameters, into: a)
+    let a = demand(
+      Arrow(effect: program[d].effect.value, environment: .void, inputs: inputs, output: o))
+    return introduce(program[d].staticParameters, into: a.erased)
   }
 
   /// Returns the declared type of `g` without checking.
@@ -3196,14 +3181,6 @@ public struct Typer {
       if let t = typeOfSelf(in: scopeOfUse) {
         let u = demand(Metatype(inhabitant: t)).erased
         return [.init(reference: .builtin(.alias), type: u)]
-      } else {
-        return []
-      }
-
-    case "self":
-      // TODO: This should be a reference some hidden parameter
-      if let t = typeOfSelf(in: scopeOfUse) {
-        return [.init(reference: .builtin(.alias), type: t)]
       } else {
         return []
       }
