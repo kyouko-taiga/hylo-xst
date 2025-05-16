@@ -341,6 +341,16 @@ public struct Program: Sendable {
     }
   }
 
+  /// Returns the type assigned to `n`, if any.
+  public func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
+    self[n.module].type(assignedTo: n)
+  }
+
+  /// Returns the declaration referred to by `n`, if any.
+  public func declaration(referredToBy n: NameExpression.ID) -> DeclarationReference? {
+    self[n.module].declaration(referredToBy: n)
+  }
+
   /// Returns the left-most tree in the qualification of `n`.
   public func rootQualification(of n: NameExpression.ID) -> ExpressionIdentity? {
     guard var q = self[n].qualification else { return nil }

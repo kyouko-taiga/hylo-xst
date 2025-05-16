@@ -759,11 +759,11 @@ extension BuiltinFunction: Showable {
 //    case .srem(let t):
 //      return "srem_\(t)"
     case .and(let t):
-      return printer.format("and_%T", [t])
+      return printer.format("and_%T", [t.erased])
     case .or(let t):
-      return printer.format("or_%T", [t])
+      return printer.format("or_%T", [t.erased])
     case .xor(let t):
-      return printer.format("xor_%T", [t])
+      return printer.format("xor_%T", [t.erased])
 //    case .signedAdditionWithOverflow(let t):
 //      return "sadd_with_overflow_\(t)"
 //    case .unsignedAdditionWithOverflow(let t):
@@ -777,7 +777,7 @@ extension BuiltinFunction: Showable {
 //    case .unsignedMultiplicationWithOverflow(let t):
 //      return "umul_with_overflow_\(t)"
     case .icmp(let p, let t):
-      return printer.format("icmp_\(p)_%T", [t])
+      return printer.format("icmp_\(p)_%T", [t.erased])
 //    case .trunc(let l, let r):
 //      return "trunc_\(l)_\(r)"
 //    case .zext(let l, let r):
@@ -819,7 +819,7 @@ extension BuiltinFunction: Showable {
 //    case .cttz(let t):
 //      return "cttz_\(t)"
     case .zeroinitializer(let t):
-      return printer.format("zeroinitializer_%T", [t])
+      return printer.format("zeroinitializer_%T", [t.erased])
 //    case .advancedByBytes(let t):
 //      return "advanced_by_bytes_\(t)"
 //    case .atomic_store_relaxed(let t):
