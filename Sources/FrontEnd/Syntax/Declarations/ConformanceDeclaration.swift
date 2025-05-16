@@ -24,7 +24,7 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
 
   /// Returns `true` iff `self` is adjunct to a type declaration.
   public var isAdjunct: Bool {
-    introducer.tag == .is
+    introducer.text == "is"
   }
 
 }

@@ -63,7 +63,6 @@ public struct Lexer: IteratorProtocol, Sequence {
     case "fun": tag = .fun
     case "given": tag = .given
     case "if": tag = .if
-    case "is": tag = .is
     case "import": tag = .import
     case "infix": tag = .infix
     case "init": tag = .`init`

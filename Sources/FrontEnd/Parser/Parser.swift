@@ -317,7 +317,7 @@ public struct Parser {
     else {
       let parameters = try parseOptionalCompileTimeParameters(in: &file)
       let conformer = try parseExpression(in: &file)
-      _ = try take(.is) ?? expected("'is'")
+      _ = try take(contextual: "is") ?? expected("'is'")
       let concept = try parseExpression(in: &file)
       let witness = desugaredConformance(of: conformer, to: concept, in: &file)
       let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
@@ -567,7 +567,7 @@ public struct Parser {
   private mutating func parseOptionalAdjunctConformanceList(
     until rightDelimiter: Token.Tag, in file: inout Module.SourceContainer
   ) throws -> [ConformanceDeclaration.ID] {
-    if let introducer = take(.is) {
+    if let introducer = take(contextual: "is") {
       return try ampersandSeparated(until: Token.hasTag(rightDelimiter)) { me in
         try me.parseAdjunctConformance(introducedBy: introducer, in: &file)
       }
@@ -630,16 +630,16 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
     let l = try parseCompoundExpression(in: &file)
-    let s = try take(.is) ?? take(.equal) ?? expected("'is' or '=='")
+    let s = try take(contextual: "is") ?? take(.equal) ?? expected("'is' or '=='")
     let r = try parseCompoundExpression(in: &file)
 
     let witness: ExpressionIdentity
-    if s.tag == .is {
-      witness = .init(desugaredConformance(of: l, to: r, in: &file))
-    } else {
+    if s.tag == .equal {
       let w = EqualityWitnessExpression(
         lhs: l, rhs: r, site: file[l].site.extended(toCover: file[r].site))
       witness = .init(file.insert(w))
+    } else {
+      witness = .init(desugaredConformance(of: l, to: r, in: &file))
     }
 
     let d = file.insert(UsingDeclaration(witness: witness, site: file[witness].site))
