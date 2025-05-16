@@ -1,5 +1,7 @@
 //! no-std
 
+// Invalid access and indirect modifiers are diagnose after parsing.
+
 trait P {
   public fun f()
 }

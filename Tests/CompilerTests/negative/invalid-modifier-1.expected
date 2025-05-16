@@ -19,3 +19,6 @@ negative/invalid-modifier-1.hylo:17.17-23: error: duplicate modifier
 negative/invalid-modifier-1.hylo:19.10-16: error: 'public' should occur before 'static'
   static public fun f0() {}
          ~~~~~~
+negative/invalid-modifier-1.hylo:24.11: error: consecutive statements on the same line must be separated by ';'
+  indirect var x: Void
+          ^

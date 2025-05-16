@@ -111,7 +111,7 @@ public struct Parser {
   /// Parses a sequence of declaration modifiers.
   private mutating func parseDeclarationModifiers() -> [Parsed<DeclarationModifier>] {
     var modifiers: [Parsed<DeclarationModifier>] = []
-    while let m = parseOptionalDeclarationModifiers() {
+    while let m = parseOptionalDeclarationModifier() {
       append(m)
     }
     return modifiers
@@ -134,13 +134,19 @@ public struct Parser {
     }
   }
 
-  /// Parses a sequence of declaration modifier if the next token denotes one.
+  /// Parses a declaration modifier if the next token denotes one.
   ///
   ///     declaration-modifier ::= (one of)
   ///       static private internal private
   ///
-  private mutating func parseOptionalDeclarationModifiers() -> Parsed<DeclarationModifier>? {
-    parseExpressibleByTokenTag(DeclarationModifier.self)
+  private mutating func parseOptionalDeclarationModifier() -> Parsed<DeclarationModifier>? {
+    if let m = parseExpressibleByTokenTag(DeclarationModifier.self) {
+      return m
+    } else if context == .typeBody, let t = take(contextual: "indirect") {
+      return .init(.indirect, at: t.site)
+    } else {
+      return nil
+    }
   }
 
   /// Parses an associated type declaration.

@@ -19,3 +19,7 @@ public extension A {
   static public fun f0() {}
 
 }
+
+public fun main() {
+  indirect var x: Void
+}
