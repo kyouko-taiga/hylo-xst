@@ -84,121 +84,112 @@ public indirect enum IRTree: Hashable {
     if case .variable = self { return true } else { return false }
   }
 
-  /// Returns `self` with variable declarations moved to the front.
+  /// Returns `self` with its variables moved to the front and its sub-expressions flattened.
   public var normalized: IRTree {
-    var lhs: [IRTree] = []
-    var rhs: [IRTree] = []
+    .init(self.flattened)
+  }
+
+  /// Returns `self` flattened as a sequence of trees that, if evaluated in order, has the same
+  /// semantics has `self`.
+  private var flattened: [IRTree] {
+    var xs: [IRTree] = []
 
     switch self {
     case .block(let prefix, let last):
-      for t in prefix {
-        let (v, b) = t.variablesAndBody2
-        lhs.append(contentsOf: v)
-        rhs.append(b)
+      var ys: [IRTree] = []
+      for t in prefix + [last] {
+        let zs = t.flattened
+        let i = zs.firstIndex(where: { (u) in !u.isVariable }) ?? zs.endIndex
+        xs.append(contentsOf: zs[..<i])
+        ys.append(contentsOf: zs[i...])
       }
-      let l = last.variablesAndBody2
-      lhs.append(contentsOf: l.variables)
-      lhs.append(contentsOf: rhs)
-      lhs.append(l.body)
+      xs.append(contentsOf: ys)
 
     case .builtinCall(let callee, let arguments):
-      for t in arguments {
-        let (v, b) = t.variablesAndBody2
-        lhs.append(contentsOf: v)
-        rhs.append(b)
-      }
-      lhs.append(.builtinCall(callee, arguments: rhs))
+      let (ys, zs) = Self.flatten(expressions: arguments)
+      xs = ys
+      xs.append(.builtinCall(callee, arguments: zs))
 
     case .call(let callee, let arguments):
-      let f = callee.variablesAndBody2
-      lhs.append(contentsOf: f.variables)
-      for t in arguments {
-        let (v, b) = t.variablesAndBody2
-        lhs.append(contentsOf: v)
-        rhs.append(b)
-      }
-      lhs.append(.call(f.body, rhs))
+      let (ys, zs) = Self.flatten(expressions: arguments.prepended(with: callee))
+      xs = ys
+      xs.append(.call(zs[0], Array(zs[1...])))
 
     case .field(let i, let source, let type):
-      let (v, b) = source.variablesAndBody2
-      lhs.append(contentsOf: v)
-      lhs.append(.field(i, source: b, type: type))
+      let zs = source.flattened
+      xs = zs.dropLast()
+      xs.append(.field(i, source: zs.last!, type: type))
 
     case .identifier:
-      return self
+      return [self]
 
     case .if(let condition, let success, let failure):
-      let c = condition.variablesAndBody2
-      lhs.append(contentsOf: c.variables)
-      let s = success.variablesAndBody2
-      lhs.append(contentsOf: s.variables)
-      let f = failure.variablesAndBody2
-      lhs.append(contentsOf: f.variables)
-      lhs.append(.if(c.body, then: s.body, else: f.body))
+      let zs = condition.flattened.partitioned(by: \.isVariable)
+      xs.append(contentsOf: zs.trueElements)
+      let ss = success.flattened.partitioned(by: \.isVariable)
+      xs.append(contentsOf: ss.trueElements)
+      let fs = failure.flattened.partitioned(by: \.isVariable)
+      xs.append(contentsOf: fs.trueElements)
+      xs.append(contentsOf: zs.falseElements.dropLast())
+      xs.append(
+        .if(zs.falseElements.last!, then: .init(ss.falseElements), else: .init(fs.falseElements)))
 
     case .load(let source, let type):
-      let (v, b) = source.variablesAndBody2
-      lhs.append(contentsOf: v)
-      lhs.append(.load(source: b, type: type))
+      let zs = source.flattened
+      xs = zs.dropLast()
+      xs.append(.load(source: zs.last!, type: type))
 
     case .nullptr:
-      return self
+      return [self]
 
     case .copy(let target, let source, let type):
-      let l = target.variablesAndBody2
-      lhs.append(contentsOf: l.variables)
-      let r = source.variablesAndBody2
-      lhs.append(contentsOf: r.variables)
-      lhs.append(.copy(target: l.body, source: r.body, type: type))
+      let (ys, zs) = Self.flatten(expressions: [target, source])
+      xs.append(contentsOf: ys)
+      xs.append(.copy(target: zs[0], source: zs[1], type: type))
 
     case .discard(let source, let type):
-      let (v, b) = source.variablesAndBody2
-      lhs.append(contentsOf: v)
-      lhs.append(.discard(source: b, type:type))
+      let zs = source.flattened
+      xs = zs.dropLast()
+      xs.append(.discard(source: zs.last!, type: type))
 
     case .return(let source, let type):
-      let r = source.variablesAndBody2
-      lhs.append(contentsOf: r.variables)
-      lhs.append(.return(source: r.body, type: type))
+      let zs = source.flattened
+      xs = zs.dropLast()
+      xs.append(.return(source: zs.last!, type: type))
 
     case .store(let target, let source, let type):
-      let l = target.variablesAndBody2
-      lhs.append(contentsOf: l.variables)
-      let r = source.variablesAndBody2
-      lhs.append(contentsOf: r.variables)
-      lhs.append(.store(target: l.body, source: r.body, type: type))
+      let (ys, zs) = Self.flatten(expressions: [target, source])
+      xs.append(contentsOf: ys)
+      xs.append(.store(target: zs[0], source: zs[1], type: type))
 
     case .variable:
-      return self
+      xs = [self]
 
     case .void:
-      return self
+      xs = [self]
     }
 
-    return .init(lhs)
+    return xs
   }
 
-  private var variablesAndBody2: (variables: [IRTree], body: IRTree) {
-    switch self.normalized {
-    case .block(let p, let l):
-      let i = p.firstIndex(where: { (t) in !t.isVariable }) ?? p.endIndex
-      return (Array(p[..<i]), IRTree(p[i...] + [l]))
-    case .variable:
-      return ([self], .void)
-    default:
-      return ([], self)
-    }
-  }
+  /// Returns a pair whose first element contains the flattened representations of `expressions` in
+  /// order sans their last sub-expressions, which are in the second element.
+  private static func flatten<S: Sequence<IRTree>>(
+    expressions: S
+  ) -> (prefixes: [IRTree], lasts: [IRTree]) {
+    var xs: [IRTree] = []
+    var ys: [IRTree] = []
+    var zs: [IRTree] = []
 
-  /// If `self` is a normalized block, returns its variables and the rest of its trees. Otherwise,
-  /// returns an empty array and `self`.
-  private var variablesAndBody: (variables: [IRTree], body: IRTree) {
-    if case .block(let p, let l) = self {
-      let i = p.firstIndex(where: { (t) in !t.isVariable }) ?? p.endIndex
-      return (Array(p[..<i]), IRTree(p[i...] + [l]))
-    } else {
-      return ([], self)
+    for t in expressions {
+      let us = t.flattened
+      let i = us.firstIndex(where: { (u) in !u.isVariable })!
+      xs.append(contentsOf: us[..<i])
+      ys.append(contentsOf: us[i...].dropLast())
+      zs.append(us.last!)
     }
+
+    return (xs + ys, zs)
   }
 
 }
