@@ -43,8 +43,18 @@ let package = Package(
       ]),
 
     .target(
+      name: "BackEnd",
+      dependencies: [
+        .target(name: "Utilities"),
+        .target(name: "FrontEnd"),
+        .product(name: "Algorithms", package: "swift-algorithms"),
+        .product(name: "Collections", package: "swift-collections"),
+      ]),
+
+    .target(
       name: "Driver",
       dependencies: [
+        .target(name: "BackEnd"),
         .target(name: "FrontEnd"),
         .target(name: "StandardLibrary"),
         .target(name: "Utilities"),

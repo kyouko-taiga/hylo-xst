@@ -380,6 +380,16 @@ public struct Program: Sendable {
     }
   }
 
+  /// Returns the type assigned to `n`, if any.
+  public func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
+    self[n.module].type(assignedTo: n)
+  }
+
+  /// Returns the declaration referred to by `n`, if any.
+  public func declaration(referredToBy n: NameExpression.ID) -> DeclarationReference? {
+    self[n.module].declaration(referredToBy: n)
+  }
+
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
   public func cast<T: SyntaxIdentity, U: Syntax>(_ n: T, to: U.Type) -> U.ID? {
     if tag(of: n) == .init(U.self) {

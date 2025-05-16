@@ -1,4 +1,5 @@
 import Archivist
+import BackEnd
 import Foundation
 import FrontEnd
 import StandardLibrary
@@ -60,6 +61,30 @@ public struct Driver {
       program.assignTypes(module)
     }
     return (elapsed, program[module].containsError)
+  }
+
+  /// Translates `module` to C++.
+  public mutating func translate(
+    _ module: Program.ModuleIdentity
+  ) async -> (elasped: Duration, translation: (header: String, source: String)) {
+    let clock = ContinuousClock()
+
+    // Lowering.
+    var lowerer = Lowerer(translating: module, of: program)
+    let e0 = clock.measure {
+      lowerer.apply()
+    }
+
+    // Codegen.
+    var renderer = MonomorphizingRenderer(
+      rendering: lowerer.ir, loweredFrom: lowerer.release())
+    var result = (header: "", source: "")
+    let e1 = clock.measure {
+      result = renderer.apply()
+    }
+
+    program = renderer.release()
+    return (e0 + e1, result)
   }
 
   /// Loads `module`, whose sources are in `root`, into `program`.
