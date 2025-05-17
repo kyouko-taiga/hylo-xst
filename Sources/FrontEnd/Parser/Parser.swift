@@ -1086,6 +1086,8 @@ public struct Parser {
     switch peek()?.tag {
     case .true, .false:
       return .init(file.insert(BooleanLiteral(site: take()!.site)))
+    case .integerLiteral:
+      return .init(file.insert(IntegerLiteral(site: take()!.site)))
     case .underscore:
       return try .init(parseWildcardLiteral(in: &file))
     case .dot:

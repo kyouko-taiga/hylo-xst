@@ -21,7 +21,9 @@ public struct Lexer: IteratorProtocol, Sequence {
     if let unterminated = discardWhitespacesAndComments() { return unterminated }
     guard let head = peek() else { return nil }
 
-    if head.isIdentifierHead {
+    if let t = takeNumericLiteral() {
+      return t
+    } else if head.isIdentifierHead {
       return takeKeywordOrIdentifier()
     } else if head == "#" {
       return takePoundKeywordOrLiteral()
@@ -40,6 +42,78 @@ public struct Lexer: IteratorProtocol, Sequence {
   /// Restores the state of `self` from a snapshot.
   public mutating func restore(_ snapshot: Backup) {
     position = snapshot
+  }
+
+  /// Consumes and returns a numeric literal iff one can be scanned from the character stream.
+  private mutating func takeNumericLiteral() -> Token? {
+    let p = take("-") ?? position
+
+    guard let h = peek(), h.isDecimalDigit else {
+      position = p
+      return nil
+    }
+
+    // Is the literal is non-decimal?
+    if let i = take("0") {
+      let isEmpty: Bool
+
+      switch peek() {
+      case .some("x"):
+        discard()
+        isEmpty = takeDigitSequence(\.isHexDigit).isEmpty
+      case .some("o"):
+        discard()
+        isEmpty = takeDigitSequence(\.isOctalDigit).isEmpty
+      case .some("b"):
+        discard()
+        isEmpty = takeDigitSequence(\.isBinaryDigit).isEmpty
+      default:
+        isEmpty = true
+      }
+
+      if !isEmpty {
+        // Non-decimal number literals cannot have an exponent.
+        return .init(tag: .integerLiteral, site: span(p ..< position))
+      } else {
+        position = i
+      }
+    }
+
+    // Read the integer part.
+    let q = take(while: { (c) in c.isDecimalDigit || (c == "_") }).endIndex
+
+    // Is there a fractional part?
+    if let i = take(".") {
+      if takeDigitSequence(\.isDecimalDigit).isEmpty {
+        position = i
+        return .init(tag: .integerLiteral, site: span(p ..< q))
+      }
+    }
+
+    // Is there an exponent?
+    if let i = take("e") ?? take("E") {
+      _ = take("+") ?? take("-")
+      if takeDigitSequence(\.isDecimalDigit).isEmpty {
+        position = i
+      }
+    }
+
+    // No fractional part and no exponent.
+    if position == q {
+      return .init(tag: .integerLiteral, site: span(p ..< position))
+    } else {
+      return .init(tag: .floatingPointLiteral, site: span(p ..< position))
+    }
+  }
+
+  /// Consumes and returns the longest sequence that start with a digit and then contains either
+  /// digits or the underscore, using `isDigit` to determine whether a character is a digit.
+  private mutating func takeDigitSequence(_ isDigit: (Character) -> Bool) -> Substring {
+    if let h = peek(), isDigit(h) {
+      return take(while: { (c) in isDigit(c) || (c == "_") })
+    } else {
+      return source.text[position ..< position]
+    }
   }
 
   /// Consumes and returns a keyword or identifier.
@@ -112,7 +186,7 @@ public struct Lexer: IteratorProtocol, Sequence {
     let start = position
 
     // Leading angle brackets are tokenized individually, to parse generic clauses.
-    if peek()!.isAngleBracket {
+    if let h = peek(), h.isAngleBracket {
       return takePunctuationOrParenthesizedOperator()
     }
 
@@ -263,6 +337,16 @@ extension Character {
   /// `true` iff `self` is a decimal digit.
   fileprivate var isDecimalDigit: Bool {
     asciiValue.map({ (ascii) in (0x30 ... 0x39) ~= ascii }) ?? false
+  }
+
+  /// `true` iff `self` is an octal digit.
+  fileprivate var isOctalDigit: Bool {
+    asciiValue.map({ (ascii) in (0x30 ... 0x37) ~= ascii }) ?? false
+  }
+
+  /// `true` iff `self` is a binary digit.
+  fileprivate var isBinaryDigit: Bool {
+    (self == "0") || (self == "1")
   }
 
 }

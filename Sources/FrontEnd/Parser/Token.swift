@@ -45,6 +45,10 @@ public struct Token: Hashable, Sendable {
     case `var`
     case `where`
 
+    // Scalar literals
+    case integerLiteral
+    case floatingPointLiteral
+
     // Pound keyords and literals
     case poundLiteral
 

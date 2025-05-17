@@ -53,6 +53,71 @@ final class LexerTests: XCTestCase {
     XCTAssertNil(scanner.next())
   }
 
+  func testDecimalIntegerLiteral() throws {
+    var scanner = Lexer(tokenizing: "0 001 42 00 1_234 1_2__34__ -1 -a")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "001")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "42")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "00")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "1_234")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "1_2__34__")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "-1")
+    try assertNext(from: &scanner, is: .operator, withValue: "-")
+    try assertNext(from: &scanner, is: .name, withValue: "a")
+  }
+
+  func testHexadecimalIntegerLiteral() throws {
+    var scanner = Lexer(tokenizing: "0x0123 0xabcdef 0x1__0_a_ 0xg 0x -0x1")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0x0123")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0xabcdef")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0x1__0_a_")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0")
+    try assertNext(from: &scanner, is: .name, withValue: "xg")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0")
+    try assertNext(from: &scanner, is: .name, withValue: "x")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "-0x1")
+  }
+
+  func testOctalIntegerLiteral() throws {
+    var scanner = Lexer(tokenizing: "0o0123 0o1__0_6_ 0o8 0o -0o1")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0o0123")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0o1__0_6_")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0")
+    try assertNext(from: &scanner, is: .name, withValue: "o8")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0")
+    try assertNext(from: &scanner, is: .name, withValue: "o")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "-0o1")
+  }
+
+  func testBinaryIntegerLiteral() throws {
+    var scanner = Lexer(tokenizing: "0b01 0b1__0_1_ 0b8 0b -0b1")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0b01")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0b1__0_1_")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0")
+    try assertNext(from: &scanner, is: .name, withValue: "b8")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "0")
+    try assertNext(from: &scanner, is: .name, withValue: "b")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "-0b1")
+  }
+
+  func testFloatingPointerLiteral() throws {
+    var scanner = Lexer(tokenizing: "0.0 0_.0_ 0.1__2_ 1e1_000 1.12e+1_3 3.45E-6 1. 1.x 1e -1e2")
+    try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "0.0")
+    try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "0_.0_")
+    try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "0.1__2_")
+    try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "1e1_000")
+    try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "1.12e+1_3")
+    try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "3.45E-6")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "1")
+    try assertNext(from: &scanner, is: .dot)
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "1")
+    try assertNext(from: &scanner, is: .dot)
+    try assertNext(from: &scanner, is: .name, withValue: "x")
+    try assertNext(from: &scanner, is: .integerLiteral, withValue: "1")
+    try assertNext(from: &scanner, is: .name, withValue: "e")
+    try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "-1e2")
+  }
+
   func testIdentifier() throws {
     var scanner = Lexer(tokenizing: "a _a _0 \u{3042}\u{3042} _")
     try assertNext(from: &scanner, is: .name, withValue: "a")
