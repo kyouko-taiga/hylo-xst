@@ -392,7 +392,7 @@ extension MemberConstraint: Showable {
 
 }
 
-/// A constraint stating that a a name expression refers to a declaration in an overload set.
+/// A constraint stating that a name expression refers to a declaration in an overload set.
 internal struct OverloadConstraint: Constraint {
 
   /// The overloaded expression.

@@ -618,17 +618,22 @@ public struct Typer {
   ) -> DeclarationReference? {
     let concept = program.traitRequiring(requirement)!
     if
-      isSynthesizable(conformanceTo: concept),
+      isStructurallySynthesizable(conformanceTo: concept),
       structurallyConforms(storageOf: conformer, to: concept, in: .init(node: d))
     {
+      return .synthetic(requirement)
+    } else if isBuiltin(conformanceOf: conformer, to: concept) {
       return .synthetic(requirement)
     } else {
       return nil
     }
   }
 
-  /// Returns `true` iff conformances to `concept` may be synthesized.
-  private mutating func isSynthesizable(conformanceTo concept: TraitDeclaration.ID) -> Bool {
+  /// Returns `true` iff the conformance of a whole to `concept` may be synthesized from the
+  /// conformances of its parts.
+  private mutating func isStructurallySynthesizable(
+    conformanceTo concept: TraitDeclaration.ID
+  ) -> Bool {
     guard program.containsStandardLibrarySources else { return false }
     switch concept {
     case standardLibraryDeclaration(.deinitializable):
@@ -637,6 +642,19 @@ public struct Typer {
       return true
     case standardLibraryDeclaration(.movable):
       return true
+    default:
+      return false
+    }
+  }
+
+  /// Returns `true` iff there exists a buil-in conformance of `conformer` to `concept`.
+  private mutating func isBuiltin(
+    conformanceOf conformer: AnyTypeIdentity, to concept: TraitDeclaration.ID
+  ) -> Bool {
+    guard program.containsStandardLibrarySources else { return false }
+    switch concept {
+    case standardLibraryDeclaration(.expressibleByIntegerLiteral):
+      return isStandardLibraryIntegerType(conformer)
     default:
       return false
     }
@@ -689,7 +707,7 @@ public struct Typer {
     conformanceOf conformer: AnyTypeIdentity, to concept: TraitDeclaration.ID,
     in scopeOfUse: ScopeIdentity
   ) -> Bool {
-    assert(isSynthesizable(conformanceTo: concept))
+    assert(isStructurallySynthesizable(conformanceTo: concept))
     if program.types[conformer] is MachineType {
       return true
     }
@@ -1545,6 +1563,8 @@ public struct Typer {
       return inferredType(of: castUnchecked(e, to: ImplicitQualification.self), in: &context)
     case InoutExpression.self:
       return inferredType(of: castUnchecked(e, to: InoutExpression.self), in: &context)
+    case IntegerLiteral.self:
+      return inferredType(of: castUnchecked(e, to: IntegerLiteral.self), in: &context)
     case NameExpression.self:
       return inferredType(of: castUnchecked(e, to: NameExpression.self), in: &context)
     case New.self:
@@ -1609,10 +1629,10 @@ public struct Typer {
     let callee = program[e].callee
 
     // Set the type of the left-most symbol's qualification if it is implicit using the call's
-    // expected type. The callee itself has no expected type.
+    // expected type so that `f` in a call of the form `.f(x)` can be resolved as a member of the
+    // call's expected type. The callee itself has no expected type; only its qualification.
     if
-      let n = program.cast(callee, to: NameExpression.self),
-      let q = program.rootQualification(of: n),
+      let q = program.rootQualification(of: callee),
       let t = context.expectedType,
       program.tag(of: q) == ImplicitQualification.self
     {
@@ -1762,7 +1782,7 @@ public struct Typer {
     }
 
     // We may have already inferred the type of this tree if it occurs in the expression of some
-    // callee. In that case, we should just reuse what was inferred.
+    // callee (see `inferredType(calleeOf:in:)`). In that case, we must reuse what was inferred.
     else if let t = context.obligations.syntaxToType[e.erased] {
       return t
     } else {
@@ -1777,6 +1797,45 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     let t = inferredType(of: program[e].lvalue, in: &context)
     return context.obligations.assume(e, hasType: t, at: program[e].site)
+  }
+
+  /// Returns the inferred type of `e`.
+  private mutating func inferredType(
+    of e: IntegerLiteral.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    // Did we already elaborate this expression?
+    if let t = program[e.module].type(assignedTo: e) {
+      return context.obligations.assume(e, hasType: t, at: program[e].site)
+    }
+
+    // Otherwise, elaborate to `.new(integer_literal: e)`.
+    else {
+      let s = SourceSpan.empty(at: program[e].site.start)
+      let p = program.parent(containing: e)
+
+      let literal = program[e.module].insert(program[e], in: p)
+      let integer = demand(LiteralType.integer).erased
+      program[e.module].setType(integer, for: literal)
+
+      let q = program[e.module].insert(
+        ImplicitQualification(site: s), in: p)
+      let n = program[e.module].insert(
+        NameExpression(qualification: nil, name: .init("init", at: s), site: s), in: p)
+      let m = program[e.module].insert(
+        New(qualification: .init(q), target: n, site: s), in: p)
+      let c = program[e.module].replace(
+        .init(e),
+        for: Call(
+          callee: .init(m),
+          arguments: [.init(label: Parsed("integer_literal", at: s), value: .init(literal))],
+          style: .parenthesized,
+          site: program[e].site))
+
+      let qualification = context.expectedType ?? standardLibraryType(.int)
+      return context.withSubcontext(expectedType: qualification) { (ctx) in
+        inferredType(of: c, in: &ctx)
+      }
+    }
   }
 
   /// Returns the inferred type of `e`.
@@ -3212,6 +3271,11 @@ public struct Typer {
       return [.init(reference: .builtin(.alias), type: metatype(of: m).erased)]
     }
 
+    // Are we selecting a literal type?
+    else if let m = LiteralType(n.identifier) {
+      return [.init(reference: .builtin(.alias), type: metatype(of: m).erased)]
+    }
+
     // Are we selecting a built-in function?
     else if let f = BuiltinFunction(n.identifier, uniquingTypesWith: &program.types) {
       let t = f.type(uniquingTypesWith: &program.types)
@@ -3681,13 +3745,19 @@ public struct Typer {
     }
   }
 
-  // MARK: Standard library types
+  // MARK: Standard library
 
   /// The value identifying an entity from the standard library.
   private enum StandardLibraryEntity: String, Hashable {
 
     /// `Hylo.Bool`.
     case bool = "Bool"
+
+    /// `Hylo.Int`.
+    case int = "Int"
+
+    /// `Hylo.Int64`.
+    case int64 = "Int64"
 
     /// `Hylo.Deinitializable`.
     case deinitializable = "Deinitializable"
@@ -3698,11 +3768,27 @@ public struct Typer {
     /// `Hylo.Movable`.
     case movable = "Movable"
 
+    /// `Hylo.Movable`.
+    case expressibleByIntegerLiteral = "ExpressibleByIntegerLiteral"
+
     /// Returns a selector for the declaration corresponding to `self`.
     var filter: SyntaxFilter {
       .name(.init(identifier: rawValue))
     }
 
+  }
+
+  /// Returns `true` iff `t` is a standard library integer type (e.g., `Hylo.Int`).
+  private mutating func isStandardLibraryIntegerType(_ t: AnyTypeIdentity) -> Bool {
+    guard program.containsStandardLibrarySources else { return false }
+    switch program.types.dealiased(t) {
+    case standardLibraryType(.int):
+      return true
+    case standardLibraryType(.int64):
+      return true
+    default:
+      return false
+    }
   }
 
   /// Returns the type of the given standard library entity.
@@ -3733,6 +3819,14 @@ public struct Typer {
 
     cache.standardLibraryDeclarations[n] = d
     return d
+  }
+
+  /// Returns `standardLibraryDeclaration(n)` cast as a `T`.
+  private mutating func standardLibraryDeclaration<T: Declaration>(
+    _ n: StandardLibraryEntity, as: T.Type
+  ) -> T.ID {
+    let d = standardLibraryDeclaration(n)
+    return castUnchecked(d, to: T.self)
   }
 
   // MARK: Helpers

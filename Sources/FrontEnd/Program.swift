@@ -341,16 +341,27 @@ public struct Program: Sendable {
     }
   }
 
-  /// Returns the left-most tree in the qualification of `n`.
-  public func rootQualification(of n: NameExpression.ID) -> ExpressionIdentity? {
-    guard var q = self[n].qualification else { return nil }
+  /// Returns the left-most tree in the qualification of `e` iff `e` is a name or new expression.
+  /// Otherwise, returns `nil`.
+  public func rootQualification(of e: ExpressionIdentity) -> ExpressionIdentity? {
+    var root: ExpressionIdentity
+
+    if let n = cast(e, to: NameExpression.self) {
+      guard let q = self[n].qualification else { return nil }
+      root = q
+    } else if let n = cast(e, to: New.self) {
+      root = self[n].qualification
+    } else {
+      return nil
+    }
+
     while true {
-      if let x = cast(q, to: NameExpression.self) {
-        if let y = self[x].qualification { q = y } else { return nil }
-      } else if let x = cast(q, to: Call.self) {
-        q = self[x].callee
+      if let x = cast(root, to: NameExpression.self) {
+        if let y = self[x].qualification { root = y } else { return root }
+      } else if let x = cast(root, to: Call.self) {
+        root = self[x].callee
       } else {
-        return q
+        return root
       }
     }
   }
