@@ -320,7 +320,9 @@ public struct Parser {
       _ = try take(contextual: "is") ?? expected("'is'")
       let concept = try parseExpression(in: &file)
       let witness = desugaredConformance(of: conformer, to: concept, in: &file)
-      let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
+      let members = self.next(is: .leftBrace)
+        ? try parseTypeBody(in: &file, accepting: \.isValidStructMember)
+        : nil
 
       let d = file.insert(
         ConformanceDeclaration(
@@ -1123,11 +1125,7 @@ public struct Parser {
 
     // Environment.
     let environment = try inBrackets { (me) -> ExpressionIdentity? in
-      if me.next(is: .rightBracket) {
-        return nil
-      } else {
-        return try me.parseExpression(in: &file)
-      }
+      me.next(is: .rightBracket) ? nil : try me.parseExpression(in: &file)
     }
 
     // Parameters.
@@ -2381,7 +2379,18 @@ extension SyntaxTag {
 
   /// Returns `true` if a tree with this tag can occur as a trait member.
   fileprivate var isValidTraitMember: Bool {
-    (self == AssociatedTypeDeclaration.self) || isValidStructMember
+    switch self {
+    case AssociatedTypeDeclaration.self:
+      return true
+    case ConformanceDeclaration.self:
+      return true
+    case FunctionBundleDeclaration.self:
+      return true
+    case FunctionDeclaration.self:
+      return true
+    default:
+      return false
+    }
   }
 
 }

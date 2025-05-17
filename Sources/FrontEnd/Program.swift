@@ -452,7 +452,7 @@ public struct Program: Sendable {
     switch tag(of: n) {
     case AssociatedTypeDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)
-    case BindingDeclaration.self:
+    case ConformanceDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)
     case FunctionDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)

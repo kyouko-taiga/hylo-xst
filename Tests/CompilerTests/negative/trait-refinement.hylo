@@ -5,7 +5,7 @@ trait Base {
 }
 
 trait Derived {
-  static given let _: Base<Self>
+  given Derived.Self is Base
   fun g() { self.f() }
 }
 

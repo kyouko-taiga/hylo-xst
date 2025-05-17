@@ -268,7 +268,16 @@ public struct Typer {
     let t = declaredType(of: d)
 
     check(program[d].staticParameters)
-    for m in program[d].members { check(m) }
+
+    // Abstract conformance declarations can only occur in traits.
+    guard let members = program[d].members else {
+      if !program.isRequirement(d) {
+        report(.error, "abstract givens can only be declared in a trait", about: d)
+      }
+      return
+    }
+
+    for m in members { check(m) }
 
     // The type of the declaration has the form `<T...> A... ==> P<B...>` where `P<B...>` is the
     // type of the declared witness and the rest forms a context. Requirements are resolved as
@@ -310,9 +319,7 @@ public struct Typer {
     // since witness tables are built on demand.
     for r in requirements {
       switch program.tag(of: r) {
-      case BindingDeclaration.self:
-        let b = program.castUnchecked(r, to: BindingDeclaration.self)
-        assert(program.tag(of: program[program[b].pattern].pattern) == WildcardLiteral.self)
+      case ConformanceDeclaration.self:
         _ = anonymousImplementation(of: r)
 
       case FunctionDeclaration.self:
@@ -3097,6 +3104,19 @@ public struct Typer {
         return context.obligations.assume(e, hasType: .error, at: site)
       }
 
+      // Is the qualification referring to an outer trait?
+      else if let d = enclosingTraitDeclaration(referredToBy: m, in: context) {
+        let n = program[e].name.value
+        if n.isSimple && n.identifier == "Self" {
+          let t = typeOfSelf(in: d).erased
+          let u = demand(Metatype(inhabitant: t)).erased
+          candidates = [.init(reference: .builtin(.alias), type: u)]
+        } else {
+          report(.error, "enclosing trait can only be used to refer to 'Self'", about: m)
+          return context.obligations.assume(e, hasType: .error, at: site)
+        }
+      }
+
       // Qualification can be used to resolve the identifier.
       else {
         candidates = resolve(program[e].name.value, memberOf: q, visibleFrom: scopeOfUse)
@@ -3159,6 +3179,20 @@ public struct Typer {
       return (u, true)
     } else {
       return (t, false)
+    }
+  }
+
+  /// Returns the innermost trait declaration that contains `e`, if any.
+  private mutating func enclosingTraitDeclaration(
+    referredToBy e: ExpressionIdentity, in context: InferenceContext
+  ) -> TraitDeclaration.ID? {
+    if
+      let n = program.cast(e, to: NameExpression.self),
+      case .some(.direct(let d)) = context.obligations.bindings[n]
+    {
+      return program.cast(d, to: TraitDeclaration.self)
+    } else {
+      return nil
     }
   }
 
@@ -3298,7 +3332,7 @@ public struct Typer {
     }
 
     var candidates: [NameResolutionCandidate] = []
-    let (r, s) = qualificationForSelection(on: q)
+    let (type: r, isStatic: s) = qualificationForSelection(on: q)
 
     candidates.append(
       contentsOf: resolve(n, nativeMemberOf: r, statically: s))
