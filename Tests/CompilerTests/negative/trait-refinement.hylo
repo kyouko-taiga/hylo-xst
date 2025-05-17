@@ -9,13 +9,21 @@ trait Derived {
   fun g() { self.f() }
 }
 
+trait FurtherDerived refines Derived {}
+
 fun ghi<T where T is Derived>(_ x: T) {
+  x.g()
+  x.f()
+}
+
+fun jkl<T where T is FurtherDerived>(_ x: T) {
   x.g()
   x.f()
 }
 
 struct A<T> {}
 struct B<T> {}
+struct C<T> {}
 
 given <T> A<T> is Base {
   fun f() {}
@@ -26,3 +34,6 @@ given <T> A<T> is Derived {}
 
 // This one is missing an instance of `Base<B<T>>`.
 given <T> B<T> is Derived {}
+
+// This one is missing an instance of `Derived<C<T>>`
+given <T> C<T> is FurtherDerived {}

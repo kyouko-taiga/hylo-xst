@@ -594,7 +594,11 @@ public struct Parser {
 
     return file.insert(
       ConformanceDeclaration(
-        introducer: introducer, staticParameters: .empty(at: s), witness: w, members: [], site: s))
+        introducer: introducer,
+        staticParameters: .empty(at: s),
+        witness: w,
+        members: [],
+        site: s))
 
     /// Desugards a compound expression into a call of the form `P<Self, ...>`.
     func desugared(bound b: ExpressionIdentity) throws -> StaticCall.ID {
@@ -777,7 +781,10 @@ public struct Parser {
     let introducer = try take(.trait) ?? expected("'trait'")
     let identifier = parseSimpleIdentifier()
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
-    let members = try parseTypeBody(in: &file, accepting: \.isValidTraitMember)
+
+    // Base traits are desugared as given requirements before other members.
+    var members = try parseOptionalRefinementList(of: identifier.value,  in: &file)
+    try members.append(contentsOf: parseTypeBody(in: &file, accepting: \.isValidTraitMember))
 
     if let p = parameters.implicit.first {
       report(.init("constraints on trait parameters are not supported yet", at: file[p].site))
@@ -791,6 +798,33 @@ public struct Parser {
         parameters: parameters.explicit,
         members: members,
         site: span(from: introducer)))
+  }
+
+  /// Parses an ampersand-separated list of base traits iff the next token is the `refines` keyword
+  /// and desugars them as given requirements.
+  ///
+  /// A base trait declaration is parsed as a compound expression affixed to the head of a trait
+  /// declaration. It is immediately desugared as a given requirement whose witness denotes a
+  /// conformance to the base trait.
+  private mutating func parseOptionalRefinementList(
+    of refined: String, in file: inout Module.SourceContainer
+  ) throws -> [DeclarationIdentity] {
+    guard let introducer = take(contextual: "refines") else { return [] }
+
+    return try ampersandSeparated(until: Token.hasTag(.rightBrace)) { (me) in
+      let span = SourceSpan.empty(at: me.nextTokenStart())
+      let t0 = try me.parseCompoundExpression(in: &file)
+      let t1 = me.synthesizeNameExpression([refined, "Self"], at: span, in: &file)
+      let t2 = me.desugaredConformance(of: .init(t1), to: t0, in: &file)
+      let t3 = file.insert(
+        ConformanceDeclaration(
+          introducer: introducer,
+          staticParameters: .empty(at: span),
+          witness: t2,
+          members: nil,
+          site: file[t0].site))
+      return DeclarationIdentity(t3)
+    }
   }
 
   /// Parses a the body of a type declaration.
@@ -1947,6 +1981,21 @@ public struct Parser {
     return x3
   }
 
+  /// Returns a name expression with the given components.
+  private func synthesizeNameExpression(
+    _ components: [String], at site: SourceSpan, in file: inout Module.SourceContainer
+  ) -> NameExpression.ID {
+    var q: NameExpression.ID? = nil
+    for n in components {
+      q = file.insert(
+        NameExpression(
+          qualification: q.map(ExpressionIdentity.init(_:)),
+          name: Parsed(Name(identifier: String(n)), at: site),
+          site: site))
+    }
+    return q!
+  }
+
   // MARK: Helpers
 
   /// Returns the start position of the next token or the current position if the stream is empty.
@@ -2365,6 +2414,8 @@ extension SyntaxTag {
   fileprivate var isValidStructMember: Bool {
     switch self {
     case BindingDeclaration.self:
+      return true
+    case ConformanceDeclaration.self:
       return true
     case FunctionBundleDeclaration.self:
       return true
