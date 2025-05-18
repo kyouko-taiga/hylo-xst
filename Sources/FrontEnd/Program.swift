@@ -9,7 +9,7 @@ public struct Program: Sendable {
   public typealias ModuleIdentity = Int
 
   /// The identity of a file added to a module.
-  public struct SourceFileIdentity: Hashable, RawRepresentable, Showable, Sendable {
+  public struct SourceFileIdentity: Comparable, Hashable, RawRepresentable, Showable, Sendable {
 
     /// The raw value of this identity.
     public let rawValue: UInt32
@@ -44,6 +44,11 @@ public struct Program: Sendable {
     /// Returns the contents of `self`.
     public func show(using printer: inout TreePrinter) -> String {
       printer.program[self].source.text
+    }
+
+    /// Returns `true` iff `l` is ordered before `r` when iterating over the sources of a module.
+    public static func < (l: Self, r: Self) -> Bool {
+      l.rawValue < r.rawValue
     }
 
   }
@@ -494,13 +499,17 @@ public struct Program: Sendable {
     }
   }
 
-  public func compareLexicalOccurrences<T: SyntaxIdentity, U: SyntaxIdentity>(
+  /// Returns `true` iff `m` is considered to occur before `n` in diagnostics.
+  ///
+  /// If `m` and `n` are in the same scope, they are ordered by the start of their source span.
+  /// Otherwise, they are ordered by an arbitrary (but consistent and stable) order.
+  public func occurInOrder<T: SyntaxIdentity, U: SyntaxIdentity>(
     _ m: T, _ n: U
-  ) -> StrictPartialOrdering {
+  ) -> Bool {
     if parent(containing: m) == parent(containing: n) {
-      return .init(between: self[m].site.end, and: self[n].site.start)
+      return StrictOrdering(between: self[m].site.end, and: self[n].site.start) == .ascending
     } else {
-      return nil
+      return m.erased.bits < n.erased.bits
     }
   }
 
