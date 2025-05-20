@@ -6,6 +6,9 @@ public indirect enum IRTree: Hashable {
 
   // MARK: Expressions
 
+  /// A Boolean literal.
+  case bool(Bool)
+
   /// A non-empty sequence of trees.
   case block(prefix: [IRTree], last: IRTree)
 
@@ -95,6 +98,9 @@ public indirect enum IRTree: Hashable {
     var xs: [IRTree] = []
 
     switch self {
+    case .bool:
+      return [self]
+
     case .block(let prefix, let last):
       var ys: [IRTree] = []
       for t in prefix + [last] {
@@ -198,6 +204,8 @@ extension IRTree: Showable {
 
   public func show(using printer: inout TreePrinter) -> String {
     switch self {
+    case .bool(let b):
+      return String(describing: b)
     case .block(let p, let l):
       return "{\((p + [l]).map({ (t) in printer.show(t) }).joined(separator: "; "))}"
     case .builtinCall(let f, let a):
