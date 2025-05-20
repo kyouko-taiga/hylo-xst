@@ -32,7 +32,7 @@ public struct Arrow: TypeTree {
 
   /// Creates an instance from `inputs`, which denote unlabeled `let` parameters, to `output`,
   /// having no environment and the `let` effect.
-  public init(_ inputs: MachineType.ID..., to output: MachineType.ID) {
+  public init<T: TypeIdentity>(_ inputs: MachineType.ID..., to output: T) {
     self.init(
       inputs: inputs.map({ (i) in .init(access: .let, type: i.erased) }),
       output: output.erased)
