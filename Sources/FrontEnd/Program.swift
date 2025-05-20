@@ -57,7 +57,7 @@ public struct Program: Sendable {
   public private(set) var modules = OrderedDictionary<Module.Name, Module>()
 
   /// The types in the program.
-  public internal(set) var types = TypeStore()
+  public var types = TypeStore()
 
   /// Creates an empty program.
   public init() {}

@@ -95,7 +95,6 @@ public struct Lowerer {
       }
     }
 
-    print(program.show(ir.functions[n]!.body!))
     return .void
   }
 
@@ -113,6 +112,8 @@ public struct Lowerer {
   /// Translates `e`.
   private mutating func translate(_ e: ExpressionIdentity) -> IRTree {
     switch program.tag(of: e) {
+    case BooleanLiteral.self:
+      return translate(program.castUnchecked(e, to: BooleanLiteral.self))
     case Call.self:
       return translate(program.castUnchecked(e, to: Call.self))
     case If.self:
@@ -124,6 +125,19 @@ public struct Lowerer {
     default:
       program.unexpected(e)
     }
+  }
+
+  /// Translates `e`.
+  private mutating func translate(_ e: BooleanLiteral.ID) -> IRTree {
+    let x = ir.fresh()
+    let t = program.typeSansEffect(assignedTo: e)
+    let u = program.types.demand(MachineType.i(1))
+    let result: [IRTree] = [
+      .variable(identifier: x, type: t),
+      .store(target: .identifier(x), source: .bool(program[e].value), type: u),
+      .identifier(x),
+    ]
+    return .init(result)
   }
 
   /// Translates `e`.
@@ -181,11 +195,7 @@ public struct Lowerer {
         let u = program.typeSansEffect(assignedTo: a.value)
         let l = IRTree.field(i, source: .identifier(x), type: t)
         let r = translate(a.value)
-        if case .builtinCall = r, let m = program.types.cast(u, to: MachineType.self) {
-          result.append(.store(target: l, source: r, type: m))
-        } else {
-          result.append(.copy(target: l, source: lvalue(r, instanceOf: u), type: u))
-        }
+        result.append(assignment(to: l, source: r, of: u))
       }
     }
 
@@ -222,6 +232,23 @@ public struct Lowerer {
     result.append(.call(.identifier(ir.identifier(of: d, using: program)), arguments))
     result.append(.identifier(x))
     return .init(result)
+  }
+
+  /// Returns the translation of the code storing the value of `source`, which is an instance of
+  /// `type`, to `target`.
+  ///
+  /// If `type` is a machine type, `source` is assumed to produce a rvalue (i.e., a value that is
+  /// not stored in memory) and the translation is a `store` instruction. Otherwise, `source` is
+  /// assumed to produce a rvalue (i.e., a value that is stored in memory) and the translation is a
+  /// `copy` instruction.
+  private mutating func assignment(
+    to target: IRTree, source: IRTree, of type: AnyTypeIdentity
+  ) -> IRTree {
+    if let m = program.types.cast(type, to: MachineType.self) {
+      return .store(target: target, source: source, type: m)
+    } else {
+      return .copy(target: target, source: lvalue(source, instanceOf: type), type: type)
+    }
   }
 
   /// Translates `e`.
@@ -308,11 +335,7 @@ public struct Lowerer {
     let t = program.typeSansEffect(assignedTo: program[s].lhs)
     let l = translate(program[s].lhs)
     let r = translate(program[s].rhs)
-    if case .builtinCall = r, let m = program.types.cast(t, to: MachineType.self) {
-      return .store(target: l, source: r, type: m)
-    } else {
-      return .copy(target: l, source: lvalue(r, instanceOf: t), type: t)
-    }
+    return assignment(to: l, source: r, of: t)
   }
 
   /// Translates `s`.

@@ -88,6 +88,9 @@ public struct MonomorphizingRenderer {
   /// Returns the C++ translation of `t`.
   private mutating func render(_ t: IRTree) -> String {
     switch t {
+    case .bool(let b):
+      return b ? "std::uint8_t{1}" : "std::uint8_t{0}"
+
     case .builtinCall(let callee, let arguments):
       return render(apply: callee, to: arguments)
 
