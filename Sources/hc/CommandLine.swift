@@ -38,14 +38,6 @@ import Utilities
     help: "Do not load the standard library")
   private var noStandardLibrary: Bool = false
 
-  /// The kind of output that should be produced by the compiler.
-  @Option(
-    name: [.customLong("emit")],
-    help: ArgumentHelp(
-      "Produce the specified output: Possible values are: ast, typed-ast",
-      valueName: "output-type"))
-  private var outputType: OutputType = .typedAST
-
   /// The configuration of the tree printer.
   @Flag(help: "Tree printer configuration")
   private var treePrinterFlags: [TreePrinterFlag] = []
@@ -93,14 +85,12 @@ import Utilities
     await perform("scoping", { await driver.assignScopes(of: module) })
     await perform("typing", { await driver.assignTypes(of: module) })
 
-    let c = treePrinterConfiguration(for: treePrinterFlags)
-    for d in driver.program.select(from: module, .satisfies({ driver.program.parent(containing: $0).isFile })) {
-      print(driver.program.show(d, configuration: c))
-    }
+    // Translate to C++.
+    let (_, (h, s)) = await driver.translate(module)
+    print(h)
+    print(s)
 
-    let a = try driver.program.archive(module: module)
-    print(a.count)
-
+    /// Runs `action` as a compilation phase.
     func perform(
       _ phase: String, _ action: () async -> (elapsed: Duration, containsError: Bool)
     ) async {

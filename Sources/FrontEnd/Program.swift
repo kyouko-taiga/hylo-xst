@@ -57,7 +57,7 @@ public struct Program: Sendable {
   public private(set) var modules = OrderedDictionary<Module.Name, Module>()
 
   /// The types in the program.
-  public internal(set) var types = TypeStore()
+  public var types = TypeStore()
 
   /// Creates an empty program.
   public init() {}
@@ -369,6 +369,16 @@ public struct Program: Sendable {
         return root
       }
     }
+  }
+
+  /// Returns the type assigned to `n`, if any.
+  public func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
+    self[n.module].type(assignedTo: n)
+  }
+
+  /// Returns the declaration referred to by `n`, if any.
+  public func declaration(referredToBy n: NameExpression.ID) -> DeclarationReference? {
+    self[n.module].declaration(referredToBy: n)
   }
 
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
