@@ -1760,9 +1760,14 @@ public struct Typer {
       let t0 = inferredType(of: program[e].success, in: &context)
       let t1 = inferredType(of: program[e].failure, in: &context)
 
-      // Fast path: we infer the same type for both branches.
+      // Did we inferred the same type for both branches?
       if t0 == t1 {
         return context.obligations.assume(e, hasType: t0, at: program[e].site)
+      }
+
+      // Is the expected type `Void`?
+      else if context.expectedType == .void {
+        return context.obligations.assume(e, hasType: .void, at: program[e].site)
       }
 
       // Slow path: we may need coercions.
@@ -1774,7 +1779,7 @@ public struct Typer {
 
     // The branches are not single-bodied expressions; assume `e` produces `Void`.
     else {
-      context.withSubcontext(expectedType: .void) { (ctx) in
+      context.withSubcontext { (ctx) in
         _ = inferredType(of: program[e].success, in: &ctx)
         _ = inferredType(of: program[e].failure, in: &ctx)
       }
