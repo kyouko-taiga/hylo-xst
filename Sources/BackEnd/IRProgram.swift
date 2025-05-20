@@ -133,7 +133,8 @@ public struct IRProgram {
     var offsets = [0]
     var alignment = 1
 
-    for (i, f) in fields[1...].enumerated() {
+    for i in 1 ..< fields.count {
+      let f = fields[i]
       let m = metatype(of: type(assignedTo: f, using: p), using: p)
       let p = offsets[i - 1] + sizes[i - 1]
       sizes.append(m.size)
