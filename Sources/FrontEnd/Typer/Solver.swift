@@ -112,8 +112,6 @@ internal struct Solver {
             o = me.solve(call: g)
           case is StaticCallConstraint:
             o = me.solve(staticCall: g)
-          case is Summonable:
-            o = me.solve(summonable: g)
           case is MemberConstraint:
             o = me.solve(member: g)
           case is OverloadConstraint:
@@ -477,36 +475,6 @@ internal struct Solver {
 
       ds.insert(
         .init(.error, m, at: tp.program.spanForDiagnostic(about: tp.program[k.origin].callee)))
-    }
-  }
-
-  /// Discharges `g`, which is a summonable constraint.
-  private mutating func solve(summonable g: GoalIdentity) -> GoalOutcome {
-    let k = goals[g] as! Summonable
-
-    // Can't summon until we've inferred free variables.
-    if k.type[.hasVariable] {
-      return postpone(g)
-    }
-
-    let cs = typer.summon(k.type, in: k.scope)
-    switch cs.count {
-    case 1:
-      return .success
-
-    case 0:
-      return .failure { (ss, _, tp, ds) in
-        let t = tp.program.types.reify(k.type, applying: ss)
-        let m = tp.program.format("no given instance of '%T' in this scope", [t])
-        ds.insert(.init(.error, m, at: k.site))
-      }
-
-    default:
-      return .failure { (ss, _, tp, ds) in
-        let t = tp.program.types.reify(k.type, applying: ss)
-        let m = tp.program.format("ambiguous given instance of '%T'", [t])
-        ds.insert(.init(.error, m, at: k.site))
-      }
     }
   }
 

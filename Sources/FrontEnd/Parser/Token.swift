@@ -21,7 +21,6 @@ public struct Token: Hashable, Sendable {
     case fun
     case given
     case `if`
-    case `is`
     case `import`
     case infix
     case `init`
@@ -45,6 +44,10 @@ public struct Token: Hashable, Sendable {
     case `typealias`
     case `var`
     case `where`
+
+    // Scalar literals
+    case integerLiteral
+    case floatingPointLiteral
 
     // Pound keyords and literals
     case poundLiteral
@@ -143,14 +146,19 @@ public struct Token: Hashable, Sendable {
     }
   }
 
-  /// `true` iff `self` may be part of an operator.
-  public var isOperator: Bool {
+  /// `true` iff `self` may be at the start of an operator.
+  public var isOperatorHead: Bool {
     switch tag {
-    case .ampersand, .equal, .operator, .leftAngle, .rightAngle:
+    case .ampersand, .equal, .operator, .leftAngle, .rightAngle, .star:
       return true
     default:
       return false
     }
+  }
+
+  /// `true` iff `self` may be part of an operator.
+  public var isOperatorTail: Bool {
+    isOperatorHead || (tag == .assign)
   }
 
   /// `true` iff `self` is a valid argument label.

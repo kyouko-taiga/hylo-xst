@@ -35,6 +35,7 @@ public struct TypeTag: Sendable {
     ErrorType.self,
     GenericParameter.self,
     Implication.self,
+    LiteralType.self,
     MachineType.self,
     Metakind.self,
     Metatype.self,

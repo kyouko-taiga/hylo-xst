@@ -9,7 +9,7 @@ public struct Program: Sendable {
   public typealias ModuleIdentity = Int
 
   /// The identity of a file added to a module.
-  public struct SourceFileIdentity: Hashable, RawRepresentable, Showable, Sendable {
+  public struct SourceFileIdentity: Comparable, Hashable, RawRepresentable, Showable, Sendable {
 
     /// The raw value of this identity.
     public let rawValue: UInt32
@@ -44,6 +44,11 @@ public struct Program: Sendable {
     /// Returns the contents of `self`.
     public func show(using printer: inout TreePrinter) -> String {
       printer.program[self].source.text
+    }
+
+    /// Returns `true` iff `l` is ordered before `r` when iterating over the sources of a module.
+    public static func < (l: Self, r: Self) -> Bool {
+      l.rawValue < r.rawValue
     }
 
   }
@@ -341,6 +346,31 @@ public struct Program: Sendable {
     }
   }
 
+  /// Returns the left-most tree in the qualification of `e` iff `e` is a name or new expression.
+  /// Otherwise, returns `nil`.
+  public func rootQualification(of e: ExpressionIdentity) -> ExpressionIdentity? {
+    var root: ExpressionIdentity
+
+    if let n = cast(e, to: NameExpression.self) {
+      guard let q = self[n].qualification else { return nil }
+      root = q
+    } else if let n = cast(e, to: New.self) {
+      root = self[n].qualification
+    } else {
+      return nil
+    }
+
+    while true {
+      if let x = cast(root, to: NameExpression.self) {
+        if let y = self[x].qualification { root = y } else { return root }
+      } else if let x = cast(root, to: Call.self) {
+        root = self[x].callee
+      } else {
+        return root
+      }
+    }
+  }
+
   /// Returns the type assigned to `n`, if any.
   public func type<T: SyntaxIdentity>(assignedTo n: T) -> AnyTypeIdentity? {
     self[n.module].type(assignedTo: n)
@@ -349,20 +379,6 @@ public struct Program: Sendable {
   /// Returns the declaration referred to by `n`, if any.
   public func declaration(referredToBy n: NameExpression.ID) -> DeclarationReference? {
     self[n.module].declaration(referredToBy: n)
-  }
-
-  /// Returns the left-most tree in the qualification of `n`.
-  public func rootQualification(of n: NameExpression.ID) -> ExpressionIdentity? {
-    guard var q = self[n].qualification else { return nil }
-    while true {
-      if let x = cast(q, to: NameExpression.self) {
-        if let y = self[x].qualification { q = y } else { return nil }
-      } else if let x = cast(q, to: Call.self) {
-        q = self[x].callee
-      } else {
-        return q
-      }
-    }
   }
 
   /// Returns `n` if it identifies a node of type `U`; otherwise, returns `nil`.
@@ -451,7 +467,7 @@ public struct Program: Sendable {
     switch tag(of: n) {
     case AssociatedTypeDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)
-    case BindingDeclaration.self:
+    case ConformanceDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)
     case FunctionDeclaration.self:
       return parent(containing: n, as: TraitDeclaration.self)
@@ -493,13 +509,17 @@ public struct Program: Sendable {
     }
   }
 
-  public func compareLexicalOccurrences<T: SyntaxIdentity, U: SyntaxIdentity>(
+  /// Returns `true` iff `m` is considered to occur before `n` in diagnostics.
+  ///
+  /// If `m` and `n` are in the same scope, they are ordered by the start of their source span.
+  /// Otherwise, they are ordered by an arbitrary (but consistent and stable) order.
+  public func occurInOrder<T: SyntaxIdentity, U: SyntaxIdentity>(
     _ m: T, _ n: U
-  ) -> StrictPartialOrdering {
+  ) -> Bool {
     if parent(containing: m) == parent(containing: n) {
-      return .init(between: self[m].site.end, and: self[n].site.start)
+      return StrictOrdering(between: self[m].site.end, and: self[n].site.start) == .ascending
     } else {
-      return nil
+      return m.erased.bits < n.erased.bits
     }
   }
 

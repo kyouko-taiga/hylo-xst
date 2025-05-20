@@ -38,6 +38,11 @@ public struct Tuple: TypeTree {
     self.elements = Array(elements)
   }
 
+  /// Creates an instance with the given types, without any labels.
+  public init<T: Sequence<AnyTypeIdentity>>(types: T) {
+    self.init(elements: types.map({ (t) in .init(label: nil, type: t) }))
+  }
+
   /// Properties about `self`.
   public var properties: ValueProperties {
     elements.reduce([], { (a, e) in a.union(e.type.properties) })

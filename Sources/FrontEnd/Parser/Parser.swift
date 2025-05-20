@@ -111,7 +111,7 @@ public struct Parser {
   /// Parses a sequence of declaration modifiers.
   private mutating func parseDeclarationModifiers() -> [Parsed<DeclarationModifier>] {
     var modifiers: [Parsed<DeclarationModifier>] = []
-    while let m = parseOptionalDeclarationModifiers() {
+    while let m = parseOptionalDeclarationModifier() {
       append(m)
     }
     return modifiers
@@ -134,13 +134,19 @@ public struct Parser {
     }
   }
 
-  /// Parses a sequence of declaration modifier if the next token denotes one.
+  /// Parses a declaration modifier if the next token denotes one.
   ///
   ///     declaration-modifier ::= (one of)
   ///       static private internal private
   ///
-  private mutating func parseOptionalDeclarationModifiers() -> Parsed<DeclarationModifier>? {
-    parseExpressibleByTokenTag(DeclarationModifier.self)
+  private mutating func parseOptionalDeclarationModifier() -> Parsed<DeclarationModifier>? {
+    if let m = parseExpressibleByTokenTag(DeclarationModifier.self) {
+      return m
+    } else if context == .typeBody, let t = take(contextual: "indirect") {
+      return .init(.indirect, at: t.site)
+    } else {
+      return nil
+    }
   }
 
   /// Parses an associated type declaration.
@@ -311,10 +317,12 @@ public struct Parser {
     else {
       let parameters = try parseOptionalCompileTimeParameters(in: &file)
       let conformer = try parseExpression(in: &file)
-      _ = try take(.is) ?? expected("'is'")
+      _ = try take(contextual: "is") ?? expected("'is'")
       let concept = try parseExpression(in: &file)
       let witness = desugaredConformance(of: conformer, to: concept, in: &file)
-      let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
+      let members = self.next(is: .leftBrace)
+        ? try parseTypeBody(in: &file, accepting: \.isValidStructMember)
+        : nil
 
       let d = file.insert(
         ConformanceDeclaration(
@@ -561,7 +569,7 @@ public struct Parser {
   private mutating func parseOptionalAdjunctConformanceList(
     until rightDelimiter: Token.Tag, in file: inout Module.SourceContainer
   ) throws -> [ConformanceDeclaration.ID] {
-    if let introducer = take(.is) {
+    if let introducer = take(contextual: "is") {
       return try ampersandSeparated(until: Token.hasTag(rightDelimiter)) { me in
         try me.parseAdjunctConformance(introducedBy: introducer, in: &file)
       }
@@ -586,7 +594,11 @@ public struct Parser {
 
     return file.insert(
       ConformanceDeclaration(
-        introducer: introducer, staticParameters: .empty(at: s), witness: w, members: [], site: s))
+        introducer: introducer,
+        staticParameters: .empty(at: s),
+        witness: w,
+        members: [],
+        site: s))
 
     /// Desugards a compound expression into a call of the form `P<Self, ...>`.
     func desugared(bound b: ExpressionIdentity) throws -> StaticCall.ID {
@@ -624,16 +636,16 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
     let l = try parseCompoundExpression(in: &file)
-    let s = try take(.is) ?? take(.equal) ?? expected("'is' or '=='")
+    let s = try take(contextual: "is") ?? take(.equal) ?? expected("'is' or '=='")
     let r = try parseCompoundExpression(in: &file)
 
     let witness: ExpressionIdentity
-    if s.tag == .is {
-      witness = .init(desugaredConformance(of: l, to: r, in: &file))
-    } else {
+    if s.tag == .equal {
       let w = EqualityWitnessExpression(
         lhs: l, rhs: r, site: file[l].site.extended(toCover: file[r].site))
       witness = .init(file.insert(w))
+    } else {
+      witness = .init(desugaredConformance(of: l, to: r, in: &file))
     }
 
     let d = file.insert(UsingDeclaration(witness: witness, site: file[witness].site))
@@ -769,7 +781,10 @@ public struct Parser {
     let introducer = try take(.trait) ?? expected("'trait'")
     let identifier = parseSimpleIdentifier()
     let parameters = try parseOptionalCompileTimeParameters(in: &file)
-    let members = try parseTypeBody(in: &file, accepting: \.isValidTraitMember)
+
+    // Base traits are desugared as given requirements before other members.
+    var members = try parseOptionalRefinementList(of: identifier.value,  in: &file)
+    try members.append(contentsOf: parseTypeBody(in: &file, accepting: \.isValidTraitMember))
 
     if let p = parameters.implicit.first {
       report(.init("constraints on trait parameters are not supported yet", at: file[p].site))
@@ -783,6 +798,33 @@ public struct Parser {
         parameters: parameters.explicit,
         members: members,
         site: span(from: introducer)))
+  }
+
+  /// Parses an ampersand-separated list of base traits iff the next token is the `refines` keyword
+  /// and desugars them as given requirements.
+  ///
+  /// A base trait declaration is parsed as a compound expression affixed to the head of a trait
+  /// declaration. It is immediately desugared as a given requirement whose witness denotes a
+  /// conformance to the base trait.
+  private mutating func parseOptionalRefinementList(
+    of refined: String, in file: inout Module.SourceContainer
+  ) throws -> [DeclarationIdentity] {
+    guard let introducer = take(contextual: "refines") else { return [] }
+
+    return try ampersandSeparated(until: Token.hasTag(.rightBrace)) { (me) in
+      let span = SourceSpan.empty(at: me.nextTokenStart())
+      let t0 = try me.parseCompoundExpression(in: &file)
+      let t1 = me.synthesizeNameExpression([refined, "Self"], at: span, in: &file)
+      let t2 = me.desugaredConformance(of: .init(t1), to: t0, in: &file)
+      let t3 = file.insert(
+        ConformanceDeclaration(
+          introducer: introducer,
+          staticParameters: .empty(at: span),
+          witness: t2,
+          members: nil,
+          site: file[t0].site))
+      return DeclarationIdentity(t3)
+    }
   }
 
   /// Parses a the body of a type declaration.
@@ -885,7 +927,7 @@ public struct Parser {
     // Can we parse a term operator?
     while p < .max {
       // Next token isn't considered an infix operator unless it is surrounded by whitespaces.
-      guard let h = peek(), h.isOperator, whitespaceBeforeNextToken() else { break }
+      guard let h = peek(), h.isOperatorHead, whitespaceBeforeNextToken() else { break }
       guard let (o, q) = try parseOptionalInfixOperator(notTighterThan: p) else { break }
 
       let r = try parseInfixExpression(minimumPrecedence: q.next, in: &file)
@@ -936,7 +978,7 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity {
     // Is there a prefix operator? (note: `&` is not a prefix operator)
-    if let h = peek(), h.isOperator, (h.tag != .ampersand) {
+    if let h = peek(), h.isOperatorHead, (h.tag != .ampersand) {
       let o = try parseOperator()
       if whitespaceBeforeNextToken() { report(separatedUnaryOperator(o)) }
 
@@ -1080,6 +1122,8 @@ public struct Parser {
     switch peek()?.tag {
     case .true, .false:
       return .init(file.insert(BooleanLiteral(site: take()!.site)))
+    case .integerLiteral:
+      return .init(file.insert(IntegerLiteral(site: take()!.site)))
     case .underscore:
       return try .init(parseWildcardLiteral(in: &file))
     case .dot:
@@ -1115,11 +1159,7 @@ public struct Parser {
 
     // Environment.
     let environment = try inBrackets { (me) -> ExpressionIdentity? in
-      if me.next(is: .rightBracket) {
-        return nil
-      } else {
-        return try me.parseExpression(in: &file)
-      }
+      me.next(is: .rightBracket) ? nil : try me.parseExpression(in: &file)
     }
 
     // Parameters.
@@ -1788,7 +1828,7 @@ public struct Parser {
       if t.isOperatorNotation {
         let i = try parseOperatorIdentifier()
         return .init(.operator(i.value.notation, i.value.identifier), at: i.site)
-      } else if t.isOperator {
+      } else if t.isOperatorHead {
         report(.init("missing operator notation", at: .empty(at: t.site.start)))
         let o = try parseOperator()
         return .init(.operator(.none, String(o.text)), at: o)
@@ -1839,10 +1879,10 @@ public struct Parser {
     }
 
     // Multi-token operators.
-    let first = try take(oneOf: [.leftAngle, .rightAngle, .star]) ?? expected("operator")
+    let first = try take(if: \.isOperatorHead) ?? expected("operator")
     var last = first
     while let u = peek(), u.site.region.lowerBound == last.site.region.upperBound {
-      if let next = take(if: \.isOperator) {
+      if let next = take(if: \.isOperatorTail) {
         last = next
       } else {
         break
@@ -1939,6 +1979,21 @@ public struct Parser {
         label: t0, identifier: t0, ascription: t2,
         defaultValue: nil, lazyModifier: nil, site: effect.site))
     return x3
+  }
+
+  /// Returns a name expression with the given components.
+  private func synthesizeNameExpression(
+    _ components: [String], at site: SourceSpan, in file: inout Module.SourceContainer
+  ) -> NameExpression.ID {
+    var q: NameExpression.ID? = nil
+    for n in components {
+      q = file.insert(
+        NameExpression(
+          qualification: q.map(ExpressionIdentity.init(_:)),
+          name: Parsed(Name(identifier: String(n)), at: site),
+          site: site))
+    }
+    return q!
   }
 
   // MARK: Helpers
@@ -2360,6 +2415,8 @@ extension SyntaxTag {
     switch self {
     case BindingDeclaration.self:
       return true
+    case ConformanceDeclaration.self:
+      return true
     case FunctionBundleDeclaration.self:
       return true
     case FunctionDeclaration.self:
@@ -2373,7 +2430,18 @@ extension SyntaxTag {
 
   /// Returns `true` if a tree with this tag can occur as a trait member.
   fileprivate var isValidTraitMember: Bool {
-    (self == AssociatedTypeDeclaration.self) || isValidStructMember
+    switch self {
+    case AssociatedTypeDeclaration.self:
+      return true
+    case ConformanceDeclaration.self:
+      return true
+    case FunctionBundleDeclaration.self:
+      return true
+    case FunctionDeclaration.self:
+      return true
+    default:
+      return false
+    }
   }
 
 }

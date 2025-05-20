@@ -98,6 +98,8 @@ extension Program {
       break
     case InoutExpression.self:
       traverse(castUnchecked(n, to: InoutExpression.self), calling: &v)
+    case IntegerLiteral.self:
+      break
     case KindExpression.self:
       traverse(castUnchecked(n, to: KindExpression.self), calling: &v)
     case NameExpression.self:
@@ -178,7 +180,7 @@ extension Program {
   public func traverse<T: SyntaxVisitor>(_ n: ConformanceDeclaration.ID, calling v: inout T) {
     visit(self[n].staticParameters, calling: &v)
     visit(self[n].witness, calling: &v)
-    visit(self[n].members, calling: &v)
+    if let b = self[n].members { visit(b, calling: &v) }
   }
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
