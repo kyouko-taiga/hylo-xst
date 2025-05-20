@@ -927,7 +927,7 @@ public struct Parser {
     // Can we parse a term operator?
     while p < .max {
       // Next token isn't considered an infix operator unless it is surrounded by whitespaces.
-      guard let h = peek(), h.isOperator, whitespaceBeforeNextToken() else { break }
+      guard let h = peek(), h.isOperatorHead, whitespaceBeforeNextToken() else { break }
       guard let (o, q) = try parseOptionalInfixOperator(notTighterThan: p) else { break }
 
       let r = try parseInfixExpression(minimumPrecedence: q.next, in: &file)
@@ -978,7 +978,7 @@ public struct Parser {
     in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity {
     // Is there a prefix operator? (note: `&` is not a prefix operator)
-    if let h = peek(), h.isOperator, (h.tag != .ampersand) {
+    if let h = peek(), h.isOperatorHead, (h.tag != .ampersand) {
       let o = try parseOperator()
       if whitespaceBeforeNextToken() { report(separatedUnaryOperator(o)) }
 
@@ -1828,7 +1828,7 @@ public struct Parser {
       if t.isOperatorNotation {
         let i = try parseOperatorIdentifier()
         return .init(.operator(i.value.notation, i.value.identifier), at: i.site)
-      } else if t.isOperator {
+      } else if t.isOperatorHead {
         report(.init("missing operator notation", at: .empty(at: t.site.start)))
         let o = try parseOperator()
         return .init(.operator(.none, String(o.text)), at: o)
@@ -1879,10 +1879,10 @@ public struct Parser {
     }
 
     // Multi-token operators.
-    let first = try take(oneOf: [.leftAngle, .rightAngle, .star]) ?? expected("operator")
+    let first = try take(if: \.isOperatorHead) ?? expected("operator")
     var last = first
     while let u = peek(), u.site.region.lowerBound == last.site.region.upperBound {
-      if let next = take(if: \.isOperator) {
+      if let next = take(if: \.isOperatorTail) {
         last = next
       } else {
         break

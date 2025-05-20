@@ -146,14 +146,19 @@ public struct Token: Hashable, Sendable {
     }
   }
 
-  /// `true` iff `self` may be part of an operator.
-  public var isOperator: Bool {
+  /// `true` iff `self` may be at the start of an operator.
+  public var isOperatorHead: Bool {
     switch tag {
-    case .ampersand, .equal, .operator, .leftAngle, .rightAngle:
+    case .ampersand, .equal, .operator, .leftAngle, .rightAngle, .star:
       return true
     default:
       return false
     }
+  }
+
+  /// `true` iff `self` may be part of an operator.
+  public var isOperatorTail: Bool {
+    isOperatorHead || (tag == .assign)
   }
 
   /// `true` iff `self` is a valid argument label.
