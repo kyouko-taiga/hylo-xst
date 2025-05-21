@@ -1,5 +1,10 @@
+import FrontEnd
+
 /// Information about the memory layout of a value.
 public struct Metatype {
+
+  /// The type about which this instance provides information.
+  public let type: AnyTypeIdentity
 
   /// The number of bytes occupied by an instance.
   public let size: Int
@@ -9,6 +14,9 @@ public struct Metatype {
 
   /// The offset of each stored field of an instance.
   public let offsets: [Int]
+
+  /// `true` iff an instance does not involve out-of-line storage.
+  public let isTrivial: Bool
 
   /// Returns the number of bytes from the start of one instance to the start of the next when
   /// stored in contiguous memory.

@@ -86,8 +86,7 @@ import Utilities
     await perform("typing", { await driver.assignTypes(of: module) })
 
     // Translate to C++.
-    let (_, (h, s)) = await driver.translate(module)
-    print(h)
+    let (_, s) = await driver.translate(module)
     print(s)
 
     /// Runs `action` as a compilation phase.

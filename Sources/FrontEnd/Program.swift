@@ -318,6 +318,15 @@ public struct Program: Sendable {
     self[n].annotations.contains(where: { (a) in a.identifier.value == "extern" })
   }
 
+  /// Returns `true` iff `n` declars a property stored out-of-line.
+  public func isIndirect(_ n: VariableDeclaration.ID) -> Bool {
+    if let d = bindingDeclaration(containing: n) {
+      return self[d].is(.indirect)
+    } else {
+      return false
+    }
+  }
+
   /// Returns `true` iff `n` denotes an expression.
   public func isExpression<T: SyntaxIdentity>(_ n: T) -> Bool {
     tag(of: n).value is any Expression.Type

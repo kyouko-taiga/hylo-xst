@@ -96,17 +96,21 @@ public struct IRProgram {
   }
 
   /// Returns the metatype of `t`.
+  ///
+  /// This method assumes that a pointer fits a 64-bit integer on the target machine.
   public mutating func metatype(of t: MachineType.ID, using p: FrontEnd.Program) -> Metatype {
     if let m = typeToMetatype[t.erased] { return m }
 
     let m: Metatype
     switch p.types[t] {
     case .i(1):
-      m = .init(size: 1, alignment: 1, offsets: [])
+      m = .init(type: t.erased, size: 1, alignment: 1, offsets: [], isTrivial: true)
     case .i(32):
-      m = .init(size: 4, alignment: 4, offsets: [])
+      m = .init(type: t.erased, size: 4, alignment: 4, offsets: [], isTrivial: true)
     case .i(64):
-      m = .init(size: 8, alignment: 8, offsets: [])
+      m = .init(type: t.erased, size: 8, alignment: 8, offsets: [], isTrivial: true)
+    case .ptr:
+      m = .init(type: t.erased, size: 8, alignment: 8, offsets: [], isTrivial: true)
     default:
       fatalError("unsupported type '\(p.show(t))'")
     }
@@ -119,11 +123,12 @@ public struct IRProgram {
   public mutating func metatype(of t: Struct.ID, using p: FrontEnd.Program) -> Metatype {
     if let m = typeToMetatype[t.erased] { return m }
 
+    // Enumerate the fields (i.e., stored properties) of the type, in the order of declaration.
     let fields = p.storedProperties(of: p.types[t].declaration)
 
     // Empty type?
     if fields.isEmpty {
-      let m = Metatype(size: 0, alignment: 1, offsets: [])
+      let m = Metatype(type: t.erased, size: 0, alignment: 1, offsets: [], isTrivial: true)
       typeToMetatype[t.erased] = m
       return m
     }
@@ -132,18 +137,32 @@ public struct IRProgram {
     var sizes = [metatype(of: type(assignedTo: fields[0], using: p), using: p).size]
     var offsets = [0]
     var alignment = 1
+    var isTrivial = true
 
     for i in 1 ..< fields.count {
       let f = fields[i]
-      let m = metatype(of: type(assignedTo: f, using: p), using: p)
-      let p = offsets[i - 1] + sizes[i - 1]
-      sizes.append(m.size)
-      offsets.append(p.rounded(upToNearestMultipleOf: m.alignment))
-      alignment = max(alignment, m.alignment)
+      let o = offsets[i - 1] + sizes[i - 1]
+
+      // Indirect fields are represented by a pointer to out-of-line storage.
+      if p.isIndirect(f) {
+        sizes.append(8)
+        offsets.append(o.rounded(upToNearestMultipleOf: 8))
+        alignment = max(alignment, 8)
+        isTrivial = false
+      }
+
+      // Other properties are stored inline.
+      else {
+        let m = metatype(of: type(assignedTo: f, using: p), using: p)
+        sizes.append(m.size)
+        offsets.append(o.rounded(upToNearestMultipleOf: m.alignment))
+        alignment = max(alignment, m.alignment)
+      }
     }
     let size = offsets.last! + sizes.last!
 
-    let m = Metatype(size: size, alignment: alignment, offsets: offsets)
+    let m = Metatype(
+      type: t.erased, size: size, alignment: alignment, offsets: offsets, isTrivial: isTrivial)
     typeToMetatype[t.erased] = m
     return m
   }

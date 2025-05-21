@@ -48,6 +48,11 @@ public indirect enum IRTree: Hashable {
   case store(target: IRTree, source: IRTree, type: MachineType.ID)
 
   /// The declaration of a local variable.
+  ///
+  /// This instruction creates a stack-allocated buffer for storing an instance of `type`, and it
+  /// assigns `identifier` to a pointer referring to that buffer. The buffer is zero-initialized
+  /// except at positions representing an indirect field. Those contain a pointer to heap-allocated
+  /// buffers capable of storing an instance of the field.
   case variable(identifier: String, type: AnyTypeIdentity)
 
   /// An empty statement.
