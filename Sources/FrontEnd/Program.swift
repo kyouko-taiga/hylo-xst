@@ -107,16 +107,18 @@ public struct Program: Sendable {
     await Scoper().visit(m, of: &self)
   }
 
+  /// Re-compute the scoping relationships of `n`'s immediate children.
+  public mutating func reassignScopes<T: SyntaxIdentity>(childrenOf n: T) {
+    for c in children(n) {
+      self[c.file].syntaxToParent[c.offset] = n.offset
+    }
+  }
+
   /// Assigns types to the syntax trees of `m`.
   public mutating func assignTypes(_ m: ModuleIdentity) {
     var typer = Typer(typing: m, of: consume self)
     typer.apply()
     self = typer.release()
-  }
-
-  /// Inserts a copy of `n` into `self`.
-  public mutating func clone(_ n: ExpressionIdentity) -> ExpressionIdentity {
-    modules.values[n.module].clone(n)
   }
 
   /// Projects the module identified by `m`.
@@ -139,6 +141,13 @@ public struct Program: Sendable {
   /// Projects the node identified by `n`.
   public subscript<T: Syntax>(n: T.ID) -> T {
     modules.values[n.module][n]
+  }
+
+  /// Returns the nodes that are immediate children of `n`.
+  public func children<T: SyntaxIdentity>(_ n: T) -> [AnySyntaxIdentity] {
+    var enumerator = ChildrenEnumerator()
+    visit(n, calling: &enumerator)
+    return enumerator.children
   }
 
   /// Returns a lambda accessing `path` on an instance of `T`.
@@ -1033,6 +1042,19 @@ public indirect enum SyntaxFilter {
     case .satisfies(let p):
       return p(n)
     }
+  }
+
+}
+
+/// An syntax visitor that enumerates the immediate children of a node.
+fileprivate struct ChildrenEnumerator: SyntaxVisitor {
+
+  /// The children collected by the calls to `willEnter(_:in:)`.
+  fileprivate var children: [AnySyntaxIdentity] = []
+
+  fileprivate mutating func willEnter(_ n: AnySyntaxIdentity, in program: Program) -> Bool {
+    children.append(n)
+    return false
   }
 
 }
