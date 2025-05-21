@@ -2289,7 +2289,12 @@ public struct Typer {
         inferenceFailureDiagnosed = true
       }
 
-      w = w.substituting(n, for: program.clone(n))
+      let m = program[n.module].clone(n)
+      if program.isScope(m) {
+        program.reassignScopes(childrenOf: m)
+      }
+      w = w.substituting(n, for: m)
+
       program[n.module].replace(
         n, for: SynthethicExpression(value: .witness(w), site: program[n].site))
       let u = program.types.substituteVariableForError(in: w.type)
