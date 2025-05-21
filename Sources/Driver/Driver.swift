@@ -66,7 +66,7 @@ public struct Driver {
   /// Translates `module` to C++.
   public mutating func translate(
     _ module: Program.ModuleIdentity
-  ) async -> (elasped: Duration, translation: (header: String, source: String)) {
+  ) async -> (elasped: Duration, translation: String) {
     let clock = ContinuousClock()
 
     // Lowering.
@@ -78,7 +78,7 @@ public struct Driver {
     // Codegen.
     var renderer = MonomorphizingRenderer(
       rendering: lowerer.ir, loweredFrom: lowerer.release())
-    var result = (header: "", source: "")
+    var result = ""
     let e1 = clock.measure {
       result = renderer.apply()
     }

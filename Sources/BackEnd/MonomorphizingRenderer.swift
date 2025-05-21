@@ -1,4 +1,5 @@
 import FrontEnd
+import OrderedCollections
 
 /// The translation of an intermediate representation to C++ using monomorphization.
 public struct MonomorphizingRenderer {
@@ -9,6 +10,10 @@ public struct MonomorphizingRenderer {
   /// The program containing the IR being rendered.
   public internal(set) var program: Program
 
+  /// A table from the types whose metatypes have been requested during the rendering to the name
+  /// of their constructor in the rendered program.
+  private var requestedMetatypes: OrderedDictionary<AnyTypeIdentity, String> = [:]
+
   /// Creates an instance rendering `ir`, which lowers modules in `p`.
   public init(rendering ir: IRProgram, loweredFrom p: consuming Program) {
     self.ir = ir
@@ -16,35 +21,35 @@ public struct MonomorphizingRenderer {
   }
 
   /// Renders `ir`.
-  public mutating func apply() -> (header: String, source: String) {
-    print(program.show(ir))
-
-    var header = """
-    #pragma once
-
-    
-    """
-
-    var source = """
-    #include "product.h"
-    #include "xst.h"
-
-    
-    """
+  public mutating func apply() -> String {
+    var declarations = ""
+    var definitions = ""
 
     for (_, f) in ir.functions {
-      header.write(declaration(f))
-      header.write(";\n")
+      declarations.write(declaration(f))
+      declarations.write(";\n")
 
       if let b = f.body {
-        source.write(declaration(f))
-        source.write(" {\n")
-        source.write(render(body: b))
-        source.write("}\n\n")
+        definitions.write(declaration(f))
+        definitions.write(" {\n")
+        definitions.write(render(body: b))
+        definitions.write("}\n\n")
       }
     }
 
-    return (header, source)
+    return """
+    #include "TypeStore.h"
+
+    namespace rt {
+    static xst::TypeStore store;
+    \(renderRequestedMetatypes())
+    }
+
+    // Forward declarations.
+    \(declarations)
+    // Definitions.
+    \(definitions)
+    """
   }
 
   /// Returns the resources held by this instance.
@@ -54,7 +59,7 @@ public struct MonomorphizingRenderer {
 
   /// Returns C++ translation of the declaration of `d`.
   private mutating func declaration(_ f: IRFunction) -> String {
-    var result = "void \(f.identifier.assemblySanitized) ("
+    var result = "void \(f.identifier.assemblySanitized)("
 
     // First parameter is the storage of the return value.
     result.write("void* x0")
@@ -74,14 +79,14 @@ public struct MonomorphizingRenderer {
     if case .block(let prefix, let last) = t {
       for t in prefix {
         result.write(render(t))
-        result.write("; ")
+        result.write(";\n")
       }
       result.write(render(last))
     } else {
       result.write(render(t))
     }
 
-    result.write(";")
+    result.write(";\n")
     return result
   }
 
@@ -89,7 +94,7 @@ public struct MonomorphizingRenderer {
   private mutating func render(_ t: IRTree) -> String {
     switch t {
     case .bool(let b):
-      return b ? "std::uint8_t{1}" : "std::uint8_t{0}"
+      return b ? "std::int8_t{1}" : "std::int8_t{0}"
 
     case .builtinCall(let callee, let arguments):
       return render(apply: callee, to: arguments)
@@ -119,7 +124,7 @@ public struct MonomorphizingRenderer {
     case .if(let condition, let success, let failure):
       var result = "([&](){ "
       let c = render(condition)
-      result.write("if (*static_cast<std::uint8_t*>(\(c))) ")
+      result.write("if (*static_cast<std::int8_t*>(\(c))) ")
       result.write("{ return ")
       result.write(render(success))
       result.write("; } else { return ")
@@ -129,9 +134,8 @@ public struct MonomorphizingRenderer {
       return result
 
     case .field(let i, let source, let type):
-      let m = ir.metatype(of: type, using: program)
-      let s = render(source)
-      return "xst::advance(\(s), \(m.offsets[i]))"
+      let m = demandMetatype(of: type).name
+      return "rt::store.address_of(rt::\(m)(), \(i), \(render(source)))"
 
     case .load(let source, let type):
       let s = render(source)
@@ -141,40 +145,34 @@ public struct MonomorphizingRenderer {
       return "nullptr"
 
     case .copy(let target, let source, let type):
-      let m = ir.metatype(of: type, using: program)
+      let m = demandMetatype(of: type).name
       let l = render(target)
       let r = render(source)
-      return """
-      std::memcpy(\(l), \(r), \(m.size));
-      """
+      return "rt::store.copy_initialize(rt::\(m)(), \(l), \(r))"
 
-    case .discard(let source, _):
-      let s = render(source)
-      return """
-      \(s);
-      """
+    case .discard(let source, let type):
+      let m = demandMetatype(of: type).name
+      return "rt::store.deinitialize(rt::\(m)(), \(render(source)))"
 
     case .return(let source, let type):
-      let m = ir.metatype(of: type, using: program)
-      let r = render(source)
-      return """
-      std::memcpy(x0, \(r), \(m.size));
-      """
+      let m = demandMetatype(of: type).name
+      return "rt::store.copy_initialize(rt::\(m)(), x0, \(render(source)))"
 
     case .store(let target, let source, let type):
+      let m = demandMetatype(of: type.erased).name
       let l = render(target)
       let r = render(source)
-      return """
-      *(static_cast<\(program.cpp(type))*>(\(l))) = \(r);
-      """
+      return "rt::store.copy_initialize_builtin(rt::\(m)(), \(l), \(r))"
 
     case .variable(let n, let type):
       let m = ir.metatype(of: type, using: program)
-      let x = ir.fresh()
-      return """
-      xst::AlignedBuffer<\(m.size), \(m.alignment)> \(x);
-      void* \(n) = \(x).base_address();
-      """
+      return "alignas(\(m.alignment)) std::byte \(n)[\(m.size)] = {}"
+//      let m = demandMetatype(of: type.erased).name
+//      let x = ir.fresh()
+//      return """
+//      auto \(x) = rt::\(m)();
+//      auto \(n) = xst::aligned_alloc(rt::store.size(\(x)), rt::store.alignment(\(x)))
+//      """
 
     case .void:
       return ";"
@@ -198,6 +196,67 @@ public struct MonomorphizingRenderer {
     }
   }
 
+  /// Returns the C++ translation of the metatype constructors for all the types whose metatypes
+  /// have been requested to during rendering.
+  private mutating func renderRequestedMetatypes() -> String {
+    // The first element is for forward declarations.
+    var results = [""]
+
+    var work = Array(requestedMetatypes.elements)
+    while let (t, n) = work.popLast() {
+      // Emit the definition of the metatype constructor.
+      switch program.types[t] {
+      case let u as MachineType:
+        results[0].write("""
+          inline xst::BuiltinHeader const* \(n)(bool no_define = false) {
+            return rt::store.declare(xst::BuiltinHeader::\(u));
+          }\n
+          """)
+
+      case let u as Struct:
+        let name = program.name(of: u.declaration)
+        var fs: [String] = []
+        for f in program.storedProperties(of: u.declaration) {
+          let i = program.isIndirect(f)
+          let u = program.typeSansEffect(assignedTo: f)
+          let (inserted, n) = demandMetatype(of: u)
+          if inserted {
+            work.append((u, n))
+          }
+          fs.append("xst::Field{\(n)(\(i)), \(i)}")
+        }
+
+        results[0].write("xst::StructHeader const* \(n)(bool no_define = false);\n")
+        results.append(
+          """
+          xst::StructHeader const* \(n)(bool no_define) {
+            auto h = store.declare(xst::StructHeader("\(name)", {}));
+            if (!no_define && !store.defined(h)) {
+              store.define(h, {\(fs.joined(separator: ", "))});
+            }
+            return h;
+          }
+          """)
+
+      default:
+        fatalError("unsupported type '\(program.show(t))'")
+      }
+    }
+
+    return results.joined(separator: "\n")
+  }
+
+  /// Returns the identifier of the function computing the metatype of `t` at runtime.
+  private mutating func demandMetatype(of t: AnyTypeIdentity) -> (inserted: Bool, name: String) {
+    if let x = requestedMetatypes[t] {
+      return (false, x)
+    } else {
+      let x = ir.fresh()
+      requestedMetatypes[t] = x
+      return (true, x)
+    }
+  }
+
 }
 
 extension Program {
@@ -206,7 +265,7 @@ extension Program {
   fileprivate func cpp(_ t: MachineType.ID) -> String {
     switch types[t] {
     case .i(1):
-      return "std::uint8_t"
+      return "std::int8_t"
     case .i(32):
       return "std::uint32_t"
     case .i(64):
