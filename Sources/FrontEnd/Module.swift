@@ -97,6 +97,8 @@ public struct Module: Sendable {
     }
 
     /// Replaces the node identified by `n` by `newTree`.
+    ///
+    /// - Requires: If `n` identifies a scope, then `T` must conform to `Scope`.
     internal mutating func replace<T: Expression>(
       _ n: ExpressionIdentity, for newTree: T
     ) -> T.ID {
@@ -113,7 +115,9 @@ public struct Module: Sendable {
       syntax.append(syntax[n.offset])
       syntaxToTag.append(syntaxToTag[n.offset])
       syntaxToParent.append(syntaxToParent[n.offset])
+      scopeToDeclarations[d] = scopeToDeclarations[n.offset]
       syntaxToType[d] = syntaxToType[n.offset]
+      nameToDeclaration[d] = nameToDeclaration[n.offset]
       return .init(uncheckedFrom: .init(file: identity, offset: d))
     }
 
@@ -211,6 +215,11 @@ public struct Module: Sendable {
   }
 
   /// Inserts a copy of `n` into `self`.
+  ///
+  /// The result of this method is a "shallow" copy of `n`, meaning that none of its children are
+  /// copied. Hence, if `n` identifies a scope, the innermost parent of its immediate children is
+  /// still `n` after this method returns. Use `Program.reassignScopes(childrenOf:)` to modify the
+  /// parent of a cloned scope's children.
   public mutating func clone(_ n: ExpressionIdentity) -> ExpressionIdentity {
     sources.values[n.file.offset].clone(n)
   }
@@ -220,9 +229,12 @@ public struct Module: Sendable {
   /// The result of `tag(of: n)` denotes `T` after this method returns. No other property of `n`
   /// is changed. The children of the node currently identified by `n` that are not children of
   /// `newTree` are notionally removed from the tree after this method returns.
+  ///
+  /// - Requires: If `n` identifies a scope, then `T` must conform to `Scope`.
   @discardableResult
   public mutating func replace<T: Expression>(_ n: ExpressionIdentity, for newTree: T) -> T.ID {
-    sources.values[n.file.offset].replace(n, for: newTree)
+    assert(!(tag(of: n).value is any Scope.Type) || (T.self is any Scope))
+    return sources.values[n.file.offset].replace(n, for: newTree)
   }
 
   /// The nodes in `self`'s abstract syntax tree.
