@@ -13,7 +13,7 @@ public indirect enum IRTree: Hashable {
   case block(prefix: [IRTree], last: IRTree)
 
   /// A call to a built-in function.
-  case builtinCall(BuiltinFunction, arguments: [IRTree])
+  case builtinCall(BuiltinFunction, [IRTree])
 
   /// A function call.
   case call(IRTree, [IRTree])
@@ -32,6 +32,9 @@ public indirect enum IRTree: Hashable {
 
   /// The null pointer.
   case nullptr
+
+  /// The application of a type abstraction.
+  case typeApplication(abstraction: IRTree, arguments: TypeArguments)
 
   // MARK: Statements
 
@@ -119,7 +122,7 @@ public indirect enum IRTree: Hashable {
     case .builtinCall(let callee, let arguments):
       let (ys, zs) = Self.flatten(expressions: arguments)
       xs = ys
-      xs.append(.builtinCall(callee, arguments: zs))
+      xs.append(.builtinCall(callee, zs))
 
     case .call(let callee, let arguments):
       let (ys, zs) = Self.flatten(expressions: arguments.prepended(with: callee))
@@ -152,6 +155,11 @@ public indirect enum IRTree: Hashable {
 
     case .nullptr:
       return [self]
+
+    case .typeApplication(let abstraction, let arguments):
+      let zs = abstraction.flattened
+      xs = zs.dropLast()
+      xs.append(.typeApplication(abstraction: zs.last!, arguments: arguments))
 
     case .copy(let target, let source, let type):
       let (ys, zs) = Self.flatten(expressions: [target, source])
@@ -227,6 +235,8 @@ extension IRTree: Showable {
       return "load(\(printer.show(s)))"
     case .nullptr:
       return "nullptr"
+    case .typeApplication(let f, let a):
+      return "\(printer.show(f))<\(list: a.values.map({ (t) in printer.show(t) }))>"
 
     case .copy(let t, let s, _):
       return "copy(\(printer.show(t)), \(printer.show(s)))"

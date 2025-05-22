@@ -1,9 +1,13 @@
 import FrontEnd
 import OrderedCollections
+import Runtime
 import Utilities
 
 /// The intermediate representation of a program.
 public struct IRProgram {
+
+  /// The repository of type metadata.
+  public let store: TypeMetadataStore
 
   /// The functions in the program.
   public private(set) var functions: OrderedDictionary<String, IRFunction>
@@ -22,6 +26,7 @@ public struct IRProgram {
 
   /// Creates an empty instance.
   public init() {
+    self.store = .init()
     self.functions = [:]
     self.declarationToIdentifier = [:]
     self.typeToMetatype = [:]
@@ -40,11 +45,19 @@ public struct IRProgram {
     function d: FunctionDeclaration.ID, using p: FrontEnd.Program
   ) -> String {
     let n = identifier(of: d, using: p)
+    return declare(function: n, of: p.type(assignedTo: d)!, notionallyDeclaredBy: d, using: p)
+  }
+
+  /// Declares a function named `n`, declared by `d`, and having type `t`.
+  public mutating func declare(
+    function n: String, of t: AnyTypeIdentity, notionallyDeclaredBy d: FunctionDeclaration.ID,
+    using p: FrontEnd.Program
+  ) -> String {
     modify(&functions[n]) { (function) in
       if let f = function {
-        assert(f.declaration == d)
+        assert((f.declaration == d) && (f.type == t))
       } else {
-        function = .init(identifier: n, declaration: d)
+        function = .init(identifier: n, type: t.erased, declaration: d)
       }
     }
     return n
@@ -69,7 +82,8 @@ public struct IRProgram {
     if let n = declarationToIdentifier[d] {
       return n
     } else {
-      let n = "x" + p.nameOrTag(of: d) + String(d.erased.bits, radix: 36)
+      let m = p.name(of: d).map(\.identifier) ?? p.tag(of: d).description
+      let n = "x\(m)\(String(d.erased.bits, radix: 36))"
       declarationToIdentifier[d] = n
       return n
     }
@@ -83,89 +97,109 @@ public struct IRProgram {
     return (p.types[t] as? RemoteType).map(\.projectee) ?? t
   }
 
-  /// Returns the metatype of `t`.
-  public mutating func metatype(of t: AnyTypeIdentity, using p: FrontEnd.Program) -> Metatype {
-    switch p.types.tag(of: t) {
-    case MachineType.self:
-      return metatype(of: p.types.castUnchecked(t, to: MachineType.self), using: p)
-    case Struct.self:
-      return metatype(of: p.types.castUnchecked(t, to: Struct.self), using: p)
-    default:
-      fatalError("unsupported type '\(p.show(t))'")
-    }
-  }
-
-  /// Returns the metatype of `t`.
-  ///
-  /// This method assumes that a pointer fits a 64-bit integer on the target machine.
-  public mutating func metatype(of t: MachineType.ID, using p: FrontEnd.Program) -> Metatype {
-    if let m = typeToMetatype[t.erased] { return m }
-
-    let m: Metatype
-    switch p.types[t] {
-    case .i(1):
-      m = .init(type: t.erased, size: 1, alignment: 1, offsets: [], isTrivial: true)
-    case .i(32):
-      m = .init(type: t.erased, size: 4, alignment: 4, offsets: [], isTrivial: true)
-    case .i(64):
-      m = .init(type: t.erased, size: 8, alignment: 8, offsets: [], isTrivial: true)
-    case .ptr:
-      m = .init(type: t.erased, size: 8, alignment: 8, offsets: [], isTrivial: true)
-    default:
-      fatalError("unsupported type '\(p.show(t))'")
-    }
-
-    typeToMetatype[t.erased] = m
-    return m
-  }
-
-  /// Returns the metatype of `t`.
-  public mutating func metatype(of t: Struct.ID, using p: FrontEnd.Program) -> Metatype {
-    if let m = typeToMetatype[t.erased] { return m }
-
-    // Enumerate the fields (i.e., stored properties) of the type, in the order of declaration.
-    let fields = p.storedProperties(of: p.types[t].declaration)
-
-    // Empty type?
-    if fields.isEmpty {
-      let m = Metatype(type: t.erased, size: 0, alignment: 1, offsets: [], isTrivial: true)
-      typeToMetatype[t.erased] = m
-      return m
-    }
-
-    // Compute size, alignment, and offset of each field.
-    var sizes = [metatype(of: type(assignedTo: fields[0], using: p), using: p).size]
-    var offsets = [0]
-    var alignment = 1
-    var isTrivial = true
-
-    for i in 1 ..< fields.count {
-      let f = fields[i]
-      let o = offsets[i - 1] + sizes[i - 1]
-
-      // Indirect fields are represented by a pointer to out-of-line storage.
-      if p.isIndirect(f) {
-        sizes.append(8)
-        offsets.append(o.rounded(upToNearestMultipleOf: 8))
-        alignment = max(alignment, 8)
-        isTrivial = false
-      }
-
-      // Other properties are stored inline.
-      else {
-        let m = metatype(of: type(assignedTo: f, using: p), using: p)
-        sizes.append(m.size)
-        offsets.append(o.rounded(upToNearestMultipleOf: m.alignment))
-        alignment = max(alignment, m.alignment)
-      }
-    }
-    let size = offsets.last! + sizes.last!
-
-    let m = Metatype(
-      type: t.erased, size: size, alignment: alignment, offsets: offsets, isTrivial: isTrivial)
-    typeToMetatype[t.erased] = m
-    return m
-  }
+//  /// Returns the metatype of `t`.
+//  public mutating func metatype(of t: AnyTypeIdentity, using p: FrontEnd.Program) -> Metatype {
+//    switch p.types.tag(of: t) {
+//    case MachineType.self:
+//      return metatype(of: p.types.castUnchecked(t, to: MachineType.self), using: p)
+//    case Struct.self:
+//      return metatype(of: p.types.castUnchecked(t, to: Struct.self), using: p)
+//    case Tuple.self:
+//      return metatype(of: p.types.castUnchecked(t, to: Tuple.self), using: p)
+//    case TypeApplication.self:
+//      return metatype(of: p.types.castUnchecked(t, to: TypeApplication.self), using: p)
+//    default:
+//      fatalError("unsupported type '\(p.show(t))'")
+//    }
+//  }
+//
+//  /// Returns the metatype of `t`.
+//  ///
+//  /// This method assumes that a pointer fits a 64-bit integer on the target machine.
+//  public mutating func metatype(of t: MachineType.ID, using p: FrontEnd.Program) -> Metatype {
+//    if let m = typeToMetatype[t.erased] { return m }
+//
+//    let m: Metatype
+//    switch p.types[t] {
+//    case .i(1):
+//      m = .init(type: t.erased, size: 1, alignment: 1, offsets: [], isTrivial: true)
+//    case .i(32):
+//      m = .init(type: t.erased, size: 4, alignment: 4, offsets: [], isTrivial: true)
+//    case .i(64):
+//      m = .init(type: t.erased, size: 8, alignment: 8, offsets: [], isTrivial: true)
+//    case .ptr:
+//      m = .init(type: t.erased, size: 8, alignment: 8, offsets: [], isTrivial: true)
+//    default:
+//      fatalError("unsupported type '\(p.show(t))'")
+//    }
+//
+//    typeToMetatype[t.erased] = m
+//    return m
+//  }
+//
+//  /// Returns the metatype of `t`.
+//  public mutating func metatype(of t: Struct.ID, using p: FrontEnd.Program) -> Metatype {
+//    if let m = typeToMetatype[t.erased] { return m }
+//
+//    // Enumerate the fields (i.e., stored properties) of the type, in the order of declaration.
+//    let fields = p.storedProperties(of: p.types[t].declaration)
+//
+//    // Empty type?
+//    if fields.isEmpty {
+//      let m = Metatype(type: t.erased, size: 0, alignment: 1, offsets: [], isTrivial: true)
+//      typeToMetatype[t.erased] = m
+//      return m
+//    }
+//
+//    // Compute size, alignment, and offset of each field.
+//    var sizes = [metatype(of: type(assignedTo: fields[0], using: p), using: p).size]
+//    var offsets = [0]
+//    var alignment = 1
+//    var isTrivial = true
+//
+//    for i in 1 ..< fields.count {
+//      let f = fields[i]
+//      let o = offsets[i - 1] + sizes[i - 1]
+//
+//      // Indirect fields are represented by a pointer to out-of-line storage.
+//      if p.isIndirect(f) {
+//        sizes.append(8)
+//        offsets.append(o.rounded(upToNearestMultipleOf: 8))
+//        alignment = max(alignment, 8)
+//        isTrivial = false
+//      }
+//
+//      // Other properties are stored inline.
+//      else {
+//        let m = metatype(of: type(assignedTo: f, using: p), using: p)
+//        sizes.append(m.size)
+//        offsets.append(o.rounded(upToNearestMultipleOf: m.alignment))
+//        alignment = max(alignment, m.alignment)
+//      }
+//    }
+//    let size = offsets.last! + sizes.last!
+//
+//    let m = Metatype(
+//      type: t.erased, size: size, alignment: alignment, offsets: offsets, isTrivial: isTrivial)
+//    typeToMetatype[t.erased] = m
+//    return m
+//  }
+//
+//  /// Returns the metatype of `t`.
+//  public mutating func metatype(of t: Tuple.ID, using p: FrontEnd.Program) -> Metatype {
+//    if let m = typeToMetatype[t.erased] { return m }
+//
+//    assert(t.erased == .void)
+//
+//    let m = Metatype(type: t.erased, size: 0, alignment: 1, offsets: [], isTrivial: true)
+//    typeToMetatype[t.erased] = m
+//    return m
+//  }
+//
+//  /// Returns the metatype of `t`.
+//  public mutating func metatype(of t: TypeApplication.ID, using p: FrontEnd.Program) -> Metatype {
+//    .init(type: t.erased, size: 1, alignment: 1, offsets: [], isTrivial: true)
+//  }
 
   /// Returns the position of the variable `d` in the inline storage of the struct of which it is
   /// a stored property.

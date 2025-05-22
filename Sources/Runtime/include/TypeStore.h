@@ -26,6 +26,7 @@ struct MetatypeConstructor {
 
 };
 
+/// A repository of type metadata.
 struct TypeStore {
 private:
 
@@ -185,33 +186,6 @@ public:
   ///   fields in an instance of `type`.
   inline void* address_of(TypeHeader const* type, std::size_t i, void* base) const {
     return address_of((*this)[type], i, base);
-  }
-
-  /// Calls `action` with the base address of a buffer with enough capacity to store `count`
-  /// instances of `type`.
-  ///
-  /// `action` is called with a pointer to a zero-initialized buffer properly aligned and large
-  /// enough to hold `count` instances of `type` contiguously (use `stride` to compute the offset
-  /// of each position). The buffer is automatically deallocated after `action` returns, at which
-  /// point the pointer passed to the lambda is invalid. Any instance stored in the temporary
-  /// buffer must be be deinitialized before `action` returns.
-  ///
-  /// - Requires: `type` has been declared and defined in `this`.
-  template<typename A>
-  void with_temporary_allocation(TypeHeader const* type, std::size_t count, A action) const {
-    auto s = (count == 1) ? size(type) : stride(type) * count;
-    auto a = alignment(type);
-    auto x = a - 1;
-
-    if (s == 0) { return action(nullptr); }
-
-    std::byte buffer[s + x];
-    auto b = reinterpret_cast<std::uintptr_t>(&buffer);
-    b += b & x;
-
-    auto base_address = reinterpret_cast<void*>(b);
-    std::memset(base_address, 0, s);
-    action(base_address);
   }
 
   /// Initializes `target` with a copy of `source`, which is an instance of `type`.

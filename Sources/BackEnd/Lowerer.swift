@@ -142,47 +142,76 @@ public struct Lowerer {
 
   /// Translates `e`.
   private mutating func translate(_ e: Call.ID) -> IRTree {
+    let callee: ExpressionIdentity
+    let typeArguments: TypeArguments
+
+    // Extract the expression of the callee and its type arguments if any.
+    if let f = program.cast(program[e].callee, to: SynthethicExpression.self) {
+      guard case .witness(let w) = program[f].value else { program.unexpected(f) }
+      (callee, typeArguments) = calleeAndTypeArguments(w)
+    } else {
+      callee = program[e].callee
+      typeArguments = .init()
+    }
+
     // Are we calling a constructor?
-    if let f = constructor(referredToBy: program[e].callee) {
-      return application(constructor: f, toArgumentsOf: e)
+    if let f = constructor(referredToBy: callee) {
+      return application(constructor: f, appliedTo: typeArguments, toArgumentsOf: e)
     }
 
     // Are we calling a built-in function?
-    else if let f = builtinFunction(referredToBy: program[e].callee) {
+    else if let f = builtinFunction(referredToBy: callee) {
+      assert(typeArguments.isEmpty)
       return application(builtin: f, toArgumentsOf: e)
     }
 
     // Are we calling a function referred to by name?
-    else if let n = program.cast(sansMutationMarker(program[e].callee), to: NameExpression.self) {
+    else if let n = program.cast(sansMutationMarker(callee), to: NameExpression.self) {
       switch program.declaration(referredToBy: n) {
       case .member(let d):
-        return application(member: d, of: program[n].qualification!, toArgumentsOf: e)
+        let q = program[n].qualification!
+        return application(member: d, of: q, appliedTo: typeArguments, toArgumentsOf: e)
       default:
-        program.unexpected(program[e].callee)
+        program.unexpected(callee)
       }
     }
 
-    /// Unsupported callee.
-    else {
-      program.unexpected(program[e].callee)
+    // Other forms of function calls are not supported.
+    else { program.unexpected(e) }
+
+    func calleeAndTypeArguments(_ w: WitnessExpression) -> (ExpressionIdentity, TypeArguments) {
+      switch w.value {
+      case .typeApplication(let f, let a):
+        let (e, b) = calleeAndTypeArguments(f)
+        assert(b.isEmpty)
+        return (e, a)
+
+      case .identity(let e):
+        return (e, .init())
+
+      default:
+        program.unexpected(program[e].callee)
+      }
     }
   }
 
   /// Returns the translation of an application of `f` to the arguments of `e`.
   private mutating func application(
-    builtin f: BuiltinFunction, toArgumentsOf e: Call.ID
+    builtin f: BuiltinFunction,
+    toArgumentsOf e: Call.ID
   ) -> IRTree {
     let arguments: [IRTree] = program[e].arguments.map { (a) in
       let v = translate(a.value)
       let t = program.typeSansEffect(assignedTo: a.value)
       return v.isBuiltinCall ? v : .load(source: v, type: program.types.castUnchecked(t))
     }
-    return .builtinCall(f, arguments: arguments)
+    return .builtinCall(f, arguments)
   }
 
   /// Returns the translation of an application of `f` to the arguments of `e`.
   private mutating func application(
-    constructor f: FunctionDeclaration.ID, toArgumentsOf e: Call.ID
+    constructor d: FunctionDeclaration.ID, appliedTo a: TypeArguments,
+    toArgumentsOf e: Call.ID
   ) -> IRTree {
     // Allocate storage for the newly constructed instance.
     let t = program.typeSansEffect(assignedTo: e)
@@ -190,7 +219,7 @@ public struct Lowerer {
     var result = [IRTree.variable(identifier: x, type: t)]
 
     // Are we translating memberwise initialization?
-    if program[f].isMemberwiseInitializer {
+    if program[d].isMemberwiseInitializer {
       for (i, a) in program[e].arguments.enumerated() {
         let u = program.typeSansEffect(assignedTo: a.value)
         let l = IRTree.field(i, source: .identifier(x), type: t)
@@ -208,8 +237,10 @@ public struct Lowerer {
         let r = translate(a.value)
         arguments.append(lvalue(r, instanceOf: u))
       }
-      let x = ir.identifier(of: f, using: program)
-      result.append(.call(.identifier(x), arguments))
+
+      let y = IRTree.identifier(ir.identifier(of: d, using: program))
+      let z = a.isEmpty ? y : .typeApplication(abstraction: y, arguments: a)
+      result.append(.call(z, arguments))
     }
 
     result.append(.identifier(x))
@@ -218,7 +249,8 @@ public struct Lowerer {
 
   /// Returns the translation of an application of `f` to the arguments of `e`.
   private mutating func application(
-    member d: DeclarationIdentity, of q: ExpressionIdentity, toArgumentsOf e: Call.ID
+    member d: DeclarationIdentity, of q: ExpressionIdentity, appliedTo a: TypeArguments,
+    toArgumentsOf e: Call.ID
   ) -> IRTree {
     // Allocate storage for the newly constructed instance.
     let t = program.typeSansEffect(assignedTo: e)
@@ -229,7 +261,9 @@ public struct Lowerer {
     arguments.append(translate(q))
     arguments.append(contentsOf: program[e].arguments.map({ (a) in translate(a.value) }))
 
-    result.append(.call(.identifier(ir.identifier(of: d, using: program)), arguments))
+    let y = IRTree.identifier(ir.identifier(of: d, using: program))
+    let z = a.isEmpty ? y : .typeApplication(abstraction: y, arguments: a)
+    result.append(.call(z, arguments))
     result.append(.identifier(x))
     return .init(result)
   }
@@ -287,9 +321,6 @@ public struct Lowerer {
   /// Translates `e`.
   private mutating func translate(_ e: NameExpression.ID) -> IRTree {
     switch program.declaration(referredToBy: e) {
-    case .some(.builtin):
-      fatalError()
-
     case .some(.direct(let d)):
       return .identifier(ir.identifier(of: d, using: program))
 
@@ -306,6 +337,30 @@ public struct Lowerer {
 
     default:
       fatalError("unsupported declaration reference at \(program[e].site)")
+    }
+  }
+
+  /// Translates `w`.
+  private mutating func translate(_ w: WitnessExpression, at site: SourceSpan) -> IRTree {
+    switch w.value {
+    case .identity(let e):
+      return translate(e)
+    case .reference(let r):
+      return translate(r, at: site)
+    case .typeApplication(let f, let a):
+      return .typeApplication(abstraction: translate(f, at: site), arguments: a)
+    default:
+      fatalError("unsupported expression '\(program.show(w))' at \(site)")
+    }
+  }
+
+  /// Translates `r`.
+  private mutating func translate(_ r: DeclarationReference, at site: SourceSpan) -> IRTree {
+    switch r {
+    case .direct(let d):
+      return .identifier(ir.identifier(of: d, using: program))
+    default:
+      fatalError("unsupported declaration reference at \(site)")
     }
   }
 

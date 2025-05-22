@@ -134,20 +134,20 @@ private:
 struct CompositeHeader : public TypeHeader {
 
   /// The name of the type.
-  const char* name;
+  const std::string name;
 
   /// The type arguments of the type.
   const std::vector<TypeHeader const*> arguments;
 
   /// Creates an instance with the given properties.
   constexpr CompositeHeader(
-    const char* name, std::initializer_list<TypeHeader const*> arguments
+    std::string const& name, std::initializer_list<TypeHeader const*> arguments
   ) : name(name), arguments(arguments) {}
 
   /// Creates an instance with the given properties.
   template<typename Iterator>
   constexpr CompositeHeader(
-    const char* name, Iterator first, Iterator last
+    std::string const& name, Iterator first, Iterator last
   ) : name(name), arguments(first, last) {}
 
   constexpr std::size_t hash_value() const override {
@@ -179,13 +179,13 @@ struct StructHeader final : public CompositeHeader {
 
   /// Creates an instance with the given properties.
   constexpr StructHeader(
-    const char* name, std::initializer_list<TypeHeader const*> arguments
+    std::string const& name, std::initializer_list<TypeHeader const*> arguments
   ) : CompositeHeader(name, arguments) {}
 
   /// Creates an instance with the given properties.
   template<typename Iterator>
   constexpr StructHeader(
-    const char* name, Iterator first, Iterator last
+    std::string const& name, Iterator first, Iterator last
   ) : CompositeHeader(name, first, last) {}
 
   constexpr bool equal_to(TypeHeader const& other) const override {
@@ -212,8 +212,8 @@ struct EnumHeader final : public CompositeHeader {
 
   /// Creates an instance with the given properties.
   constexpr EnumHeader(
-     const char* name, std::initializer_list<TypeHeader const*> arguments
-   ) : CompositeHeader(name, arguments) {}
+    std::string const& name, std::initializer_list<TypeHeader const*> arguments
+  ) : CompositeHeader(name, arguments) {}
 
   constexpr bool equal_to(TypeHeader const& other) const override {
     auto const* that = dynamic_cast<EnumHeader const*>(&other);

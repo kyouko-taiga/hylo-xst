@@ -47,6 +47,7 @@ let package = Package(
       dependencies: [
         .target(name: "Utilities"),
         .target(name: "FrontEnd"),
+        .target(name: "Runtime"),
         .product(name: "Algorithms", package: "swift-algorithms"),
         .product(name: "Collections", package: "swift-collections"),
       ]),
@@ -70,6 +71,9 @@ let package = Package(
         .product(name: "Collections", package: "swift-collections"),
         .product(name: "MoreCollections", package: "more-swift-collections")
       ]),
+
+    .target(
+      name: "Runtime"),
 
     .target(
       name: "StandardLibrary",
@@ -103,4 +107,5 @@ let package = Package(
       dependencies: [
         .target(name: "Utilities"),
       ]),
-  ])
+  ],
+  cxxLanguageStandard: .cxx2b)
