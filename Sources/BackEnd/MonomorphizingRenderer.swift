@@ -22,9 +22,9 @@ public struct MonomorphizingRenderer {
   /// The program containing the IR being rendered.
   public internal(set) var program: Program
 
-  /// A table from the types whose metatypes have been requested during the rendering to the name
+  /// A table from the types whose metadata have been requested during the rendering to the name
   /// of their constructor in the rendered program.
-  private var requestedMetatypes: OrderedDictionary<AnyTypeIdentity, String> = [:]
+  private var requestedMetadata: OrderedDictionary<AnyTypeIdentity, String> = [:]
 
   private var requestedMonomorphizations: [MonomorphizationRequest] = []
 
@@ -71,7 +71,7 @@ public struct MonomorphizingRenderer {
 
     namespace rt {
     static xst::TypeStore store;
-    \(renderRequestedMetatypes())
+    \(renderRequestedMetadataConstructors())
     }
 
     // Forward declarations.
@@ -160,7 +160,7 @@ public struct MonomorphizingRenderer {
       return result
 
     case .field(let i, let source, let type):
-      let m = demandMetatype(of: type).name
+      let m = demandMetadata(of: type).name
       return "rt::store.address_of(rt::\(m)(), \(i), \(render(source)))"
 
     case .load(let source, let type):
@@ -178,21 +178,21 @@ public struct MonomorphizingRenderer {
       return (n + suffix(for: arguments)).assemblySanitized
 
     case .copy(let target, let source, let type):
-      let m = demandMetatype(of: type).name
+      let m = demandMetadata(of: type).name
       let l = render(target)
       let r = render(source)
       return "rt::store.copy_initialize(rt::\(m)(), \(l), \(r))"
 
     case .discard(let source, let type):
-      let m = demandMetatype(of: type).name
+      let m = demandMetadata(of: type).name
       return "rt::store.deinitialize(rt::\(m)(), \(render(source)))"
 
     case .return(let source, let type):
-      let m = demandMetatype(of: type).name
+      let m = demandMetadata(of: type).name
       return "rt::store.copy_initialize(rt::\(m)(), x0, \(render(source)))"
 
     case .store(let target, let source, let type):
-      let m = demandMetatype(of: type.erased).name
+      let m = demandMetadata(of: type.erased).name
       let l = render(target)
       let r = render(source)
       return "rt::store.copy_initialize_builtin(rt::\(m)(), \(l), \(r))"
@@ -231,24 +231,23 @@ public struct MonomorphizingRenderer {
     }
   }
 
-  /// Returns the C++ translation of the metatype constructors for all the types whose metatypes
+  /// Returns the C++ translation of the metadata constructors for all the types whose metadata
   /// have been requested to during rendering.
-  private mutating func renderRequestedMetatypes() -> String {
+  private mutating func renderRequestedMetadataConstructors() -> String {
     // The first element is for forward declarations.
     var results = [""]
 
-    var work = requestedMetatypes.elements.map { (e) in
+    var work = requestedMetadata.elements.map { (e) in
       (name: e.value, type: e.key, arguments: TypeArguments())
     }
 
     func demand(_ t: AnyTypeIdentity, _ a: TypeArguments) -> String {
-      let (inserted, n) = demandMetatype(of: t)
+      let (inserted, n) = demandMetadata(of: t)
       if inserted { work.append((n, t, a)) }
       return n
     }
 
     while let (n, t, a) = work.popLast() {
-      // Emit the definition of the metatype constructor.
       switch program.types[t] {
       case let u as MachineType:
         assert(a.isEmpty)
@@ -312,13 +311,13 @@ public struct MonomorphizingRenderer {
     return results.joined(separator: "\n")
   }
 
-  /// Returns the identifier of the function computing the metatype of `t` at runtime.
-  private mutating func demandMetatype(of t: AnyTypeIdentity) -> (inserted: Bool, name: String) {
-    if let x = requestedMetatypes[t] {
+  /// Returns the identifier of the function computing the metadata of `t` at runtime.
+  private mutating func demandMetadata(of t: AnyTypeIdentity) -> (inserted: Bool, name: String) {
+    if let x = requestedMetadata[t] {
       return (false, x)
     } else {
       let x = ir.fresh()
-      requestedMetatypes[t] = x
+      requestedMetadata[t] = x
       return (true, x)
     }
   }
