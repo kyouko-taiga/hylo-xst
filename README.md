@@ -22,3 +22,5 @@ If `m` denotes a trait requirement, then name resolution should bind it to the e
 ## Questions
 
 - Is it desirable to write extensions of context functions?
+
+ c++ -std=c++23 -Wno-vla -I Runtime/include Runtime/src/TypeStore.cc Playground/main.cc
