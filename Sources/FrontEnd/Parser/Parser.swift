@@ -58,8 +58,26 @@ public struct Parser {
     swap(&file.roots, &roots)
   }
 
-  /// A sequence of modifiers prefixing a declaration.
-  private typealias DeclarationPrologue = [Parsed<DeclarationModifier>]
+  /// A sequence of annotations and modifiers prefixing a declaration.
+  private struct DeclarationPrologue {
+
+    /// The prefixing annotations.
+    let annotations: [Annotation]
+
+    /// The prefixing modifiers.
+    let modifiers: [Parsed<DeclarationModifier>]
+
+    /// Returns `true` iff `self` contains a modifier with the given value.
+    func contains(_ m: DeclarationModifier) -> Bool {
+      modifiers.contains(where: { (n) in n.value == m })
+    }
+
+    /// Returns a prologue containing no annotation and no modifier.
+    static func none() -> Self {
+      .init(annotations: [], modifiers: [])
+    }
+
+  }
 
   /// Parses a declaration.
   ///
@@ -75,7 +93,7 @@ public struct Parser {
   private mutating func parseDeclaration(
     in file: inout Module.SourceContainer
   ) throws -> DeclarationIdentity {
-    let prologue = parseDeclarationModifiers()
+    let prologue = try parseDeclarationPrologue(in: &file)
 
     guard let head = peek() else { throw expected("declaration") }
     switch head.tag {
@@ -106,6 +124,53 @@ public struct Parser {
     default:
       throw expected("declaration", at: .empty(at: head.site.start))
     }
+  }
+
+  /// Parses the annotations and modifiers of a declaration.
+  private mutating func parseDeclarationPrologue(
+    in file: inout Module.SourceContainer
+  ) throws -> DeclarationPrologue {
+    let a = try parseAnnotations(in: &file)
+    let m = parseDeclarationModifiers()
+    return .init(annotations: a, modifiers: m)
+  }
+
+  /// Parses a sequence of annotations.
+  private mutating func parseAnnotations(
+    in file: inout Module.SourceContainer
+  ) throws -> [Annotation] {
+    var annotations: [Annotation] = []
+    while next(is: .at) {
+      try annotations.append(parseAnnotation(in: &file))
+    }
+    return annotations
+  }
+
+  /// Parses an annotation.
+  private mutating func parseAnnotation(
+    in file: inout Module.SourceContainer
+  ) throws -> Annotation {
+    let introducer = try take(.at) ?? expected("'@'")
+    let identifier = try take(.name) ?? expected("identifier")
+
+    if introducer.site.end != identifier.site.start {
+      let s = SourceSpan(from: introducer.site.end, to: identifier.site.start)
+      report(.init("extraneous whitespace between '@' and annotation identifier", at: s))
+    }
+
+    let arguments: [LabeledExpression]
+    if !whitespaceBeforeNextToken() && next(is: .leftParenthesis) {
+      (arguments, _) = try inParentheses { (me) in
+        try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
+      }
+    } else {
+      arguments = []
+    }
+
+    return Annotation(
+      identifier: .init(identifier),
+      arguments: arguments,
+      site: span(from: introducer.site.start))
   }
 
   /// Parses a sequence of declaration modifiers.
@@ -160,8 +225,12 @@ public struct Parser {
     let introducer = try take(.type) ?? expected("'type'")
     let identifier = parseSimpleIdentifier()
 
-    // No modifiers allowed on extensions.
-    _ = sanitize(prologue, accepting: { _ in false })
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
+
+    // No modifiers allowed on associated types.
+    _ = sanitize(prologue.modifiers, accepting: { _ in false })
 
     return file.insert(
       AssociatedTypeDeclaration(
@@ -182,9 +251,13 @@ public struct Parser {
     let b = try parseBindingPattern(in: &file)
     let i = try parseOptionalInitializerExpression(in: &file)
 
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
+
     return file.insert(
       BindingDeclaration(
-        modifiers: prologue, role: role, pattern: b, initializer: i,
+        modifiers: prologue.modifiers, role: role, pattern: b, initializer: i,
         site: span(from: file[b].site.start)))
   }
 
@@ -210,8 +283,12 @@ public struct Parser {
       body = nil
     }
 
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
+
     // No modifiers allowed on enum cases.
-    _ = sanitize(prologue, accepting: { _ in false })
+    _ = sanitize(prologue.modifiers, accepting: { _ in false })
 
     return file.insert(
       EnumCaseDeclaration(
@@ -233,9 +310,13 @@ public struct Parser {
     let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidEnumMember)
 
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
+
     return file.insert(
       EnumDeclaration(
-        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
+        modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
         staticParameters: parameters,
@@ -284,8 +365,12 @@ public struct Parser {
 
     let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
+
     // No modifiers allowed on extensions.
-    _ = sanitize(prologue, accepting: { _ in false })
+    _ = sanitize(prologue.modifiers, accepting: { _ in false })
 
     return file.insert(
       ExtensionDeclaration(
@@ -324,8 +409,13 @@ public struct Parser {
         ? try parseTypeBody(in: &file, accepting: \.isValidStructMember)
         : nil
 
+      if let a = prologue.annotations.first {
+        report(.init("invalid annotation", at: a.site))
+      }
+
       let d = file.insert(
         ConformanceDeclaration(
+          modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToConformance),
           introducer: introducer,
           staticParameters: parameters,
           witness: witness,
@@ -357,7 +447,7 @@ public struct Parser {
     // Insert the self-parameter of non-static member declarations.
     let isMember: Bool
     var p: [ParameterDeclaration.ID] = []
-    if (context == .typeBody) && !prologue.contains(where: { (m) in m.value == .static }) {
+    if (context == .typeBody) && !prologue.contains(.static) {
       isMember = true
       p = [synthesizeSelfParameter(effect: effect, in: &file)] + parameters.1
     } else {
@@ -373,7 +463,8 @@ public struct Parser {
       let i = asBundleIdentifier(identifier)
       let n = file.insert(
         FunctionBundleDeclaration(
-          modifiers: prologue,
+          annotations: prologue.annotations,
+          modifiers: prologue.modifiers,
           introducer: .init(introducer, at: introducer.site),
           identifier: i,
           staticParameters: parameters.0,
@@ -391,7 +482,8 @@ public struct Parser {
       let b = try parseOptionalCallableBody(in: &file)
       let n = file.insert(
         FunctionDeclaration(
-          modifiers: prologue,
+          annotations: prologue.annotations,
+          modifiers: prologue.modifiers,
           introducer: f,
           identifier: identifier,
           staticParameters: parameters.0,
@@ -423,7 +515,8 @@ public struct Parser {
 
       return file.insert(
         FunctionDeclaration(
-          modifiers: sanitize(prologue, accepting: \.isApplicableToInitializer),
+          annotations: prologue.annotations,
+          modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToInitializer),
           introducer: introducer,
           identifier: .init(.simple("init"), at: introducer.site),
           staticParameters: parameters.0,
@@ -438,7 +531,8 @@ public struct Parser {
     else if introducer.value == .memberwiseinit {
       return file.insert(
         FunctionDeclaration(
-          modifiers: sanitize(prologue, accepting: \.isApplicableToInitializer),
+          annotations: prologue.annotations,
+          modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToInitializer),
           introducer: introducer,
           identifier: .init(.simple("init"), at: introducer.site),
           staticParameters: .empty(at: .empty(at: position)),
@@ -594,6 +688,7 @@ public struct Parser {
 
     return file.insert(
       ConformanceDeclaration(
+        modifiers: [],
         introducer: introducer,
         staticParameters: .empty(at: s),
         witness: w,
@@ -759,9 +854,13 @@ public struct Parser {
     let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
+
     return file.insert(
       StructDeclaration(
-        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
+        modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
         staticParameters: parameters,
@@ -789,10 +888,13 @@ public struct Parser {
     if let p = parameters.implicit.first {
       report(.init("constraints on trait parameters are not supported yet", at: file[p].site))
     }
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
 
     return file.insert(
       TraitDeclaration(
-        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
+        modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
         parameters: parameters.explicit,
@@ -818,6 +920,7 @@ public struct Parser {
       let t2 = me.desugaredConformance(of: .init(t1), to: t0, in: &file)
       let t3 = file.insert(
         ConformanceDeclaration(
+          modifiers: [],
           introducer: introducer,
           staticParameters: .empty(at: span),
           witness: t2,
@@ -863,9 +966,13 @@ public struct Parser {
     _ = try take(.assign) ?? expected("'='")
     let aliasee = try parseExpression(in: &file)
 
+    if let a = prologue.annotations.first {
+      report(.init("invalid annotation", at: a.site))
+    }
+
     return file.insert(
       TypeAliasDeclaration(
-        modifiers: sanitize(prologue, accepting: \.isApplicableToTypeDeclaration),
+        modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
         aliasee: aliasee,
@@ -897,8 +1004,9 @@ public struct Parser {
 
   /// Returns `modifiers` sans those that do not satisfy `isValid`.
   private mutating func sanitize(
-    _ modifiers: consuming DeclarationPrologue, accepting isValid: (DeclarationModifier) -> Bool
-  ) -> DeclarationPrologue {
+    _ modifiers: consuming [Parsed<DeclarationModifier>],
+    accepting isValid: (DeclarationModifier) -> Bool
+  ) -> [Parsed<DeclarationModifier>] {
     var end = modifiers.count
     for i in (0 ..< modifiers.count).reversed() where !isValid(modifiers[i].value) {
       report(.init("declaration cannot be marked '\(modifiers[i].value)'", at: modifiers[i].site))
@@ -1246,7 +1354,7 @@ public struct Parser {
     let head = try peek() ?? expected("expression")
     switch head.tag {
     case .inout, .let, .set, .sink, .var:
-      return try .init(parseBindingDeclaration(as: .condition, after: .init(), in: &file))
+      return try .init(parseBindingDeclaration(as: .condition, after: .none(), in: &file))
     default:
       return try .init(parseExpression(in: &file))
     }
@@ -2104,11 +2212,6 @@ public struct Parser {
   /// Discards tokens until `predicate` isn't satisfied or all the input has been consumed.
   private mutating func discard(while predicate: (Token) -> Bool) {
     while next(satisfies: predicate) { _ = take() }
-  }
-
-  /// Discards tokens until the next token may be at the beginning of a top-level declaration.
-  private mutating func discardUntilNextTopLevelDeclaration() {
-    recover(at: \.isDeclarationHead)
   }
 
   /// Discards token until `predicate` is satisfied or the next token is a unbalanced delimiter.

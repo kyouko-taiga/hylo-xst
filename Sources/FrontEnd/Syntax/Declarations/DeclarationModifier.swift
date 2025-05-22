@@ -1,6 +1,6 @@
 import Archivist
 
-/// A member or access modifier on a declaration.
+/// A modifier on a declaration.
 public enum DeclarationModifier: UInt8, Sendable {
 
   /// The modifier for introducing members stored out-of-line.
@@ -50,6 +50,11 @@ public enum DeclarationModifier: UInt8, Sendable {
     default:
       return false
     }
+  }
+
+  /// Returns `true` iff `self` can be applied to a conformance declaration.
+  public var isApplicableToConformance: Bool {
+    isAccessModifier
   }
 
   /// Returns `true` iff `self` can be applied on an initializer declaration.

@@ -161,6 +161,13 @@ extension Program {
     }
   }
 
+  /// Visits the arguments of `ns` in pre-order, calling back `v` when a node is entered or left.
+  public func visit<T: SyntaxVisitor>(_ ns: [Annotation], calling v: inout T) {
+    for n in ns {
+      for a in n.arguments { visit(a.value, calling: &v) }
+    }
+  }
+
   /// Visits `ps` and their children in pre-order, calling back `v` when a node is entered or left.
   public func visit<T: SyntaxVisitor>(_ ps: StaticParameters, calling v: inout T) {
     visit(ps.explicit, calling: &v)
@@ -206,6 +213,7 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: FunctionBundleDeclaration.ID, calling v: inout T) {
+    visit(self[n].annotations, calling: &v)
     visit(self[n].staticParameters, calling: &v)
     visit(self[n].parameters, calling: &v)
     visit(self[n].output, calling: &v)
@@ -214,6 +222,7 @@ extension Program {
 
   /// Visits the children of `n` in pre-order, calling back `v` when a node is entered or left.
   public func traverse<T: SyntaxVisitor>(_ n: FunctionDeclaration.ID, calling v: inout T) {
+    visit(self[n].annotations, calling: &v)
     visit(self[n].staticParameters, calling: &v)
     visit(self[n].parameters, calling: &v)
     visit(self[n].output, calling: &v)

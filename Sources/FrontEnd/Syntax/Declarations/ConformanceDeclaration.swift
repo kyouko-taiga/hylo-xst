@@ -4,6 +4,9 @@ import Archivist
 @Archivable
 public struct ConformanceDeclaration: TypeExtendingDeclaration {
 
+  /// The modifiers applied to this declaration.
+  public let modifiers: [Parsed<DeclarationModifier>]
+
   /// The introducer of this declaration.
   ///
   /// This token is a `given` keyword if the conformance is declared on its own, or a colon if it
@@ -25,12 +28,14 @@ public struct ConformanceDeclaration: TypeExtendingDeclaration {
 
   /// Creates an instance with the given properties.
   public init(
+    modifiers: [Parsed<DeclarationModifier>],
     introducer: Token,
     staticParameters: StaticParameters,
     witness: StaticCall.ID,
     members: [DeclarationIdentity]?,
     site: SourceSpan
   ) {
+    self.modifiers = modifiers
     self.introducer = introducer
     self.staticParameters = staticParameters
     self.witness = witness
