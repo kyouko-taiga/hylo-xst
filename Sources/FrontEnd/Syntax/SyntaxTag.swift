@@ -63,6 +63,7 @@ public struct SyntaxTag: Sendable {
     PatternMatchCase.self,
     RemoteTypeExpression.self,
     StaticCall.self,
+    StringLiteral.self,
     SumTypeExpression.self,
     SynthethicExpression.self,
     TupleLiteral.self,

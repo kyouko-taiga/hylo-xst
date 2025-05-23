@@ -114,6 +114,8 @@ extension Program {
       traverse(castUnchecked(n, to: RemoteTypeExpression.self), calling: &v)
     case StaticCall.self:
       traverse(castUnchecked(n, to: StaticCall.self), calling: &v)
+    case StringLiteral.self:
+      break
     case SumTypeExpression.self:
       traverse(castUnchecked(n, to: SumTypeExpression.self), calling: &v)
     case SynthethicExpression.self:
