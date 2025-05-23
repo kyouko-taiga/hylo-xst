@@ -602,7 +602,7 @@ public struct Typer {
     case FunctionDeclaration.self:
       let f = program.castUnchecked(d, to: FunctionDeclaration.self)
       return !program.isRequirement(f)
-        && !program.isFFI(f) && !program.isExternal(f) && !program[f].isMemberwiseInitializer
+        && !program.isForeign(f) && !program.isExtern(f) && !program[f].isMemberwiseInitializer
 
     default:
       return !program.isRequirement(d)
