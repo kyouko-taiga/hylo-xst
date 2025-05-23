@@ -58,27 +58,6 @@ public struct Parser {
     swap(&file.roots, &roots)
   }
 
-  /// A sequence of annotations and modifiers prefixing a declaration.
-  private struct DeclarationPrologue {
-
-    /// The prefixing annotations.
-    let annotations: [Annotation]
-
-    /// The prefixing modifiers.
-    let modifiers: [Parsed<DeclarationModifier>]
-
-    /// Returns `true` iff `self` contains a modifier with the given value.
-    func contains(_ m: DeclarationModifier) -> Bool {
-      modifiers.contains(where: { (n) in n.value == m })
-    }
-
-    /// Returns a prologue containing no annotation and no modifier.
-    static func none() -> Self {
-      .init(annotations: [], modifiers: [])
-    }
-
-  }
-
   /// Parses a declaration.
   ///
   ///     declaration ::=
@@ -2549,9 +2528,17 @@ extension SyntaxTag {
 
 }
 
+/// A type whose instances can be created from a single token.
+fileprivate protocol ExpressibleByTokenTag {
+
+  /// Creates an instance from `tag`.
+  init?(tag: Token.Tag)
+
+}
+
 extension AccessEffect: ExpressibleByTokenTag {
 
-  internal init?(tag: Token.Tag) {
+  fileprivate init?(tag: Token.Tag) {
     switch tag {
     case .auto: self = .auto
     case .inout: self = .inout
@@ -2566,7 +2553,7 @@ extension AccessEffect: ExpressibleByTokenTag {
 
 extension DeclarationModifier: ExpressibleByTokenTag {
 
-  internal init?(tag: Token.Tag) {
+  fileprivate init?(tag: Token.Tag) {
     switch tag {
     case .static: self = .static
     case .private: self = .private
@@ -2580,13 +2567,34 @@ extension DeclarationModifier: ExpressibleByTokenTag {
 
 extension OperatorNotation: ExpressibleByTokenTag {
 
-  internal init?(tag: Token.Tag) {
+  fileprivate init?(tag: Token.Tag) {
     switch tag {
     case .infix: self = .infix
     case .postfix: self = .postfix
     case .prefix: self = .prefix
     default: return nil
     }
+  }
+
+}
+
+/// A sequence of annotations and modifiers prefixing a declaration.
+fileprivate struct DeclarationPrologue {
+
+  /// The prefixing annotations.
+  fileprivate let annotations: [Annotation]
+
+  /// The prefixing modifiers.
+  fileprivate let modifiers: [Parsed<DeclarationModifier>]
+
+  /// Returns `true` iff `self` contains a modifier with the given value.
+  fileprivate func contains(_ m: DeclarationModifier) -> Bool {
+    modifiers.contains(where: { (n) in n.value == m })
+  }
+
+  /// Returns a prologue containing no annotation and no modifier.
+  fileprivate static func none() -> Self {
+    .init(annotations: [], modifiers: [])
   }
 
 }
