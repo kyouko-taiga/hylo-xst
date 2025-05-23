@@ -249,7 +249,7 @@ public struct Lowerer {
     return .init(result)
   }
 
-  /// Returns the translation of an application of `f` to the arguments of `e`.
+  /// Returns the translation of an application of `d` to the arguments of `e`.
   private mutating func application(
     _ d: DeclarationIdentity, memberOf q: Optional<ExpressionIdentity>, appliedTo a: TypeArguments,
     toArgumentsOf e: Call.ID
