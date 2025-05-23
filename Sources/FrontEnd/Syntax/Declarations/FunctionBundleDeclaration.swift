@@ -5,6 +5,9 @@ import Utilities
 @Archivable
 public struct FunctionBundleDeclaration: RoutineDeclaration, Scope {
 
+  /// The annotations on this declaration.
+  public let annotations: [Annotation]
+
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]
 
@@ -34,6 +37,7 @@ public struct FunctionBundleDeclaration: RoutineDeclaration, Scope {
 
   /// Creates an instance with the given properties.
   public init(
+    annotations: [Annotation],
     modifiers: [Parsed<DeclarationModifier>],
     introducer: Parsed<Token>,
     identifier: Parsed<String>,
@@ -44,6 +48,7 @@ public struct FunctionBundleDeclaration: RoutineDeclaration, Scope {
     variants: [VariantDeclaration.ID],
     site: SourceSpan
   ) {
+    self.annotations = annotations
     self.modifiers = modifiers
     self.introducer = introducer
     self.identifier = identifier

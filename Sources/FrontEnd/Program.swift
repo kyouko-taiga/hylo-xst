@@ -308,6 +308,16 @@ public struct Program: Sendable {
     }
   }
 
+  /// Returns `true` iff `n` is a an interface for a function written in another language.
+  public func isForeign(_ n: FunctionDeclaration.ID) -> Bool {
+    self[n].annotations.contains(where: { (a) in a.identifier.value == "foreign" })
+  }
+
+  /// Returns `true` iff `n` has an external implementation.
+  public func isExtern(_ n: FunctionDeclaration.ID) -> Bool {
+    self[n].annotations.contains(where: { (a) in a.identifier.value == "extern" })
+  }
+
   /// Returns `true` iff `n` declars a property stored out-of-line.
   public func isIndirect(_ n: VariableDeclaration.ID) -> Bool {
     if let d = bindingDeclaration(containing: n) {
@@ -315,16 +325,6 @@ public struct Program: Sendable {
     } else {
       return false
     }
-  }
-
-  /// Returns `true` iff `n` is a foreign function interface.
-  public func isFFI(_ n: FunctionDeclaration.ID) -> Bool {
-    false
-  }
-
-  /// Returns `true` iff `n` has an external implementation.
-  public func isExternal(_ n: FunctionDeclaration.ID) -> Bool {
-    false
   }
 
   /// Returns `true` iff `n` denotes an expression.

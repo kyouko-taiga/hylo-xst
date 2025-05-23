@@ -101,7 +101,7 @@ extension TypeArguments: Showable {
 
   public func show(using printer: inout TreePrinter) -> String {
     var first = true
-    let s = contents.reduce(into: "") { (s, e) in
+    let s = contents.reduce(into: "[") { (s, e) in
       if first { first = false } else { s.append(", ") }
       s.append("\(printer.show(e.key)): \(printer.show(e.value))")
     }

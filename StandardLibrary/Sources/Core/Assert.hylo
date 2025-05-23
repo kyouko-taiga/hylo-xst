@@ -1,0 +1,2 @@
+/// Unconditionally stops execution.
+public fun fatal_error() -> Never {}

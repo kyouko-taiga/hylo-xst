@@ -16,6 +16,13 @@ public struct SourceSpan: Hashable, Sendable {
     self.region = region
   }
 
+  /// Creates an instance representing the range between `start` and `end`.
+  public init(from start: SourcePosition, to end: SourcePosition) {
+    precondition(start.source == end.source, "incompatible positions")
+    self.source = start.source
+    self.region = start.index ..< end.index
+  }
+
   /// The start of the region that `self` represents.
   public var start: SourcePosition { .init(region.lowerBound, in: source) }
 
