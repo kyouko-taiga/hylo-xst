@@ -3815,12 +3815,15 @@ public struct Typer {
     /// `Hylo.Movable`.
     case movable = "Movable"
 
-    /// `Hylo.Movable`.
+    /// `Hylo.ExpressibleByIntegerLiteral`.
     case expressibleByIntegerLiteral = "ExpressibleByIntegerLiteral"
+
+    /// `Hylo.ExpressibleByIntegerLiteral.init(integer_literal:)`.
+    case expressibyByIntegerLiteralInit = "ExpressibleByIntegerLiteral.init"
 
     /// Returns a selector for the declaration corresponding to `self`.
     var filter: SyntaxFilter {
-      .name(.init(identifier: rawValue))
+      .symbol(rawValue)
     }
 
   }

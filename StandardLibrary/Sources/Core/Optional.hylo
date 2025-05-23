@@ -1,4 +1,5 @@
 /// A value of type `T` or the absence thereof.
+@_symbol("Optional")
 public enum Optional<T> {
 
   /// An instance of `T`.

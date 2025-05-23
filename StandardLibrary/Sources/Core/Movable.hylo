@@ -1,4 +1,5 @@
 /// A type whose instances can be reloacted to different storage.
+@_symbol("Movable")
 public trait Movable {
 
   /// Gives `self` the value of a consumed `source`.

@@ -1,4 +1,5 @@
 /// A value that can be either `true` or `false`.
+@_symbol("Bool")
 public struct Bool is Deinitializable {
 
   /// The raw value of this instance.

@@ -1,4 +1,5 @@
 /// A type whose values can be destroyed.
+@_symbol("Deinitializable")
 public trait Deinitializable {
 
   /// Deinitializes self.
