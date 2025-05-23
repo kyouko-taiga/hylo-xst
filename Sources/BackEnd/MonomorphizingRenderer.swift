@@ -290,6 +290,30 @@ public struct MonomorphizingRenderer {
           }
           """)
 
+      case let u as Tuple:
+        let name = program.show(t)
+
+        var fs: [String] = []
+        for e in u.elements {
+          let n = demand(e.type, .init())
+          fs.append("xst::Field{\(n)(false), false}")
+        }
+
+        let signature = "xst::StructHeader const* \(n)(bool no_define"
+
+        results[0].write(signature + " = false);\n")
+        results.append(
+          """
+          /// \(program.show(t))
+          \(signature)) {
+            auto h = store.declare(xst::StructHeader("\(name)", {}));
+            if (!no_define && !store.defined(h)) {
+              store.define(h, {\(fs.joined(separator: ", "))});
+            }
+            return h;
+          }
+          """)
+
       case let u as TypeApplication:
         let f = demand(u.abstraction, u.arguments)
         let a = u.arguments.values.map({ (v) in demand(v, .init()) + "()" })

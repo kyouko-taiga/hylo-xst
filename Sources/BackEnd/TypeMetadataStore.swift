@@ -37,6 +37,10 @@ public class TypeMetadataStore {
       let u = program.types.castUnchecked(t, to: Struct.self)
       return metadata(of: u, appliedTo: a, using: &program)
 
+    case Tuple.self:
+      let u = program.types.castUnchecked(t, to: Tuple.self)
+      return metadata(of: u, using: &program)
+
     case TypeApplication.self:
       let u = program.types[t] as! TypeApplication
       return metadata(of: u.abstraction, appliedTo: u.arguments, using: &program)
@@ -74,12 +78,13 @@ public class TypeMetadataStore {
     let d = program.types[t].declaration
     let fields = program.storedProperties(of: d)
 
-    // Empty type?
+    // Empty struct?
     if fields.isEmpty {
       Runtime.xst_define_struct(this, m.this, nil, 0)
       return m
     }
 
+    // Define the struct.
     var fs: [XSTField] = []
     for i in 0 ..< fields.count {
       let f = fields[i]
@@ -100,6 +105,21 @@ public class TypeMetadataStore {
     return m
   }
 
+  /// Returns the metadata of `t` applied to `a`.
+  private func metadata(of t: Tuple.ID, using program: inout FrontEnd.Program) -> TypeMetadata {
+    // Declare a struct representing the tuple.
+    let m = declare(t, using: &program)
+    if isDefined(m) { return m }
+
+    // Define the struct.
+    var fs = program.types[t].elements.map { (e) in
+      Runtime.xst_create_field(declare(e.type, appliedTo: .init(), using: &program).this, 0)
+    }
+    Runtime.xst_define_struct(this, m.this, &fs, fs.count)
+    return m
+  }
+
+  /// Declares the application of `t` to the type arguments in `a`.
   public func declare(
     _ t: AnyTypeIdentity, appliedTo a: TypeArguments, using program: inout FrontEnd.Program
   ) -> TypeMetadata {
@@ -110,7 +130,7 @@ public class TypeMetadataStore {
 
     case Struct.self:
       let u = program.types.castUnchecked(t, to: Struct.self)
-      return declare(u, appliedTo: .init(), using: &program)
+      return declare(u, appliedTo: a, using: &program)
 
     case TypeApplication.self:
       let u = program.types[t] as! TypeApplication
@@ -121,6 +141,7 @@ public class TypeMetadataStore {
     }
   }
 
+  /// Declares the application of `t` to the type arguments in `a`.
   private func declare(
     _ t: Struct.ID, appliedTo a: TypeArguments, using program: inout FrontEnd.Program
   ) -> TypeMetadata {
@@ -130,6 +151,14 @@ public class TypeMetadataStore {
     let d = program.types[t].declaration
     return program[d].identifier.value.withCString { (n) in
       TypeMetadata(Runtime.xst_declare_struct(this, n, &arguments, arguments.count))
+    }
+  }
+
+
+  /// Declares `t`.
+  private func declare(_ t: Tuple.ID, using program: inout FrontEnd.Program) -> TypeMetadata {
+    program.show(t).withCString { (n) in
+      TypeMetadata(Runtime.xst_declare_struct(this, n, nil, 0))
     }
   }
 
