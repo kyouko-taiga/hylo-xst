@@ -169,8 +169,10 @@ public struct Lowerer {
     else if let n = program.cast(sansMutationMarker(callee), to: NameExpression.self) {
       switch program.declaration(referredToBy: n) {
       case .member(let d):
-        let q = program[n].qualification!
-        return application(member: d, of: q, appliedTo: typeArguments, toArgumentsOf: e)
+        let q = program[n].qualification
+        return application(d, memberOf: q, appliedTo: typeArguments, toArgumentsOf: e)
+      case .direct(let d):
+        return application(d, memberOf: nil, appliedTo: typeArguments, toArgumentsOf: e)
       default:
         program.unexpected(callee)
       }
@@ -249,7 +251,7 @@ public struct Lowerer {
 
   /// Returns the translation of an application of `f` to the arguments of `e`.
   private mutating func application(
-    member d: DeclarationIdentity, of q: ExpressionIdentity, appliedTo a: TypeArguments,
+    _ d: DeclarationIdentity, memberOf q: Optional<ExpressionIdentity>, appliedTo a: TypeArguments,
     toArgumentsOf e: Call.ID
   ) -> IRTree {
     // Allocate storage for the newly constructed instance.
@@ -258,7 +260,9 @@ public struct Lowerer {
     var result = [IRTree.variable(identifier: x, type: t)]
 
     var arguments = [IRTree.identifier(x)]
-    arguments.append(translate(q))
+    if let q = q {
+      arguments.append(translate(q))
+    }
     arguments.append(contentsOf: program[e].arguments.map({ (a) in translate(a.value) }))
 
     let y = IRTree.identifier(ir.identifier(of: d, using: program))
