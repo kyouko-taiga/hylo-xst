@@ -1115,17 +1115,15 @@ public struct Parser {
     while true {
       // The period separating nominal components binds more tightly than mutation markers.
       if let n = try appendNominalComponent(to: h, in: &file) {
-        h = n; continue
-      }
-
-      if let m = marker.take() {
+        h = n
+      } else if let m = marker.take() {
         h = .init(file.insert(InoutExpression(marker: m, lvalue: h, site: span(from: m))))
-      }
-
-      if let n = try appendParenthesizedArguments(to: h, in: &file) {
+      } else if let n = try appendParenthesizedArguments(to: h, in: &file) {
         h = n
+      } else if let n = try appendBracketedArguments(to: h, in: &file) {
+        h = n; continue
       } else if let n = try appendAngledArguments(to: h, in: &file) {
-        h = n
+        h = n; continue
       } else {
         break
       }
@@ -1145,22 +1143,8 @@ public struct Parser {
     return .init(m)
   }
 
-  /// If the next token is a left parenthesis, parses an argument list and returns a call
-  /// expression applying `head`. Otherwise, returns `nil`.
-  private mutating func appendParenthesizedArguments(
-    to head: ExpressionIdentity, in file: inout Module.SourceContainer
-  ) throws -> ExpressionIdentity? {
-    if whitespaceBeforeNextToken() || !next(is: .leftParenthesis) { return nil }
-    let (a, _) = try inParentheses { (me) in
-      try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
-    }
-    let s = file[head].site.extended(upTo: position.index)
-    let m = file.insert(Call(callee: head, arguments: a, style: .parenthesized, site: s))
-    return .init(m)
-  }
-
-  /// If the next token is a left angle, parses an argument list and returns a static call
-  /// expression applying `h`. Otherwise, returns `nil`.
+  /// If the next token is a left angle, parses an argument list and returns a static call applying
+  /// `head`. Otherwise, returns `nil`.
   private mutating func appendAngledArguments(
     to head: ExpressionIdentity, in file: inout Module.SourceContainer
   ) throws -> ExpressionIdentity? {
@@ -1172,6 +1156,34 @@ public struct Parser {
     }
     let s = file[head].site.extended(upTo: position.index)
     let m = file.insert(StaticCall(callee: head, arguments: a, site: s))
+    return .init(m)
+  }
+
+  /// If the next token is a left bracket, parses an argument list and returns a call applying
+  /// `head`. Otherwise, returns `nil`.
+  private mutating func appendBracketedArguments(
+    to head: ExpressionIdentity, in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity? {
+    if whitespaceBeforeNextToken() || !next(is: .leftBracket) { return nil }
+    let (a, _) = try inBrackets { (me) in
+      try me.parseLabeledExpressionList(until: .rightBracket, in: &file)
+    }
+    let s = file[head].site.extended(upTo: position.index)
+    let m = file.insert(Call(callee: head, arguments: a, style: .bracketed, site: s))
+    return .init(m)
+  }
+
+  /// If the next token is a left parenthesis, parses an argument list and returns a call applying
+  /// `head`. Otherwise, returns `nil`.
+  private mutating func appendParenthesizedArguments(
+    to head: ExpressionIdentity, in file: inout Module.SourceContainer
+  ) throws -> ExpressionIdentity? {
+    if whitespaceBeforeNextToken() || !next(is: .leftParenthesis) { return nil }
+    let (a, _) = try inParentheses { (me) in
+      try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
+    }
+    let s = file[head].site.extended(upTo: position.index)
+    let m = file.insert(Call(callee: head, arguments: a, style: .parenthesized, site: s))
     return .init(m)
   }
 
