@@ -137,10 +137,12 @@ public struct Parser {
       report(.init("extraneous whitespace between '@' and annotation identifier", at: s))
     }
 
-    let arguments: [LabeledExpression]
+    let arguments: [Parsed<Annotation.Argument>]
     if !whitespaceBeforeNextToken() && next(is: .leftParenthesis) {
-      (arguments, _) = try inParentheses { (me) in
-        try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
+      (arguments, _) = try inParentheses { (m0) in
+        try m0.commaSeparated(until: Token.hasTag(.rightParenthesis)) { (m1) in
+          try m1.parseAnnotationArgument()
+        }
       }
     } else {
       arguments = []
@@ -150,6 +152,26 @@ public struct Parser {
       identifier: .init(identifier),
       arguments: arguments,
       site: span(from: introducer.site.start))
+  }
+
+  /// Parses an argument of an annotation.
+  private mutating func parseAnnotationArgument() throws -> Parsed<Annotation.Argument> {
+    // Is it a string argument?
+    if let s = take(.stringLiteral) {
+      return .init(.string(String(s.text.dropFirst().dropLast())), at: s.site)
+    }
+
+    // Is it a number argument?
+    else if let s = take(.integerLiteral) {
+      if let n = Int(s.text) {
+        return .init(.number(n), at: s.site)
+      } else {
+        throw ParseError("'\(s.text)' is not a valid annotation argument", at: s.site)
+      }
+    }
+
+    // None of the above.
+    else { throw expected("annotation argument") }
   }
 
   /// Parses a sequence of declaration modifiers.
