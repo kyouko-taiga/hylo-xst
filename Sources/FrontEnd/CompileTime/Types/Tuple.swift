@@ -1,4 +1,5 @@
 import Archivist
+import Utilities
 
 /// The type of a tuple.
 @Archivable
@@ -73,7 +74,15 @@ extension Tuple: Showable {
 
   /// Returns a textual representation of `self` using `printer`.
   public func show(using printer: inout TreePrinter) -> String {
-    elements.isEmpty ? "Void" : "{\(printer.show(elements))}"
+    if let (h, t) = elements.headAndTail {
+      if (h.label == nil) && t.allSatisfy({ (e) in (e.type == h.type) && (e.label == nil) }) {
+        return "\(printer.show(h.type))[\(elements.count)]"
+      } else {
+        return "{\(printer.show(elements))}"
+      }
+    } else {
+      return "Void"
+    }
   }
 
 }
