@@ -168,11 +168,11 @@ public struct Lowerer {
     // Are we calling a function referred to by name?
     else if let n = program.cast(sansMutationMarker(callee), to: NameExpression.self) {
       switch program.declaration(referredToBy: n) {
+      case .direct(let d):
+        return application(d, memberOf: nil, appliedTo: typeArguments, toArgumentsOf: e)
       case .member(let d):
         let q = program[n].qualification
         return application(d, memberOf: q, appliedTo: typeArguments, toArgumentsOf: e)
-      case .direct(let d):
-        return application(d, memberOf: nil, appliedTo: typeArguments, toArgumentsOf: e)
       default:
         program.unexpected(callee)
       }
