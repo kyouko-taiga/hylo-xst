@@ -1,5 +1,5 @@
 /// The grammatical role a syntax tree plays.
-internal enum SyntaxRole {
+internal enum SyntaxRole: Equatable {
 
   /// The tree is used in an unspecified way.
   case unspecified
