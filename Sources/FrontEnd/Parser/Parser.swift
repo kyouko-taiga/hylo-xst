@@ -311,12 +311,9 @@ public struct Parser {
     let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidEnumMember)
 
-    if let a = prologue.annotations.first {
-      report(.init("invalid annotation", at: a.site))
-    }
-
     return file.insert(
       EnumDeclaration(
+        annotations: prologue.annotations,
         modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
@@ -855,12 +852,9 @@ public struct Parser {
     let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
-    if let a = prologue.annotations.first {
-      report(.init("invalid annotation", at: a.site))
-    }
-
     return file.insert(
       StructDeclaration(
+        annotations: prologue.annotations,
         modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
@@ -889,12 +883,10 @@ public struct Parser {
     if let p = parameters.implicit.first {
       report(.init("constraints on trait parameters are not supported yet", at: file[p].site))
     }
-    if let a = prologue.annotations.first {
-      report(.init("invalid annotation", at: a.site))
-    }
 
     return file.insert(
       TraitDeclaration(
+        annotations: prologue.annotations,
         modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,

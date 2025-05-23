@@ -2,7 +2,10 @@ import Archivist
 
 /// The declaration of a structure.
 @Archivable
-public struct StructDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
+public struct StructDeclaration: TypeDeclaration, ModifiableDeclaration, Annotatable, Scope {
+
+  /// The annotations on this declaration.
+  public let annotations: [Annotation]
 
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]
@@ -27,6 +30,7 @@ public struct StructDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
 
   /// Creates an instance with the given properties.
   public init(
+    annotations: [Annotation],
     modifiers: [Parsed<DeclarationModifier>],
     introducer: Token,
     identifier: Parsed<String>,
@@ -35,6 +39,7 @@ public struct StructDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
     members: [DeclarationIdentity],
     site: SourceSpan
   ) {
+    self.annotations = annotations
     self.modifiers = modifiers
     self.introducer = introducer
     self.identifier = identifier

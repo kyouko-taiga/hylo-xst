@@ -3,12 +3,12 @@
 @  blah
 fun f() {}
 
-@blah struct A {
+struct A {
   @blah let x: Void
   @blah typealias T = Void
 }
 
-@blah trait P {
+trait P {
   @blah type X
 }
 

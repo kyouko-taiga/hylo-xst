@@ -1,18 +1,12 @@
 negative/invalid-annotation.hylo:3.2-4: error: extraneous whitespace between '@' and annotation identifier
 @  blah
  ~~
-negative/invalid-annotation.hylo:6.1-6: error: invalid annotation
-@blah struct A {
-~~~~~
 negative/invalid-annotation.hylo:7.3-8: error: invalid annotation
   @blah let x: Void
   ~~~~~
 negative/invalid-annotation.hylo:8.3-8: error: invalid annotation
   @blah typealias T = Void
   ~~~~~
-negative/invalid-annotation.hylo:11.1-6: error: invalid annotation
-@blah trait P {
-~~~~~
 negative/invalid-annotation.hylo:12.3-8: error: invalid annotation
   @blah type X
   ~~~~~

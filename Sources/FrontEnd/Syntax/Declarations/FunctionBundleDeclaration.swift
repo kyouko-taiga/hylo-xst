@@ -3,7 +3,7 @@ import Utilities
 
 /// The declaration of a bundle of related functions.
 @Archivable
-public struct FunctionBundleDeclaration: RoutineDeclaration, Scope {
+public struct FunctionBundleDeclaration: RoutineDeclaration, Annotatable, Scope {
 
   /// The annotations on this declaration.
   public let annotations: [Annotation]

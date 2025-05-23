@@ -3,7 +3,7 @@ import Utilities
 
 /// The declaration of a function.
 @Archivable
-public struct FunctionDeclaration: RoutineDeclaration, Scope {
+public struct FunctionDeclaration: RoutineDeclaration, Annotatable, Scope {
 
   /// The introducer of an initializer declaration.
   @Archivable
