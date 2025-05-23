@@ -2,7 +2,11 @@ import Archivist
 import Utilities
 
 /// The declaration of a trait.
-public struct TraitDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
+@Archivable
+public struct TraitDeclaration: TypeDeclaration, ModifiableDeclaration, Annotatable, Scope {
+
+  /// The annotations on this declaration.
+  public let annotations: [Annotation]
 
   /// The modifiers applied to this declaration.
   public let modifiers: [Parsed<DeclarationModifier>]
@@ -21,6 +25,25 @@ public struct TraitDeclaration: TypeDeclaration, ModifiableDeclaration, Scope {
 
   /// The site from which `self` was parsed.
   public let site: SourceSpan
+
+  /// Creates an instance with the given properties.
+  public init(
+    annotations: [Annotation],
+    modifiers: [Parsed<DeclarationModifier>],
+    introducer: Token,
+    identifier: Parsed<String>,
+    parameters: [GenericParameterDeclaration.ID],
+    members: [DeclarationIdentity],
+    site: SourceSpan
+  ) {
+    self.annotations = annotations
+    self.modifiers = modifiers
+    self.introducer = introducer
+    self.identifier = identifier
+    self.parameters = parameters
+    self.members = members
+    self.site = site
+  }
 
 }
 
@@ -41,28 +64,6 @@ extension TraitDeclaration: Showable {
     result.append("}")
 
     return result
-  }
-
-}
-
-extension TraitDeclaration: Archivable {
-  
-  public init<T>(from archive: inout ReadableArchive<T>, in context: inout Any) throws {
-    self.modifiers = try archive.read([Parsed<DeclarationModifier>].self, in: &context)
-    self.introducer = try archive.read(Token.self, in: &context)
-    self.identifier = try archive.read(Parsed<String>.self, in: &context)
-    self.parameters = try archive.read([GenericParameterDeclaration.ID].self, in: &context)
-    self.members = try archive.read([DeclarationIdentity].self, in: &context)
-    self.site = try archive.read(SourceSpan.self, in: &context)
-  }
-  
-  public func write<T>(to archive: inout WriteableArchive<T>, in context: inout Any) throws {
-    try archive.write(modifiers, in: &context)
-    try archive.write(introducer, in: &context)
-    try archive.write(identifier, in: &context)
-    try archive.write(parameters, in: &context)
-    try archive.write(members, in: &context)
-    try archive.write(site, in: &context)
   }
 
 }

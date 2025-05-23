@@ -23,6 +23,8 @@ public struct Lexer: IteratorProtocol, Sequence {
 
     if let t = takeNumericLiteral() {
       return t
+    } else if head == "\"" {
+      return takeStringLiteral()
     } else if head.isIdentifierHead {
       return takeKeywordOrIdentifier()
     } else if head == "#" {
@@ -114,6 +116,26 @@ public struct Lexer: IteratorProtocol, Sequence {
     } else {
       return source.text[position ..< position]
     }
+  }
+
+  /// Consumes and returns a string literal.
+  private mutating func takeStringLiteral() -> Token {
+    let start = position
+    _ = take()
+
+    var escape = false
+    while position < source.endIndex {
+      if !escape && (take("\"") != nil) {
+        return .init(tag: .stringLiteral, site: span(start ..< position))
+      } else if take("\\") != nil {
+        escape = !escape
+      } else {
+        discard()
+        escape = false
+      }
+    }
+
+    return .init(tag: .unterminatedStringLiteral, site: span(start ..< position))
   }
 
   /// Consumes and returns a keyword or identifier.

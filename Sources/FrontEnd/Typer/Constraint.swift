@@ -264,14 +264,15 @@ extension CallConstraint: Showable {
   /// Returns a textual representation of `self` using `printer`.
   internal func show(using printer: inout TreePrinter) -> String {
     var s = printer.show(callee)
-    // if program.tag(of: origin) == SubscriptCall
-    s.write(" applied to (")
+    s.write(" applied to ")
+    s.write(printer.program[origin].style == .parenthesized ? "(" : "[")
     for i in 0 ..< arguments.count {
       if i != 0 { s.write(", ") }
       if let l = arguments[i].label { s.write("\(l): ") }
       s.write(printer.show(arguments[i].type))
     }
-    s.write(") gives ")
+    s.write(printer.program[origin].style == .parenthesized ? ")" : "]")
+    s.write(" gives ")
     s.write(printer.show(output))
     return s
   }

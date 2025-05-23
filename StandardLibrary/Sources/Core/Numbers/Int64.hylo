@@ -1,4 +1,5 @@
 /// A 64-bit signed integer value.
+@_symbol("Int64")
 public struct Int64 {
 
   /// The raw value of this instance.

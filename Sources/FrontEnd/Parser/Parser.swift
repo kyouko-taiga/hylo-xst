@@ -137,10 +137,12 @@ public struct Parser {
       report(.init("extraneous whitespace between '@' and annotation identifier", at: s))
     }
 
-    let arguments: [LabeledExpression]
+    let arguments: [Parsed<Annotation.Argument>]
     if !whitespaceBeforeNextToken() && next(is: .leftParenthesis) {
-      (arguments, _) = try inParentheses { (me) in
-        try me.parseLabeledExpressionList(until: .rightParenthesis, in: &file)
+      (arguments, _) = try inParentheses { (m0) in
+        try m0.commaSeparated(until: Token.hasTag(.rightParenthesis)) { (m1) in
+          try m1.parseAnnotationArgument()
+        }
       }
     } else {
       arguments = []
@@ -150,6 +152,26 @@ public struct Parser {
       identifier: .init(identifier),
       arguments: arguments,
       site: span(from: introducer.site.start))
+  }
+
+  /// Parses an argument of an annotation.
+  private mutating func parseAnnotationArgument() throws -> Parsed<Annotation.Argument> {
+    // Is it a string argument?
+    if let s = take(.stringLiteral) {
+      return .init(.string(String(s.text.dropFirst().dropLast())), at: s.site)
+    }
+
+    // Is it a number argument?
+    else if let s = take(.integerLiteral) {
+      if let n = Int(s.text) {
+        return .init(.number(n), at: s.site)
+      } else {
+        throw ParseError("'\(s.text)' is not a valid annotation argument", at: s.site)
+      }
+    }
+
+    // None of the above.
+    else { throw expected("annotation argument") }
   }
 
   /// Parses a sequence of declaration modifiers.
@@ -289,12 +311,9 @@ public struct Parser {
     let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidEnumMember)
 
-    if let a = prologue.annotations.first {
-      report(.init("invalid annotation", at: a.site))
-    }
-
     return file.insert(
       EnumDeclaration(
+        annotations: prologue.annotations,
         modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
@@ -833,12 +852,9 @@ public struct Parser {
     let conformances = try parseOptionalAdjunctConformanceList(until: .leftBrace, in: &file)
     let members = try parseTypeBody(in: &file, accepting: \.isValidStructMember)
 
-    if let a = prologue.annotations.first {
-      report(.init("invalid annotation", at: a.site))
-    }
-
     return file.insert(
       StructDeclaration(
+        annotations: prologue.annotations,
         modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
@@ -867,12 +883,10 @@ public struct Parser {
     if let p = parameters.implicit.first {
       report(.init("constraints on trait parameters are not supported yet", at: file[p].site))
     }
-    if let a = prologue.annotations.first {
-      report(.init("invalid annotation", at: a.site))
-    }
 
     return file.insert(
       TraitDeclaration(
+        annotations: prologue.annotations,
         modifiers: sanitize(prologue.modifiers, accepting: \.isApplicableToTypeDeclaration),
         introducer: introducer,
         identifier: identifier,
@@ -1223,6 +1237,8 @@ public struct Parser {
       return .init(file.insert(BooleanLiteral(site: take()!.site)))
     case .integerLiteral:
       return .init(file.insert(IntegerLiteral(site: take()!.site)))
+    case .stringLiteral:
+      return .init(file.insert(StringLiteral(site: take()!.site)))
     case .underscore:
       return try .init(parseWildcardLiteral(in: &file))
     case .dot:

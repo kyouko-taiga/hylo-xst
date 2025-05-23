@@ -48,6 +48,7 @@ public struct Token: Hashable, Sendable {
     // Scalar literals
     case integerLiteral
     case floatingPointLiteral
+    case stringLiteral
 
     // Pound keyords and literals
     case poundLiteral
@@ -83,6 +84,7 @@ public struct Token: Hashable, Sendable {
     // Errors
     case error
     case unterminatedBlockComment
+    case unterminatedStringLiteral
 
   }
 

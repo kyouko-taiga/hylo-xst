@@ -738,6 +738,16 @@ public struct Program: Sendable {
     return .init(identifier: n.identifier, labels: n.labels, introducer: self[d].effect.value)
   }
 
+  /// Returns the symbol associated with `n`, if any.
+  ///
+  /// A syntax tree has an associated symbol if it is annotated with `@_symbol(s)` in sources,
+  /// where `s` is a string argument.
+  public func symbol<T: SyntaxIdentity>(annotating n: T) -> String? {
+    annotations(n).first(where: { (a) in a.identifier.value == "_symbol" })
+      .flatMap({ (e) in e.arguments.uniqueElement })
+      .flatMap({ (e) in e.value.string })
+  }
+
   /// If `n` is a function or subscript call, returns its callee. Otherwise, returns `nil`.
   public func callee(_ n: ExpressionIdentity) -> ExpressionIdentity? {
     switch tag(of: n) {
@@ -810,6 +820,15 @@ public struct Program: Sendable {
       return self[b].variants.first(where: { (v) in self[v].effect.value == k })
     } else {
       return nil
+    }
+  }
+
+  /// Returns the annotations applied to `n`.
+  public func annotations<T: SyntaxIdentity>(_ n: T) -> [Annotation] {
+    if let m = self[n] as? any Annotatable {
+      return m.annotations
+    } else {
+      return []
     }
   }
 
@@ -1041,6 +1060,9 @@ public indirect enum SyntaxFilter {
   /// Matches any node declaring a single entity with the given name.
   case name(Name)
 
+  /// Matches any node annotated with the given symbol.
+  case symbol(String)
+
   /// Matches any node with the given tag.
   case tag(any Syntax.Type)
 
@@ -1056,6 +1078,8 @@ public indirect enum SyntaxFilter {
       return l(n, in: p) && r(n, in: p)
     case .name(let x):
       return p.castToDeclaration(n).map({ (d) in p.name(of: d) == x }) ?? false
+    case .symbol(let x):
+      return p.symbol(annotating: n) == x
     case .tag(let k):
       return p.tag(of: n) == k
     case .satisfies(let p):

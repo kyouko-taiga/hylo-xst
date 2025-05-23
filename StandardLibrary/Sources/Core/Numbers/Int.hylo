@@ -1,4 +1,5 @@
 /// A signed integer value.
+@_symbol("Int")
 public struct Int {
 
   /// The raw value of this instance.

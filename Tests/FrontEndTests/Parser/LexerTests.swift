@@ -118,6 +118,15 @@ final class LexerTests: XCTestCase {
     try assertNext(from: &scanner, is: .floatingPointLiteral, withValue: "-1e2")
   }
 
+  func testStringLiteral() throws {
+    var scanner = Lexer(tokenizing: #""" "a 0+ " "a\nb" "a\"" "abc "#)
+    try assertNext(from: &scanner, is: .stringLiteral, withValue: #""""#)
+    try assertNext(from: &scanner, is: .stringLiteral, withValue: #""a 0+ ""#)
+    try assertNext(from: &scanner, is: .stringLiteral, withValue: #""a\nb""#)
+    try assertNext(from: &scanner, is: .stringLiteral, withValue: #""a\"""#)
+    try assertNext(from: &scanner, is: .unterminatedStringLiteral, withValue: #""abc "#)
+  }
+
   func testIdentifier() throws {
     var scanner = Lexer(tokenizing: "a _a _0 \u{3042}\u{3042} _")
     try assertNext(from: &scanner, is: .name, withValue: "a")

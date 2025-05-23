@@ -3,6 +3,7 @@
 /// Instances of types conforming to `Equatable` can be compared for equality with the infix `==`
 /// operator and for inequality with the infix `!=` operator (which by default is defined as the
 /// negation of the former).
+@_symbol("Equatable")
 public trait Equatable {
 
   /// Returns `true` iff `self` is equal to `other`.

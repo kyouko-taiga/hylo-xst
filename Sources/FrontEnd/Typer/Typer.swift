@@ -1614,6 +1614,10 @@ public struct Typer {
       return context.obligations.assume(e, hasType: .error, at: program[e].site)
     }
 
+    if let t = program.types.cast(f, to: Metatype.self) {
+      return inferredType(typeOperatorCall: e, on: t, in: &context)
+    }
+
     var i: [CallConstraint.Argument] = []
     for a in program[e].arguments {
       let t = context.withSubcontext { (ctx) in inferredType(of: a.value, in: &ctx) }
@@ -1626,6 +1630,37 @@ public struct Typer {
 
     context.obligations.assume(k)
     return context.obligations.assume(e, hasType: o, at: program[e].site)
+  }
+
+  /// Returns the inferred type of `e`, which is the application of a type operator on `t`.
+  private mutating func inferredType(
+    typeOperatorCall e: Call.ID, on t: Metatype.ID, in context: inout InferenceContext
+  ) -> AnyTypeIdentity {
+    // Are we looking at `Int[i]`?
+    if program[e].style == .bracketed {
+      if let a = program[e].arguments.uniqueElement, a.label == nil {
+        check(a.value, requiring: standardLibraryType(.int))
+        switch integerConstant(a.value) {
+        case .some(let i) where i >= 0:
+          let x = Tuple.Element(label: nil, type: program.types[t].inhabitant)
+          let u = metatype(of: Tuple(elements: Array(repeating: x, count: i))).erased
+          return context.obligations.assume(e, hasType: u, at: program[e].site)
+        case .some:
+          report(.error, "expression must have a positive value", about: a.value)
+        case .none:
+          report(.error, "expression must have a constant value", about: a.value)
+        }
+      } else {
+        // TODO: Array expressions
+        report(.error, "buffer type expression requires a single unlabeled argument", about: e)
+      }
+    }
+
+    // Expression is not a sugar.
+    else { report(program.doesNotDenoteType(.init(e))) }
+
+    // Error already diagnosed.
+    return context.obligations.assume(e, hasType: .error, at: program[e].site)
   }
 
   /// Returns the inferred type of `e`'s callee.
@@ -1655,7 +1690,7 @@ public struct Typer {
     }
 
     // Is the callee referring to a sugared constructor?
-    if isTypeDeclarationReference(callee) {
+    if (program[e].style == .parenthesized) && isTypeDeclarationReference(callee) {
       let site = program[callee].site
       let n = program[module].insert(
         NameExpression(qualification: callee, name: .init("new", at: site), site: site),
@@ -2020,7 +2055,9 @@ public struct Typer {
   ) -> AnyTypeIdentity {
     /// Returns the inferred type of `e`, possibly expected to have type `h`.
     func type(of e: LabeledExpression, expecting h: AnyTypeIdentity?) -> Tuple.Element {
-      let u = context.withSubcontext { (ctx) in inferredType(of: e.value, in: &ctx) }
+      let u = context.withSubcontext(expectedType: h) { (ctx) in
+        inferredType(of: e.value, in: &ctx)
+      }
       return .init(label: e.label?.value, type: u)
     }
 
@@ -2600,6 +2637,29 @@ public struct Typer {
     default:
       return false
     }
+  }
+
+  /// Returns the value evaluated by `e` iff it is a constant integer literal.
+  ///
+  /// - Requires: `e` has been type checked.
+  private mutating func integerConstant(_ e: ExpressionIdentity) -> Int? {
+    // The expression must be a call and have type `Int`.
+    guard
+      let c = program.cast(e, to: Call.self),
+      program[e.module].type(assignedTo: c) == standardLibraryType(.int)
+    else { return nil }
+
+    // Are we looking at `.new(integer_literal: i)`?
+    if let n = program.cast(program[c].callee, to: New.self) {
+      let r = program[e.module].declaration(referredToBy: program[n].target)
+      let d = standardLibraryDeclaration(.expressibyByIntegerLiteralInit)
+      if case .inherited(_, d) = r {
+        let i = program.castUnchecked(program[c].arguments[0].value, to: IntegerLiteral.self)
+        return Int(program[i].value)
+      }
+    }
+
+    return nil
   }
 
   // MARK: Implicit search
@@ -3815,12 +3875,15 @@ public struct Typer {
     /// `Hylo.Movable`.
     case movable = "Movable"
 
-    /// `Hylo.Movable`.
+    /// `Hylo.ExpressibleByIntegerLiteral`.
     case expressibleByIntegerLiteral = "ExpressibleByIntegerLiteral"
+
+    /// `Hylo.ExpressibleByIntegerLiteral.init(integer_literal:)`.
+    case expressibyByIntegerLiteralInit = "ExpressibleByIntegerLiteral.init"
 
     /// Returns a selector for the declaration corresponding to `self`.
     var filter: SyntaxFilter {
-      .name(.init(identifier: rawValue))
+      .symbol(rawValue)
     }
 
   }
